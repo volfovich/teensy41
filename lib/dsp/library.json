@@ -1,0 +1,7 @@
+{
+  "name": "dsp",
+  "version": "0.1.0",
+  "description": "Portable, header-only float DSP building blocks (no Teensy dependencies, unit-tested on host)",
+  "frameworks": "*",
+  "platforms": "*"
+}

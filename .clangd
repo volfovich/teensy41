@@ -1,0 +1,30 @@
+# clangd uses compile_commands.json (regenerate: pio run -t compiledb).
+# Strip GCC-only flags clang doesn't understand and point it at the Teensy GCC 15.2.1 headers.
+# (Toolchain paths are machine-specific: update if PlatformIO's toolchain version changes.)
+CompileFlags:
+  Remove: [-mfpu=*, -mfloat-abi=*, -mthumb, -mcpu=*, -fno-fat-lto-objects, -flto*, -fsingle-precision-constant, -mno-unaligned-access, -fno-rtti, -felide-constructors, -fno-threadsafe-statics, -Wno-error=narrowing]
+  Add:
+    - --target=arm-none-eabi
+    - -mcpu=cortex-m7
+    - -mfloat-abi=hard
+    - -mfpu=fpv5-d16
+    - -nostdinc
+    # match arm-none-eabi-gcc: int32_t is 'long' (Teensy core relies on it)
+    - -U__INT32_TYPE__
+    - -D__INT32_TYPE__=long int
+    - -U__UINT32_TYPE__
+    - -D__UINT32_TYPE__=long unsigned int
+    - -isystem/Users/jacob/.platformio/packages/toolchain-gccarmnoneeabi-teensy/arm-none-eabi/include/c++/15.2.1
+    - -isystem/Users/jacob/.platformio/packages/toolchain-gccarmnoneeabi-teensy/arm-none-eabi/include/c++/15.2.1/arm-none-eabi/thumb/v7e-m+dp/hard
+    - -isystem/Users/jacob/.platformio/packages/toolchain-gccarmnoneeabi-teensy/arm-none-eabi/include/c++/15.2.1/backward
+    - -isystem/Users/jacob/.platformio/packages/toolchain-gccarmnoneeabi-teensy/lib/gcc/arm-none-eabi/15.2.1/include
+    - -isystem/Users/jacob/.platformio/packages/toolchain-gccarmnoneeabi-teensy/lib/gcc/arm-none-eabi/15.2.1/include-fixed
+    - -isystem/Users/jacob/.platformio/packages/toolchain-gccarmnoneeabi-teensy/arm-none-eabi/include
+---
+# Host unit tests are built with the native clang, not the ARM toolchain.
+If:
+  PathMatch: test/.*
+CompileFlags:
+  Compiler: clang++
+  Add: [-I.pio/libdeps/native/Unity/src, -std=c++17]
+  Remove: [-DUNITY_INCLUDE_CONFIG_H, -std=*, --target=*, -mcpu=*, -mfloat-abi=*, -mfpu=*, -nostdinc, -isystem*, -U__INT32_TYPE__, -U__UINT32_TYPE__, -D__INT32_TYPE__=*, -D__UINT32_TYPE__=*]
