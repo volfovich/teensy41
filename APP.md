@@ -1,6 +1,6 @@
 # Volfovich NAM Forge: Desktop Control App Plan
 
-Nov 13, 2026 · Status: A0 done (protocol, both codecs, shared tests). A1 firmware side done and checked on the device (`tools/applink_check.py`, 14 checks pass). Next: the Tauri app skeleton.
+Nov 13, 2026 · Status: A0 and A1 done. The app builds, connects to the unit by itself and edits every setting from a plain list; changes go both ways. Not yet looked at by a person: the window was only launched and its link checked from a terminal. Next: A2, the chain view.
 
 **Volfovich NAM Forge** (short name in the window title and the Dock: **NAM Forge**) is a macOS app that controls the guitar DSP unit over USB: edit the sound on a Quad Cortex style screen, manage presets, and send NAM models and IRs straight to the device.
 
@@ -261,7 +261,7 @@ protocol/
 ```
 
 - **Mock device.** A small program that speaks the protocol and behaves like the unit (settings table, presets, file lists, moving meters). It lets the UI be built and tested without the hardware, and it is what the automated tests run against.
-- **Finding the device.** By the Teensy's USB vendor and product numbers for the "MIDI + Serial" type **(verify the exact values)**, then confirmed by `HELLO`.
+- **Finding the device.** By the Teensy's USB vendor and product numbers for the "MIDI + Serial" type (`16C0:0489`, read from the unit), then confirmed by `HELLO`.
 
 ---
 
@@ -270,7 +270,7 @@ protocol/
 | M | Deliverable | Done when |
 | --- | --- | --- |
 | A0 ✔ | `protocol/PROTOCOL.md` and the frame code on both sides, with tests | Done: 15 firmware host tests and 12 Rust tests pass against the same example frames (`protocol/test_frames.txt`) |
-| A1 (firmware ✔) | Firmware: `HELLO`, table, state, set a setting, change reports (**done**, `src/AppLink.*`, verified on the device with `tools/applink_check.py`). App skeleton that connects and shows raw values (**not started**). | Turning a setting from MIDI changes the number in the app; the typed shell still works |
+| A1 ✔ | Firmware: `HELLO`, table, state, set a setting, change reports. App skeleton that connects and shows raw values. | Done. Firmware verified with `tools/applink_check.py`; the Rust core verified against the unit with its `monitor` example; the app launches, connects and receives the state. The "MIDI change shows in the app" check was done with the typed shell in place of MIDI. |
 | A2 | Main screen: chain, editor panel with knobs, block on and off, meters | Every setting can be edited from the app with no audible stepping |
 | A3 | Presets: list, recall, save, save as, rename, delete, edited mark | A preset saved in the app is recalled correctly by MIDI program change |
 | A4 | File transfer: add, delete, rename models and IRs; load them; checks and previews | A model dragged from Finder is playing within about 3 s; a bad file is refused with a clear message |

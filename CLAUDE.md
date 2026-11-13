@@ -32,7 +32,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - `lib/dsp/` – **portable float DSP** (namespace `dsp`, no Arduino/Teensy includes), unit-tested on the host: `nam/`, `conv/`, `fx/`, `drums/`
 - `lib/params/` – the settings table (`ParamDefs`) and preset file format. Portable.
 - `lib/applink/` – the desktop app's link protocol on the firmware side (frames, payload fields, message numbers). Portable. Reference: `protocol/PROTOCOL.md`; shared examples `protocol/test_frames.txt` (regenerate with `python3 protocol/make_test_frames.py`).
-- `app/` – the macOS control app, "Volfovich NAM Forge" (plan: `APP.md`). So far only `app/crates/namforge-link` (Rust, `cargo test`).
+- `app/` – the macOS control app, "Volfovich NAM Forge" (plan: `APP.md`, commands: `app/README.md`): Tauri 2, Rust core in `app/crates`, Svelte UI in `app/src`. Only one program can hold the unit's serial port: close the app before flashing or opening the serial monitor.
 - `hw_tests/` – standalone firmware images that test hardware (PSRAM, I2S loopback, NAM benchmarks); each has its own env.
 - `tools/` – cold-code linker script, `check_hot_code.sh`, drum kit and song compilers. `kits/`, `songs/` – drum assets.
 - `test/` – Unity suites, run on the host via the `native` env; fixtures in `test/fixtures/`.

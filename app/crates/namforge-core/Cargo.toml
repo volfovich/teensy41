@@ -1,0 +1,12 @@
+[package]
+name = "namforge-core"
+version = "0.1.0"
+edition = "2021"
+description = "NAM Forge's device side: finds the unit on USB, keeps a session open over the link protocol and mirrors its settings. No UI code."
+license = "MIT"
+publish = false
+
+[dependencies]
+namforge-link = { path = "../namforge-link" }
+serde = { version = "1", features = ["derive"] }
+serialport = { version = "4", default-features = false }

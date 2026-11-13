@@ -1,0 +1,20 @@
+[package]
+name = "namforge"
+version = "0.1.0"
+description = "Volfovich NAM Forge: the desktop control app for the Teensy guitar DSP unit"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+# The `_lib` suffix keeps the library's name apart from the binary's (a Cargo quirk on Windows).
+name = "namforge_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+namforge-core = { path = "../crates/namforge-core" }
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
