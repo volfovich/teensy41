@@ -44,9 +44,9 @@ enum Param : uint8_t {
   kGateType,        // 0 nam (the NAM plugin's expander), 1 hard (the default; release applies)
   kPresetLevel,     // half-dB steps, added to the output gain; saved in presets (PRESETS.md)
   kMaster,          // the master volume, the last gain before the DAC: half-dB steps up to 0 dB; the minimum is silence. Not in presets.
-  // The Mod block (chorus / flanger), between the doubler and the delay.
+  // The Mod block (chorus / flanger / ce2 / phase90), between the doubler and the delay.
   kModOn,
-  kModType,   // 0 chorus, 1 flanger
+  kModType,   // 0 chorus, 1 flanger, 2 ce2, 3 phase90 (dsp::Modulation::Type)
   kModRate,   // hundredths of a Hz
   kModDepth, kModFeedback, kModMix, kModWidth,  // %
   // The Limiter block: the last stage, after the master volume. Not in presets.

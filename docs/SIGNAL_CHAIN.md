@@ -32,7 +32,7 @@ tuner mute                              mono up to here
   ▼
 DOUBLER    mono in, stereo out
   ▼
-MOD        chorus or flanger, stereo
+MOD        chorus, flanger, ce2 or phase90, stereo
   ▼
 DELAY      stereo
   ▼
@@ -96,21 +96,36 @@ While the tuner is open the guitar is faded out here (20 ms), before the delay a
 `dsp/fx/Doubler.h`. A second "take" 1 to 35 ms later (`dbl time`), panned opposite (`dbl width`). Makes the signal stereo.
 
 ### Mod (`mod`, in presets)
-`dsp/fx/Modulation.h`. New in this project (13 Nov 2026), not ported. A chorus or a flanger (`mod type`), stereo in and out; with the doubler off its input is mono and the two sides get the sweep at different points of its cycle, which makes it wide.
+`dsp/fx/Modulation.h`. New in this project (13 Nov 2026), not ported. A chorus, a flanger, a chorus in the style of the Boss CE-2 or a phaser in the style of the MXR Phase 90 (`mod type`), stereo in and out; with the doubler off its input is mono and the two sides get the sweep at different points of its cycle, which makes it wide.
 
 | Setting | Does |
 | --- | --- |
-| `mod type` | `chorus`: the delay moves around 12 ms, by up to ±5 ms. `flanger`: it moves between 0.3 ms and up to 7 ms. |
+| `mod type` | `chorus`: the delay moves around 12 ms, by up to ±5 ms. `flanger`: it moves between 0.3 ms and up to 7 ms. `ce2` and `phase90`: see below. |
 | `mod rate` | The sweep's speed, 0.05 to 10 Hz. Above 1 Hz (chorus) or 2 Hz (flanger) the sweep gets narrower as the rate goes up, so the pitch wobble does not grow. |
-| `mod depth` | How far the delay moves |
-| `mod fb` | Feedback, up to 90 %: the flanger's resonance; on the chorus a thicker, ringing sound |
+| `mod depth` | How far the delay moves (the phase90: how far its notches move) |
+| `mod fb` | Feedback, up to 90 %: the flanger's resonance; on the choruses a thicker, ringing sound. The phase90: up to 0.75 around three of its stages, a hump between the notches. |
 | `mod mix` | Dry against wet, equal power. 50 % is equal parts (the flanger's deepest notches); 100 % on the chorus is vibrato. |
 | `mod width` | How far apart the two sides' sweeps are: 0 keeps mono, 100 % is half a cycle |
 
+**`ce2`, in the style of the Boss CE-2** (added 13 Nov 2026). Built from the pedal's published circuit, not from a recording of one:
+- A triangle LFO moves the delay between 4.4 and 6.8 ms at full depth. That is the pedal's 1024-stage delay chip at the clock rates owners measured (75 to 115 kHz at full depth). The sweep does not get narrower at high rates, as the pedal's does not.
+- The wet signal passes a 6.6 kHz low-pass (third order), for the filters around the pedal's delay chip. That is what makes it darker and rounder than `chorus`.
+- **Two dials, as on the pedal: `mod rate` and `mod depth`.** The firmware holds the rest as the pedal has it (`Params.cpp`): half input and half effect, no feedback, mono. `mod fb`, `mod mix` and `mod width` keep their stored values for the other types but are not used and not shown. The pedal's own rate goes up to about 3.5 Hz; the dial goes on to 10 Hz.
+- Left out: the chip's noise and distortion, and the treble boost before and cut after it (they cancel).
+
+**`phase90`, in the style of the MXR Phase 90** (added 13 Nov 2026). Also from the published circuit:
+- Four first-order all-pass stages per side. A triangle LFO moves their corner between 141 Hz (the pedal's 24 kΩ and 47 nF with the JFET off) and 1.6 kHz at full depth, linearly in frequency. Mixed with the input that gives two notches, at 0.41 and 2.41 times the corner: 58 to 660 Hz and 340 Hz to 3.9 kHz.
+- **One dial, as on the pedal: `mod rate`.** The firmware holds the rest (`Params.cpp`): the full sweep, half input and half effect, mono, no feedback, which is the early ("script" logo) pedal. The other four settings are not used and not shown.
+- The effect itself (`Modulation.h`) can do more, should it be wanted later: a narrower sweep, stereo, and the later ("block" logo) pedal's feedback from the last stage into the second, which adds a midrange hump (about 0.42).
+- **An estimate:** the 1.6 kHz top of the sweep. No published figure was found; the bottom follows from the parts. To be tuned by ear.
+- The delay lines are not used; the type costs the same CPU as the others.
+
 - The dry signal is not delayed, so the block adds no latency.
-- **Level:** compensated automatically, so the block is as loud on as off. Without feedback, dry and wet at equal power already come out as loud as the input (the comb's peaks and notches even out over the sweep). Feedback makes the wet signal louder, and the block turns itself down by the matching amount. Measured in the host test with guitar-band noise (80 Hz to 2.5 kHz) over both types and all tested settings: within 0.32 dB of the input, where it would be up to +6.2 dB without the compensation.
+- **Level:** compensated automatically, so the block is as loud on as off. Without feedback, dry and wet at equal power already come out as loud as the input (the comb's peaks and notches even out over the sweep). Feedback makes the wet signal louder, and the block turns itself down by the matching amount. Measured in the host test with guitar-band noise (80 Hz to 2.5 kHz) over all four types and all tested settings: within 0.32 dB of the input, where it would be up to +6.2 dB without the compensation. The phase90's wet signal is not delayed, so it does not even out against the dry one; its loudness is worked out from its response instead (the average over that band and over the sweep).
 - The compensation matches **loudness, not peaks**. A steady sine that sits on a comb peak still reads higher on the meters: on the unit (13 Nov 2026) the chorus at its defaults +2 to +3 dB, the flanger with feedback 70 % and full depth +5 to +7 dB. Real playing sits between the two; the Mod tile's level bar shows it.
 - Switching on fills the delay lines for 20 ms, then fades in over 20 ms; a change of type fades out and back in. No clicks.
+
+**Settings that do not apply are hidden.** The app shows a setting only with the types or modes it belongs to (`only` in `protocol/blocks.json`), and the shell's `s` leaves it out: the Mod dials above; the gate's release with the `nam` gate type (that gate has its own fixed timing); the reverb's `rmod` in the gated mode and `rgate` in the hall mode. A hidden setting keeps its stored value and can still be set from the shell; it does nothing until its type or mode is chosen.
 
 ### Delay (`dl`, in presets)
 `dsp/fx/StudioDelay.h`. An 80s studio dual delay: `dtime` 20 to 750 ms (the right side at 0.75 of it), `dfb` repeats, `dmix`, `dtone`, `dmod`, `dduck` (the repeats duck while playing), `ddrive`, `dera`. Fixed voicing in `include/config.h` (`DELAY80_*`).
@@ -177,7 +192,7 @@ Measured on the board, 32-sample blocks (budget: worst case at or below 80 % of 
 | --- | --- | --- |
 | Amp (network, DC blocker, tone) | 32.9 % | 13 Nov 2026 |
 | Doubler | 1.1 % | 13 Nov 2026 |
-| Mod (chorus or flanger) | 2.3 % | 13 Nov 2026 |
+| Mod: chorus, flanger, phase90 / ce2 | 2.4 % / 2.7 % | 13 Nov 2026 |
 | Limiter: on and idle / limiting / limiting with lookahead | 0.6 % / 1.1 % / 1.9 % | 13 Nov 2026 |
 | Delay | 4.7 % | 13 Nov 2026 |
 | Reverb, hall | 8.4 % | 13 Nov 2026 |

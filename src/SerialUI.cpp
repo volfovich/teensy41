@@ -251,7 +251,10 @@ static void printStatus() {
   printValues({kDblTime, kDblWidth});
   Serial.println();
   Serial.printf("Mod:       %s", getParam(kModOn) ? "on" : "off");
-  printValues({kModType, kModRate, kModDepth, kModFeedback, kModMix, kModWidth});
+  // The pedal types show their pedal's dials only (Params.cpp holds the rest).
+  if (getParam(kModType) == dsp::Modulation::kPhaser) printValues({kModType, kModRate});
+  else if (getParam(kModType) == dsp::Modulation::kCe2) printValues({kModType, kModRate, kModDepth});
+  else printValues({kModType, kModRate, kModDepth, kModFeedback, kModMix, kModWidth});
   Serial.println();
   Serial.printf("Limiter:   %s", getParam(kLimOn) ? "on" : "off");
   printValues({kLimCeiling, kLimRelease, kLimLook});

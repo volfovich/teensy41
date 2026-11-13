@@ -13,7 +13,7 @@
 //   amped -> IR convolution -> x (output gain + preset level), blended with
 //            the IR's input by the bypass (bypassed: no IR and no gain)  = core (mono)
 //   core   -> doubler (mono in, stereo out, see dsp/fx/Doubler.h) -> cL, cR
-//   cL, cR -> mod: chorus or flanger (stereo, see dsp/fx/Modulation.h) -> mL, mR
+//   cL, cR -> mod: chorus, flanger, ce2 or phase90 (stereo, see dsp/fx/Modulation.h) -> mL, mR
 //   mL, mR -> studio 80s delay (fed from mL, dry/wet)         -> dL, dR
 //   dL, dR -> 80s reverb, hall or gated (stereo, dry/wet)      -> out L / R
 //   + drum machine and bass (stereo, added to the outputs, never through

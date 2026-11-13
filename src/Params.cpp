@@ -140,9 +140,17 @@ static void applyParam(int id, int v) {
     case kModFeedback:
     case kModMix:
     case kModWidth:
-      chain.mod().set(s[kModType], s[kModRate] / 100.0f, s[kModDepth] / 100.0f, s[kModFeedback] / 100.0f,
-                      s[kModMix] / 100.0f, s[kModWidth] / 100.0f);
+    {
+      // The two pedal types have only their pedal's dials (ce2: rate and depth, phase90:
+      // rate; protocol/blocks.json hides the others). The rest is held as on the pedals:
+      // half input and half effect, mono, no feedback, the phaser's sweep full.
+      const bool phaser = s[kModType] == dsp::Modulation::kPhaser;
+      const bool pedal = phaser || s[kModType] == dsp::Modulation::kCe2;
+      chain.mod().set(s[kModType], s[kModRate] / 100.0f, phaser ? 1.0f : s[kModDepth] / 100.0f,
+                      pedal ? 0.0f : s[kModFeedback] / 100.0f, pedal ? 0.5f : s[kModMix] / 100.0f,
+                      pedal ? 0.0f : s[kModWidth] / 100.0f);
       break;
+    }
     case kLimOn:
     case kLimCeiling:
     case kLimRelease:

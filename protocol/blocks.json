@@ -1,5 +1,5 @@
 {
-  "comment": "The blocks of the signal chain as both UIs show them (docs/design/APP_PLAN.md 3.5): order, names, colours, and which settings belong to each. Settings are named by their serial key (lib/params ParamDefs.cpp); '@Name' names a setting that has no key. 'on' is the block's switch; 'onInverted' means the setting is a bypass. 'file' is the loaded file the block shows: 'model' or 'ir'. 'summary' is the setting whose value the block's tile shows. 'peak' is the block's place among the METERS frame's block peaks (its output level). 'reduction' is the place of a gain the block reports there (the limiter's lowest gain since the last frame; 1 = none). 'note' is a line of explanation shown in the block's editor. 'activity' is the METERS bit that shows the block is working. 'master' is the unit's master volume, the last gain before the DAC: one value for all presets, kept in the unit's own settings and not in presets, so it is shown apart from the blocks, beside the meters. The cab block holds the two gains that act right after the cab: the output gain (global) and the preset's level. A setting no block names is shown under 'Other', so nothing can go missing.",
+  "comment": "The blocks of the signal chain as both UIs show them (docs/design/APP_PLAN.md 3.5): order, names, colours, and which settings belong to each. Settings are named by their serial key (lib/params ParamDefs.cpp); '@Name' names a setting that has no key. 'on' is the block's switch; 'onInverted' means the setting is a bypass. 'file' is the loaded file the block shows: 'model' or 'ir'. 'summary' is the setting whose value the block's tile shows. 'peak' is the block's place among the METERS frame's block peaks (its output level). 'reduction' is the place of a gain the block reports there (the limiter's lowest gain since the last frame; 1 = none). 'note' is a line of explanation shown in the block's editor. 'only' hides settings that do not apply: it names a setting of the block, then another setting (a type or a mode) and the choices of that one with which the first is shown; with any other choice it is hidden, and the firmware either does not use it or holds it at a fixed value (docs/SIGNAL_CHAIN.md). 'activity' is the METERS bit that shows the block is working. 'master' is the unit's master volume, the last gain before the DAC: one value for all presets, kept in the unit's own settings and not in presets, so it is shown apart from the blocks, beside the meters. The cab block holds the two gains that act right after the cab: the output gain (global) and the preset's level. A setting no block names is shown under 'Other', so nothing can go missing.",
   "blocks": [
     {
       "id": "amp", "peak": 0, "name": "Amp", "short": "AMP", "colour": "#ff8a3d", "on": "amp", "file": "model", "activity": "ampRunning",
@@ -7,7 +7,8 @@
     },
     {
       "id": "gate", "peak": 1, "summary": "gate thr", "name": "Noise gate", "short": "GATE", "colour": "#8bd450", "on": "gate",
-      "sections": [{ "settings": ["gate thr", "gate rel", "gate type"] }]
+      "only": { "gate rel": { "gate type": ["hard"] } },
+      "sections": [{ "settings": ["gate type", "gate thr", "gate rel"] }]
     },
     {
       "id": "cab", "peak": 2, "name": "Cab", "short": "CAB", "colour": "#d4a85f", "on": "b", "onInverted": true, "file": "ir",
@@ -19,6 +20,13 @@
     },
     {
       "id": "mod", "peak": 6, "summary": "mod type", "name": "Mod", "short": "MOD", "colour": "#3fd6a0", "on": "mod",
+      "note": "ce2 is a chorus in the style of the Boss CE-2 and has that pedal's two dials; phase90 is a phaser in the style of the MXR Phase 90 and has its one. The rest is fixed as on the pedals: half input and half effect, mono, no feedback (the early, script-logo Phase 90).",
+      "only": {
+        "mod depth": { "mod type": ["chorus", "flanger", "ce2"] },
+        "mod fb": { "mod type": ["chorus", "flanger"] },
+        "mod mix": { "mod type": ["chorus", "flanger"] },
+        "mod width": { "mod type": ["chorus", "flanger"] }
+      },
       "sections": [{ "settings": ["mod type", "mod rate", "mod depth", "mod fb", "mod mix", "mod width"] }]
     },
     {
@@ -27,7 +35,8 @@
     },
     {
       "id": "reverb", "peak": 5, "summary": "rmode", "name": "Reverb", "short": "REVERB", "colour": "#b07cff", "on": "rv", "activity": "reverbRinging",
-      "sections": [{ "settings": ["mix", "size", "tone", "rpre", "rmod", "rera", "rgate", "rmode"] }]
+      "only": { "rmod": { "rmode": ["hall"] }, "rgate": { "rmode": ["gated"] } },
+      "sections": [{ "settings": ["rmode", "mix", "size", "tone", "rpre", "rmod", "rera", "rgate"] }]
     },
     {
       "id": "limiter", "peak": 7, "reduction": 8, "summary": "lim ceil", "name": "Limiter", "short": "LIMIT", "colour": "#e6d36a", "on": "lim",

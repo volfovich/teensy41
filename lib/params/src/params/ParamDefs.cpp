@@ -19,7 +19,7 @@ static const char* const kReverbModes[] = {"hall", "gated"};
 static const char* const kCrashNames[] = {"off", "2 bars", "4 bars", "8 bars", "16 bars"};
 static const char* const kCountNames[] = {"off", "1 bar", "2 bars", "3 bars", "4 bars"};
 static const char* const kGateTypes[] = {"nam", "hard"};
-static const char* const kModTypes[] = {"chorus", "flanger"};
+static const char* const kModTypes[] = {"chorus", "flanger", "ce2", "phase90"};
 static const char* const kKeyNames[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
 
 using U = Unit;
@@ -82,9 +82,10 @@ static const ParamDef kParams[kValueCount] = {
     {"pvol",         "Preset level",       "Level",        -48,   24,   0, 1, U::kHalfDb,  nullptr, kPreset},
     // The last gain before the DAC: 0 dB (no change) down to -60 dB; the minimum is silence.
     {"master",       "Master volume",      "Master",      -120,    0,   0, 1, U::kHalfDb,  nullptr, 0},
-    // The Mod block: a chorus or a flanger between the doubler and the delay.
+    // The Mod block between the doubler and the delay: a chorus, a flanger, a CE-2 style
+    // chorus or a Phase 90 style phaser.
     {"mod",          "Mod",                "On",             0,    1,   0, 1, U::kOnOff,   nullptr, kPreset},
-    {"mod type",     "Mod type",           "Type",           0,    1,   0, 1, U::kNone,    kModTypes, kPreset},
+    {"mod type",     "Mod type",           "Type",           0,    3,   0, 1, U::kNone,    kModTypes, kPreset},
     {"mod rate",     "Mod rate",           "Rate",           5, 1000,  80, 5, U::kCentiHz, nullptr, kPreset},
     {"mod depth",    "Mod depth",          "Depth",          0,  100,  50, 1, U::kPercent, nullptr, kPreset},
     {"mod fb",       "Mod feedback",       "Feedback",       0,  100,   0, 1, U::kPercent, nullptr, kPreset},

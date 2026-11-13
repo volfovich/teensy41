@@ -49,7 +49,7 @@ Events to the window (one channel, `device`): searching, connected, schema, stat
 
 ## The screen is built from the unit's table
 
-The app has no list of settings of its own. It reads the unit's table (names, ranges, units, choices) and joins it with [`protocol/blocks.json`](../protocol/blocks.json), which says how the chain is shown: the blocks in order, each one's colour, switch, settings, which meter peak and activity bit belong to it. `lib/blocks.ts` does the join; `lib/format.ts` formats values the way the unit does. A rate in Hz gets a logarithmic knob (`controls/Knob.svelte`). A block may carry a `note` (a line of explanation in its editor) and a `reduction` (the limiter's gain reduction, shown on its tile while it works).
+The app has no list of settings of its own. It reads the unit's table (names, ranges, units, choices) and joins it with [`protocol/blocks.json`](../protocol/blocks.json), which says how the chain is shown: the blocks in order, each one's colour, switch, settings, which meter peak and activity bit belong to it. `lib/blocks.ts` does the join; `lib/format.ts` formats values the way the unit does. A rate in Hz gets a logarithmic knob (`controls/Knob.svelte`). A block may carry `only`, which names the settings that are shown only with certain types or modes (the Mod type's dials, the gate's release, the reverb's `rmod` and `rgate`; `settingShown` in `lib/blocks.ts`). A block may carry a `note` (a line of explanation in its editor) and a `reduction` (the limiter's gain reduction, shown on its tile while it works).
 
 - A new setting in the firmware appears in the app by itself. Until `blocks.json` names it, it shows under "Other settings".
 - The planned touch screen on the unit is meant to read the same `blocks.json`.

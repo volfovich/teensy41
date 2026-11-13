@@ -3,7 +3,7 @@
   // block's controls. Everything is built from the device's settings table and the block
   // definitions shared with the unit's own UI (protocol/blocks.json).
   import { onMount } from "svelte";
-  import { blockActive, blockOn, blockOnValue, blockPeak, blockReduction, buildBlocks, type Block } from "$lib/blocks";
+  import { blockActive, blockOn, blockOnValue, blockPeak, blockReduction, buildBlocks, settingShown, type Block } from "$lib/blocks";
   import LevelBar from "$lib/controls/LevelBar.svelte";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
@@ -527,7 +527,7 @@
       <div class="section">
         {#if sec.title}<h3>{sec.title}</h3>{/if}
         <div class="controls">
-          {#each sec.settings as s (s.id)}
+          {#each sec.settings.filter((s) => settingShown(selected, s, device.settings, device.values)) as s (s.id)}
             <Control setting={s} value={value(s.id, s.default)} colour={selected.def.colour} onchange={(v) => setParam(s.id, v)} />
           {/each}
         </div>

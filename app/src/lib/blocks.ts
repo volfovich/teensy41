@@ -19,6 +19,8 @@ export interface BlockDef {
   /** A line of explanation for the block's editor. */
   note?: string;
   activity?: string;
+  /** Settings shown only while another setting (a type, a mode) has one of the named choices. */
+  only?: Record<string, Record<string, string[]>>;
   sections: { title?: string; settings: string[] }[];
 }
 
@@ -60,6 +62,16 @@ export function buildBlocks(settings: Setting[]): { chain: Block[]; lane: Block;
     ? { def: { id: "other", name: "Other", short: "OTHER", colour: "#aab2bf", sections: [] }, on: null, summary: null, sections: [{ title: "", settings: rest }] }
     : null;
   return { chain, lane, other, master };
+}
+
+/** Whether the block shows the setting now: some apply only to certain types or modes (the definition's `only`). */
+export function settingShown(b: Block, s: Setting, settings: Setting[], values: number[]): boolean {
+  const rule = b.def.only?.[s.key];
+  if (!rule) return true;
+  return Object.entries(rule).every(([key, choices]) => {
+    const by = settings.find((x) => x.key === key);
+    return !by || choices.includes(by.choices[values[by.id] ?? by.default] ?? "");
+  });
 }
 
 /** Whether the block is switched on (a block without a switch always is). */

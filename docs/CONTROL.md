@@ -113,7 +113,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | 51 | `pvol` | Preset level | -24.0 dB to +12.0 dB | 0 dB | yes |
 | 52 | `master` | Master volume | silent (the lowest step), -59.5 dB to 0 dB | 0 dB | no |
 | 53 | `mod` | Mod | on, off | off | yes |
-| 54 | `mod type` | Mod type | chorus, flanger | chorus | yes |
+| 54 | `mod type` | Mod type | chorus, flanger, ce2, phase90 (ce2 uses only rate and depth, phase90 only rate; see [SIGNAL_CHAIN.md](SIGNAL_CHAIN.md)) | chorus | yes |
 | 55 | `mod rate` | Mod rate | 0.05 Hz to 10.00 Hz | 0.80 Hz | yes |
 | 56 | `mod depth` | Mod depth | 0 % to 100 % | 50 % | yes |
 | 57 | `mod fb` | Mod feedback | 0 % to 100 % | 0 % | yes |
