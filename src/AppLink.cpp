@@ -1,14 +1,17 @@
-// AppLink.cpp - see AppLink.h. Milestones A1 to A3 of APP.md: the session, the settings table,
-// the state, setting a value, change events, the meter frames, and presets.
+// AppLink.cpp - see AppLink.h. Milestones A1 to A4 of APP.md: the session, the settings table,
+// the state, setting a value, change events, the meter frames, presets, the model and IR
+// lists, and sending files to the SD card.
 #include "AppLink.h"
 
 #include <Arduino.h>
+#include <SD.h>
 #include <applink/Frame.h>
 #include <applink/Messages.h>
 #include <applink/Wire.h>
 
 #include "AmpLibrary.h"
 #include "AudioChain.h"
+#include "DrumSongs.h"
 #include "IRLibrary.h"
 #include "Params.h"
 #include "PresetLibrary.h"
@@ -257,6 +260,171 @@ static void onPreset(const applink::FrameHeader& h, Reader& r) {
   }
 }
 
+// ---- Amp models and IRs (PROTOCOL.md 4.4)
+
+static uint32_t fileSize(const char* path) {
+  File f = SD.open(path, FILE_READ);
+  const uint32_t n = f ? (uint32_t)f.size() : 0;
+  f.close();
+  return n;
+}
+
+static void onFileList(const applink::FrameHeader& h, bool models) {
+  // The built-in model (listed when the card has none) is not a file: left out.
+  const bool card = irSdOk();
+  int n = models ? ampCount() : irCount();
+  if (models && n == 1 && ampPath(0)[0] != '/') n = 0;
+  Writer w(g_txPayload, kTxPayload);
+  w.u16((uint16_t)n);
+  for (int i = 0; i < n; i++) {
+    const char* path = models ? ampPath(i) : irPath(i);
+    w.str(path);
+    w.u32(card ? fileSize(path) : 0);
+    w.u32(0);  // modified time: not reported yet
+  }
+  reply(h, w);
+}
+
+static void onFileLoad(const applink::FrameHeader& h, Reader& r, bool model) {
+  char path[IR_PATH_MAX];
+  r.str(path, sizeof(path));
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad load request");
+  const int n = model ? ampCount() : irCount();
+  int idx = -1;
+  for (int i = 0; i < n; i++)
+    if (!strcmp(model ? ampPath(i) : irPath(i), path)) idx = i;
+  if (idx < 0) return replyError(h, Err::kNotFound, model ? "No such model" : "No such IR");
+  if (!(model ? loadAmpIndex(idx) : loadIRIndex(idx)))
+    return replyError(h, Err::kIo, model ? "The model could not be loaded (not an A2-Lite model?)" : "The IR could not be loaded");
+  replyEmpty(h);
+}
+
+// ---- Files on the SD card (PROTOCOL.md 4.5)
+
+static const char* const kFolders[] = {"/IR/", "/AMP/", "/PRESETS/", "/DRUMS/"};
+
+// A file the app may write or delete: directly inside one of the folders, or a .wav in the
+// root. No hidden names, no "..", no further folders.
+static bool allowedPath(const char* p) {
+  const size_t len = strlen(p);
+  if (p[0] != '/' || len >= IR_PATH_MAX) return false;
+  for (const char* c = p; *c; c++)
+    if ((uint8_t)*c < 0x20 || *c == '\\' || *c == ':') return false;
+  const char* name = strrchr(p, '/') + 1;
+  if (!name[0] || name[0] == '.' || strstr(p, "..")) return false;
+  if (name == p + 1) return len > 5 && !strcasecmp(p + len - 4, ".wav");  // in the root
+  for (const char* f : kFolders)
+    if (!strncasecmp(p, f, strlen(f)) && name == p + strlen(f)) return true;
+  return false;
+}
+
+static constexpr uint16_t kPutChunk = 8192;
+static constexpr uint32_t kPutTimeoutMs = 10000;
+static File g_put;
+static char g_putPath[IR_PATH_MAX], g_putTmp[IR_PATH_MAX];
+static uint32_t g_putSize = 0, g_putCrcWanted = 0, g_putGot = 0, g_putCrc = 0, g_putLastMs = 0;
+
+static void abandonPut() {
+  if (!g_put) return;
+  g_put.close();
+  SD.remove(g_putTmp);
+}
+
+static bool isIn(const char* path, const char* folder) { return !strncasecmp(path, folder, strlen(folder)); }
+
+static void onPutBegin(const applink::FrameHeader& h, Reader& r) {
+  char path[IR_PATH_MAX];
+  r.str(path, sizeof(path));
+  const uint32_t size = r.u32(), crc = r.u32();
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FILE_PUT_BEGIN");
+  if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
+  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Files can only go to /AMP, /IR, /PRESETS or /DRUMS");
+  abandonPut();
+  const bool exists = SD.exists(path);
+  if (!exists && isIn(path, "/AMP/") && ampCount() >= AMP_MAX_FILES && ampPath(0)[0] == '/')
+    return replyError(h, Err::kFull, "The unit's model list is full");
+  if (!exists && !isIn(path, "/AMP/") && !isIn(path, "/PRESETS/") && !isIn(path, "/DRUMS/") && irCount() >= IR_MAX_FILES)
+    return replyError(h, Err::kFull, "The unit's IR list is full");
+  // The temporary file: a dot-name beside the target, which the scans skip.
+  const int dirLen = (int)(strrchr(path, '/') - path) + 1;
+  char dir[IR_PATH_MAX];
+  snprintf(dir, sizeof(dir), "%.*s", dirLen > 1 ? dirLen - 1 : 1, path);
+  if (dirLen > 1 && !SD.exists(dir) && !SD.mkdir(dir)) return replyError(h, Err::kIo, "Cannot create the folder");
+  snprintf(g_putTmp, sizeof(g_putTmp), "%.*s.upload.tmp", dirLen, path);
+  SD.remove(g_putTmp);
+  g_put = SD.open(g_putTmp, FILE_WRITE);
+  if (!g_put) return replyError(h, Err::kIo, "Cannot write to the SD card");
+  strlcpy(g_putPath, path, sizeof(g_putPath));
+  g_putSize = size, g_putCrcWanted = crc, g_putGot = 0, g_putCrc = 0, g_putLastMs = millis();
+  Writer w(g_txPayload, kTxPayload);
+  w.u16(kPutChunk);
+  reply(h, w);
+}
+
+static void onPutData(const applink::FrameHeader& h) {
+  if (!g_put) return replyError(h, Err::kBadPayload, "No upload is open");
+  if (h.length < 4) return replyError(h, Err::kBadPayload, "Bad FILE_PUT_DATA");
+  Reader r(g_parser.payload(), h.length);
+  const uint32_t offset = r.u32(), n = h.length - 4;
+  const uint8_t* data = g_parser.payload() + 4;
+  if (offset != g_putGot || n > kPutChunk || g_putGot + n > g_putSize) {
+    abandonPut();
+    return replyError(h, Err::kBadPayload, "Upload data out of order or too long");
+  }
+  if (g_put.write(data, n) != n) {
+    abandonPut();
+    return replyError(h, Err::kIo, "Writing to the SD card failed (card full?)");
+  }
+  g_putCrc = applink::crc32(data, n, g_putCrc);
+  g_putGot += n;
+  g_putLastMs = millis();
+  Writer w(g_txPayload, kTxPayload);
+  w.u32(g_putGot);
+  reply(h, w);
+}
+
+static void onPutEnd(const applink::FrameHeader& h) {
+  if (!g_put) return replyError(h, Err::kBadPayload, "No upload is open");
+  g_put.close();
+  if (g_putGot != g_putSize || g_putCrc != g_putCrcWanted) {
+    SD.remove(g_putTmp);
+    return replyError(h, Err::kChecksum, "The file arrived damaged; nothing was saved");
+  }
+  if (SD.exists(g_putPath)) SD.remove(g_putPath);
+  if (!SD.rename(g_putTmp, g_putPath)) {
+    SD.remove(g_putTmp);
+    return replyError(h, Err::kIo, "Cannot put the file in place");
+  }
+  if (isIn(g_putPath, "/AMP/")) ampForgetCache(g_putPath);
+  Serial.printf("Received %s (%lu bytes)\n", g_putPath, (unsigned long)g_putSize);
+  rescanCard();
+  replyEmpty(h);
+}
+
+static void onFileDelete(const applink::FrameHeader& h, Reader& r) {
+  char path[IR_PATH_MAX];
+  r.str(path, sizeof(path));
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FILE_DELETE");
+  if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
+  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Only files in /AMP, /IR, /PRESETS or /DRUMS can be deleted");
+  if (!SD.exists(path)) return replyError(h, Err::kNotFound, "No such file");
+  if (!SD.remove(path)) return replyError(h, Err::kIo, "The file could not be deleted");
+  if (isIn(path, "/AMP/")) ampForgetCache(path);
+  Serial.printf("Deleted %s\n", path);
+  rescanCard();
+  replyEmpty(h);
+}
+
+static void onRescan(const applink::FrameHeader& h) {
+  rescanCard();
+  Writer w(g_txPayload, kTxPayload);
+  w.u16((uint16_t)irCount());
+  w.u16((uint16_t)(ampCount() == 1 && ampPath(0)[0] != '/' ? 0 : ampCount()));
+  w.u16((uint16_t)presetCount());
+  w.u16((uint16_t)drumSongTotal());
+  reply(h, w);
+}
+
 static void onSubscribe(const applink::FrameHeader& h, Reader& r) {
   const uint16_t rate = r.u16();
   if (!r.done()) return replyError(h, Err::kBadPayload, "Bad SUBSCRIBE");
@@ -309,6 +477,15 @@ static void handleFrame() {
     case Msg::kSetParam: onSetParam(h, r); break;
     case Msg::kSubscribe: onSubscribe(h, r); break;
     case Msg::kPresetList: onPresetList(h); break;
+    case Msg::kModelList: onFileList(h, true); break;
+    case Msg::kIrList: onFileList(h, false); break;
+    case Msg::kModelLoad: onFileLoad(h, r, true); break;
+    case Msg::kIrLoad: onFileLoad(h, r, false); break;
+    case Msg::kFilePutBegin: onPutBegin(h, r); break;
+    case Msg::kFilePutData: onPutData(h); break;
+    case Msg::kFilePutEnd: onPutEnd(h); break;
+    case Msg::kFileDelete: onFileDelete(h, r); break;
+    case Msg::kRescan: onRescan(h); break;
     case Msg::kPresetRecall:
     case Msg::kPresetSave:
     case Msg::kPresetNew:
@@ -357,6 +534,7 @@ void serviceAppLink() {
   const uint32_t now = millis();
   // A frame that stopped half way, or the pause after a bad one (PROTOCOL.md 2.3).
   if (g_parser.busy() && now - g_lastByteMs >= kLineIdleMs) g_parser.idle();
+  if (g_put && now - g_putLastMs >= kPutTimeoutMs) abandonPut();  // PROTOCOL.md 4.5
   if (!g_session) return;
   if (now - g_lastFrameMs >= kSessionTimeoutMs) {
     g_session = false;

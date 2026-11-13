@@ -6,7 +6,7 @@
   import { blockActive, blockOn, blockOnValue, buildBlocks, type Block } from "$lib/blocks";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
-  import { connectDevice, device, meters, notice, presetAction, preview, setParam } from "$lib/device.svelte";
+  import { cardFile, connectDevice, device, dropping, meters, notice, pickFiles, presetAction, preview, setParam, transfer } from "$lib/device.svelte";
   import { baseName, formatValue } from "$lib/format";
 
   onMount(() => {
@@ -18,8 +18,10 @@
   const blocks = $derived(buildBlocks(device.settings));
   const lane = $derived(blocks.lane);
   const all = $derived([...blocks.chain, blocks.lane, ...(blocks.other ? [blocks.other] : [])]);
-  // The address can name the block to open ("#reverb"): handy when working on the UI.
-  let selectedId = $state((typeof location !== "undefined" && location.hash.slice(1)) || "amp");
+  // The address can name the block and the library tab to open ("#reverb", "#amp/models"):
+  // handy when working on the UI.
+  const [hashBlock, hashTab] = (typeof location !== "undefined" ? location.hash.slice(1) : "").split("/");
+  let selectedId = $state(hashBlock || "amp");
   const selected = $derived(all.find((b) => b.def.id === selectedId) ?? all[0]);
 
   const value = (id: number, fallback: number) => device.values[id] ?? fallback;
@@ -46,6 +48,15 @@
     clipSeen = meters.clipped;
   });
   const clipping = $derived(now - clipAt < 2000);
+
+  // ---- The library on the unit's card: presets, amp models, IRs
+  let tab = $state<"presets" | "models" | "irs">(hashTab === "models" || hashTab === "irs" ? hashTab : "presets");
+  const cardList = $derived(tab === "models" ? device.models : device.irs);
+  const loadedPath = $derived(tab === "models" ? device.files.model : device.files.ir);
+  let deleting = $state("");
+  const kb = (bytes: number) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+  const sending = $derived(!transfer.done);
+  const sentShown = $derived(transfer.done && !transfer.error && transfer.name && now - transfer.at < 4000);
 
   // ---- Presets
   const current = $derived(device.files.preset);
@@ -139,8 +150,47 @@
   {/if}
 
   <div class="columns">
-  <aside aria-label="Presets">
-    <h3>Presets</h3>
+  <aside aria-label="Library" class:dropping={dropping.on}>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected={tab === "presets"} onclick={() => (tab = "presets")}>Presets</button>
+      <button role="tab" aria-selected={tab === "models"} onclick={() => (tab = "models")}>Amps</button>
+      <button role="tab" aria-selected={tab === "irs"} onclick={() => (tab = "irs")}>IRs</button>
+    </div>
+    {#if tab !== "presets"}
+      {#if !device.files.card}
+        <p class="none">No SD card in the unit.</p>
+      {:else if !cardList.length}
+        <p class="none">{tab === "models" ? "No amp models on the card. Add NAM A2 files (.nam)." : "No IRs on the card. Add .wav files."}</p>
+      {/if}
+      <ul>
+        {#each cardList as f (f.path)}
+          <li class="file">
+            {#if deleting === f.path}
+              <div class="row confirm">
+                <span class="ask">Delete "{stem(f.path)}" from the card?</span>
+                <button class="danger" onclick={() => (cardFile("delete", f.path), (deleting = ""))}>Delete</button>
+                <button onclick={() => (deleting = "")}>Keep</button>
+              </div>
+            {:else}
+              <button class:current={f.path === loadedPath} aria-current={f.path === loadedPath} title="{f.path} · {kb(f.size)}" onclick={() => f.path !== loadedPath && cardFile(tab === "models" ? "model" : "ir", f.path)}>
+                <span class="pname">{stem(f.path)}</span>
+              </button>
+              <button class="del" aria-label="Delete {stem(f.path)}" title="Delete from the card" onclick={() => (deleting = f.path)}>×</button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      <div class="tools">
+        {#if sending}
+          <div class="sending">Sending {transfer.name}<br />{kb(transfer.sent)} of {kb(transfer.total)}</div>
+          <div class="progress"><div style:width="{transfer.total ? (100 * transfer.sent) / transfer.total : 0}%"></div></div>
+        {:else}
+          {#if sentShown}<div class="sending">{transfer.name} is on the unit.</div>{/if}
+          <div class="row"><button disabled={!device.files.card} onclick={pickFiles}>Add files…</button></div>
+          <p class="hint">Or drop .nam and .wav files on the window.</p>
+        {/if}
+      </div>
+    {:else}
     {#if !device.files.card}
       <p class="none">No SD card in the unit.</p>
     {:else if !device.presets.length}
@@ -177,6 +227,7 @@
           <button onclick={() => (confirmDelete = true)}>Delete</button>
         {/if}
       </div>
+    {/if}
     {/if}
   </aside>
   <div class="main">
@@ -230,6 +281,9 @@
       {#if selected.def.file}
         <span class="file" title={fileOf(selected)}>{baseName(fileOf(selected)) || (selected.def.file === "model" ? "No model loaded" : "No IR loaded: the cab passes the sound through")}</span>
       {/if}
+      {#if selected.def.file}
+        <button class="choose" onclick={() => (tab = selected.def.file === "model" ? "models" : "irs")}>Choose…</button>
+      {/if}
       <span class="grow"></span>
       {#if cpuOf(selected) !== null}<span class="stagecpu" title="This block's share of the processing time">{cpuOf(selected)?.toFixed(1)}% CPU</span>{/if}
       {#if selected.on}
@@ -248,7 +302,7 @@
         </div>
       </div>
     {:else}
-      <p class="none">This block has no settings of its own.</p>
+      <p class="none">{selected.def.file === "ir" ? "The cab is the IR alone: choose it under IRs in the library on the left." : "This block has no settings of its own."}</p>
     {/each}
   </section>
 
@@ -392,8 +446,80 @@
     border-right: 1px solid #2a2e37;
     overflow-y: auto;
   }
-  aside h3 {
-    padding: 0 8px;
+  aside.dropping {
+    outline: 2px dashed #ffb347;
+    outline-offset: -6px;
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 10px;
+    padding: 3px;
+    background: #101216;
+    border-radius: 9px;
+  }
+  .tabs button {
+    flex: 1;
+    padding: 5px 0;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    font-size: 12px;
+    color: #8a92a0;
+  }
+  .tabs button[aria-selected="true"] {
+    background: #262a33;
+    color: #e6e8ec;
+  }
+  li.file {
+    display: flex;
+    align-items: center;
+  }
+  li.file > button:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  li.file .pname {
+    font-weight: 500;
+  }
+  aside li .del {
+    width: 22px;
+    flex: none;
+    padding: 4px 0;
+    justify-content: center;
+    color: #8a92a0;
+    opacity: 0;
+  }
+  li.file:hover .del,
+  .del:focus-visible {
+    opacity: 1;
+  }
+  .confirm {
+    padding: 6px 8px;
+    background: #1c2027;
+    border-radius: 7px;
+  }
+  .sending {
+    padding: 0 2px 6px;
+    font-size: 11.5px;
+    color: #c3c8d1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .progress {
+    height: 5px;
+    background: #23272f;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress div {
+    height: 100%;
+    background: #ffb347;
+  }
+  .hint {
+    margin: 7px 2px 0;
+    font-size: 11.5px;
+    color: #8a92a0;
   }
   aside ul {
     list-style: none;
@@ -745,6 +871,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .choose {
+    flex: none;
+    border: 1px solid #353b47;
+    background: #22262e;
+    border-radius: 7px;
+    padding: 3px 10px;
   }
   .grow {
     flex: 1;

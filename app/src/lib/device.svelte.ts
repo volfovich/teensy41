@@ -3,7 +3,7 @@
 //
 // In a plain browser (npm run dev, without Tauri) there is no device: the window then shows a
 // saved copy of the unit's state with moving meters, for working on the UI.
-import type { DeviceEvent, Meters, Snapshot } from "./types";
+import type { DeviceEvent, Meters, Snapshot, Transfer } from "./types";
 
 const empty: Snapshot = {
   connected: false,
@@ -13,6 +13,8 @@ const empty: Snapshot = {
   values: [],
   files: { model: "", ir: "", preset: "", edited: false, card: false },
   presets: [],
+  models: [],
+  irs: [],
 };
 
 const noMeters: Meters = {
@@ -28,6 +30,15 @@ export const meters = $state<Meters>({ ...noMeters });
 export const preview = $state({ on: false });
 /** The last thing the unit refused ("No such preset"), for the screen to show briefly. */
 export const notice = $state({ text: "", at: 0 });
+/** The file being sent to the unit, or the last one sent (`at`: when it last changed). */
+export const transfer = $state<Transfer & { at: number }>({ name: "", sent: 0, total: 0, done: true, error: "", at: 0 });
+/** True while files are dragged over the window. */
+export const dropping = $state({ on: false });
+
+function say(text: string) {
+  notice.text = text;
+  notice.at = performance.now();
+}
 
 const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -66,8 +77,17 @@ function apply(e: DeviceEvent) {
       device.presets = e.presets;
       break;
     case "refused":
-      notice.text = e.message;
-      notice.at = performance.now();
+      say(e.message);
+      break;
+    case "models":
+      device.models = e.files;
+      break;
+    case "irs":
+      device.irs = e.files;
+      break;
+    case "transfer":
+      Object.assign(transfer, { name: e.name, sent: e.sent, total: e.total, done: e.done, error: e.error, at: performance.now() });
+      if (e.error) say(`${e.name}: ${e.error}`);
       break;
     case "presetsChanged":
       break;
@@ -90,7 +110,16 @@ export async function connectDevice(): Promise<() => void> {
   // Listen first, then take the snapshot, so nothing falls between the two.
   const unlisten = await listen<DeviceEvent>("device", (msg) => apply(msg.payload));
   Object.assign(device, await invoke<Snapshot>("snapshot"));
-  return unlisten;
+  // Files dropped on the window from Finder go to the unit.
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  const undrop = await getCurrentWebview().onDragDropEvent((e) => {
+    dropping.on = e.payload.type === "enter" || e.payload.type === "over";
+    if (e.payload.type === "drop" && e.payload.paths.length) void invoke("send_files", { paths: e.payload.paths });
+  });
+  return () => {
+    unlisten();
+    undrop();
+  };
 }
 
 // Values waiting to go out: the newest per setting, sent once per display frame (about 60
@@ -119,6 +148,27 @@ export function setParam(id: number, value: number) {
     flushQueued = true;
     requestAnimationFrame(flush);
   }
+}
+
+/** Loads a model or an IR that is on the card, or deletes a file from it. */
+export function cardFile(action: "model" | "ir" | "delete", path: string) {
+  if (inTauri) {
+    void import("@tauri-apps/api/core").then(({ invoke }) => invoke("card_file", { action, path }));
+    return;
+  }
+  if (action === "model") device.files.model = path;
+  else if (action === "ir") device.files.ir = path;
+  else {
+    device.models = device.models.filter((f) => f.path !== path);
+    device.irs = device.irs.filter((f) => f.path !== path);
+  }
+  if (action !== "delete" && device.files.preset) device.files.edited = true;
+}
+
+/** Opens the file dialog; what is picked (.nam, .wav) is sent to the unit. */
+export function pickFiles() {
+  if (inTauri) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("pick_files"));
+  else say("Sending files needs the unit: this is the preview.");
 }
 
 export type PresetAction = "recall" | "save" | "new" | "rename" | "delete";
@@ -153,6 +203,8 @@ export function presetAction(action: PresetAction, name?: string) {
 async function startPreview(): Promise<() => void> {
   const snapshot = (await import("./demo-snapshot.json")).default as Snapshot;
   Object.assign(device, structuredClone(snapshot));
+  device.models = [device.files.model, "/AMP/Recto Modern Red.nam", "/AMP/Deluxe Reverb clean.nam", "/AMP/5150 Block Letter.nam"].filter(Boolean).sort().map((path) => ({ path, size: 665758 }));
+  device.irs = [device.files.ir, "/IR/Mesa OS 4x12 V30.wav", "/IR/Greenback 2x12.wav"].filter(Boolean).sort().map((path) => ({ path, size: 96044 }));
   device.presets = ["01 Recto", device.files.preset || "02 Crunch", "03 Vintage clean"].map((name) => ({ name, number: Number(name.slice(0, 2)) }));
   preview.on = true;
   const t0 = performance.now();

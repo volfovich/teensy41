@@ -66,6 +66,9 @@ SECTIONS
 		*src/Tuner.cpp.o(.text._Z[0-9]* .text._ZL*)
 		*src/MidiControl.cpp.o(.text*)
 		*src/AppLink.cpp.o(.text*)
+		/* The SD library's File classes: inline methods that the files above share with
+		   others, so the linker may keep the copy of a file that is not listed. */
+		*(.text._ZN6SDFile* .text._ZN4File* .text._ZN10StreamFile* .text._ZN8SdSource*)
 		. = ALIGN(4);
 		KEEP(*(.init))
 		__preinit_array_start = .;

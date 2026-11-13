@@ -3,7 +3,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use namforge_core::{DeviceHandle, DeviceInfo, Event, Files, Preset, Setting};
+use namforge_core::{DeviceHandle, DeviceInfo, Event, FileEntry, Files, Preset, Setting};
+use tauri_plugin_dialog::DialogExt;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 
@@ -19,6 +20,8 @@ struct Snapshot {
     values: Vec<i16>,
     files: Files,
     presets: Vec<Preset>,
+    models: Vec<FileEntry>,
+    irs: Vec<FileEntry>,
 }
 
 impl Snapshot {
@@ -45,7 +48,9 @@ impl Snapshot {
             }
             Event::Files { files } => self.files = files.clone(),
             Event::Presets { presets } => self.presets = presets.clone(),
-            Event::Meters { .. } | Event::PresetsChanged | Event::Refused { .. } => {}
+            Event::Models { files } => self.models = files.clone(),
+            Event::Irs { files } => self.irs = files.clone(),
+            Event::Meters { .. } | Event::PresetsChanged | Event::Refused { .. } | Event::Transfer { .. } => {}
             Event::Disconnected { reason } => {
                 self.connected = false;
                 self.detail = reason.clone();
@@ -86,9 +91,44 @@ fn preset(app: State<'_, App>, action: String, name: Option<String>) -> Result<(
     Ok(())
 }
 
+/// Loads a model ("model") or an IR ("ir") that is on the card, or deletes a file ("delete").
+#[tauri::command]
+fn card_file(app: State<'_, App>, action: String, path: String) -> Result<(), String> {
+    match action.as_str() {
+        "model" => app.device.load_model(&path),
+        "ir" => app.device.load_ir(&path),
+        "delete" => app.device.delete_file(&path),
+        other => return Err(format!("unknown file action {other}")),
+    }
+    Ok(())
+}
+
+/// Sends .nam and .wav files from the Mac to the card, one after the other. Progress arrives
+/// as `transfer` events.
+#[tauri::command]
+fn send_files(app: State<'_, App>, paths: Vec<String>) {
+    for path in paths {
+        app.device.send_file(path);
+    }
+}
+
+/// Opens the file dialog and sends what the user picks.
+#[tauri::command]
+async fn pick_files(handle: tauri::AppHandle) -> Result<(), String> {
+    let picked = handle.dialog().file().add_filter("Amp models and IRs", &["nam", "wav"]).blocking_pick_files();
+    let app = handle.state::<App>();
+    for file in picked.unwrap_or_default() {
+        if let Ok(path) = file.into_path() {
+            app.device.send_file(path);
+        }
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let snapshot = Arc::new(Mutex::new(Snapshot { detail: "Looking for the unit…".into(), ..Default::default() }));
             let handle = app.handle().clone();
@@ -103,6 +143,8 @@ pub fn run() {
                         }
                         Event::Schema { settings } => eprintln!("event: schema ({} settings)", settings.len()),
                         Event::Meters { .. } => {}
+                        Event::Models { files } => eprintln!("event: models ({})", files.len()),
+                        Event::Irs { files } => eprintln!("event: irs ({})", files.len()),
                         other => eprintln!("event: {other:?}"),
                     }
                 }
@@ -111,7 +153,7 @@ pub fn run() {
             app.manage(App { device, snapshot });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset])
+        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files])
         .run(tauri::generate_context!())
         .expect("error while running NAM Forge");
 }

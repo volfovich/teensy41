@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use namforge_link::{encode_frame, flags, msg, ErrorCode, Fed, Frame, FrameParser, Reader, WireError, Writer};
 
-use crate::types::{DeviceInfo, Event, Files, Meters, Preset, Setting};
+use crate::types::{DeviceInfo, Event, FileEntry, Files, Meters, Preset, Setting};
 
 /// The app's name as sent in `HELLO`.
 pub const APP_ID: &str = concat!("NAM Forge ", env!("CARGO_PKG_VERSION"));
@@ -219,6 +219,51 @@ impl<T: Read + Write> Session<T> {
             }
         }
         self.request_within(msg_type, &w.finish(), SLOW_REPLY_TIMEOUT).map(|_| ())
+    }
+
+    /// The amp models (`MODEL_LIST`) or the IRs (`IR_LIST`) on the card.
+    pub fn file_list(&mut self, msg_type: u8) -> Result<Vec<FileEntry>, SessionError> {
+        let f = self.request_within(msg_type, &[], SLOW_REPLY_TIMEOUT)?;
+        (|| -> Result<Vec<FileEntry>, WireError> {
+            let mut r = Reader::new(&f.payload);
+            let n = r.u16()?;
+            let mut list = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                let (path, size, _modified) = (r.str()?, r.u32()?, r.u32()?);
+                list.push(FileEntry { path, size });
+            }
+            r.done()?;
+            Ok(list)
+        })()
+        .map_err(|problem| SessionError::Malformed { request: msg_type, problem })
+    }
+
+    /// A request whose payload is one path and whose reply is empty: `MODEL_LOAD`, `IR_LOAD`,
+    /// `FILE_DELETE`.
+    pub fn with_path(&mut self, msg_type: u8, path: &str) -> Result<(), SessionError> {
+        let mut w = Writer::new();
+        w.str(path).map_err(|problem| SessionError::Malformed { request: msg_type, problem })?;
+        self.request_within(msg_type, &w.finish(), SLOW_REPLY_TIMEOUT).map(|_| ())
+    }
+
+    /// Sends a file to the card. `progress` is called with the bytes sent so far. The unit
+    /// checks size and CRC, puts the file in place and rescans the card before it replies.
+    pub fn put_file(&mut self, path: &str, data: &[u8], mut progress: impl FnMut(u32)) -> Result<(), SessionError> {
+        let malformed = |problem| SessionError::Malformed { request: msg::FILE_PUT_BEGIN, problem };
+        let mut w = Writer::new();
+        w.str(path).map_err(malformed)?;
+        w.u32(data.len() as u32).u32(namforge_link::crc32(data, 0));
+        let f = self.request_within(msg::FILE_PUT_BEGIN, &w.finish(), SLOW_REPLY_TIMEOUT)?;
+        let chunk = Reader::new(&f.payload).u16().map_err(malformed)?.max(1) as usize;
+        let mut sent = 0usize;
+        for part in data.chunks(chunk) {
+            let mut w = Writer::new();
+            w.u32(sent as u32).bytes(part);
+            self.request_within(msg::FILE_PUT_DATA, &w.finish(), SLOW_REPLY_TIMEOUT)?;
+            sent += part.len();
+            progress(sent as u32);
+        }
+        self.request_within(msg::FILE_PUT_END, &[], Duration::from_secs(15)).map(|_| ())
     }
 
     /// Asks for meter frames at `rate` per second (0 = none); returns the rate in force.

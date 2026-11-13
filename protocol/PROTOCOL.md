@@ -2,7 +2,7 @@
 
 Version 1 · The single reference for both sides: the firmware (`lib/applink`, `src/AppLink.cpp`) and the app (`app/crates/namforge-link`).
 
-The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2) and presets (A3) are implemented on both sides. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
+The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. Not implemented yet: `MODEL_INFO`, `IR_INFO`, `FILE_GET`, `FILE_RENAME`, `DIR_LIST`, `CARD_INFO`. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
 
 ---
 
@@ -156,7 +156,9 @@ Names are exact ("03 Lead"). A recall loads the model and the IR before it repli
 
 ### 4.5 Files on the SD card (since A4)
 
-Paths are absolute and must be inside `/IR`, `/AMP`, `/PRESETS` or `/DRUMS`, or be a `.wav` file in the root. Anything else is refused with `BAD_PATH`.
+Paths are absolute and must name a file directly inside `/IR`, `/AMP`, `/PRESETS` or `/DRUMS` (no further folders), or a `.wav` file in the root. Names that start with a dot and paths with `..` are refused. Anything else is refused with `BAD_PATH`.
+
+After an upload or a delete the device rescans the card before it replies; the loaded model and IR keep playing and stay marked. The lists report a modified time of 0 for now, and leave out the built-in model.
 
 **Upload.** One upload at a time.
 

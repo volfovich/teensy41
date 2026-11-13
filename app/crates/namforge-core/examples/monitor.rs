@@ -37,6 +37,21 @@ fn main() {
     let mut set_at: Option<Instant> = None;
     let end = Instant::now() + Duration::from_secs(seconds);
     while Instant::now() < end {
+        // "send <file on the Mac>", "load-model <path>", "load-ir <path>", "delete <path on the card>".
+        if let (Some(action), Some(arg), Some(at)) = (args.get(1), args.get(2), preset_at) {
+            if Instant::now() >= at && action != "preset" {
+                match action.as_str() {
+                    "send" => device.send_file(arg),
+                    "load-model" => device.load_model(arg),
+                    "load-ir" => device.load_ir(arg),
+                    "delete" => device.delete_file(arg),
+                    _ => {}
+                }
+                if ["send", "load-model", "load-ir", "delete"].contains(&action.as_str()) {
+                    preset_at = None;
+                }
+            }
+        }
         if let (Some((action, name)), Some(at)) = (&preset, preset_at) {
             if Instant::now() >= at {
                 preset_at = None;
@@ -110,6 +125,13 @@ fn main() {
                 println!("presets: {}", presets.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", "))
             }
             Event::PresetsChanged => {}
+            Event::Models { files } => println!("models: {} on the card", files.len()),
+            Event::Irs { files } => println!("IRs: {} on the card", files.len()),
+            Event::Transfer { name, sent, total, done, error } => {
+                if done || sent == 0 {
+                    println!("transfer {name}: {sent} of {total} bytes{}{}", if done { ", done" } else { "" }, if error.is_empty() { String::new() } else { format!(", {error}") })
+                }
+            }
             Event::Refused { message } => println!("refused: {message}"),
             Event::Disconnected { reason } => println!("disconnected: {reason}"),
         }

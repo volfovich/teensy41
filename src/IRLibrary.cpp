@@ -87,6 +87,16 @@ void scanCard() {
   scanPresets();
 }
 
+void rescanCard() {
+  char ir[IR_PATH_MAX] = "", amp[IR_PATH_MAX] = "";
+  if (g_current >= 0) strlcpy(ir, g_files[g_current], IR_PATH_MAX);
+  if (ampCurrent() >= 0) strlcpy(amp, ampPath(ampCurrent()), IR_PATH_MAX);
+  scanCard();
+  for (int i = 0; i < g_numFiles; i++)
+    if (!strcmp(g_files[i], ir)) g_current = i;
+  ampMarkLoaded(amp);
+}
+
 // ---------------------------------------------------------------------------
 // IR loading
 // ---------------------------------------------------------------------------

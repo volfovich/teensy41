@@ -87,6 +87,15 @@ pub struct Preset {
     pub number: u16,
 }
 
+/// A model or IR file on the unit's SD card.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    /// "/AMP/JCM 800.nam"
+    pub path: String,
+    pub size: u32,
+}
+
 /// Everything the device side reports to the UI.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -101,6 +110,11 @@ pub enum Event {
     Files { files: Files },
     Meters { meters: Meters },
     Presets { presets: Vec<Preset> },
+    Models { files: Vec<FileEntry> },
+    Irs { files: Vec<FileEntry> },
+    /// A file on its way to the unit: `sent` of `total` bytes. `done` with an empty `error` means it
+    /// arrived and is in the lists; with an `error`, why it was not sent.
+    Transfer { name: String, sent: u32, total: u32, done: bool, error: String },
     /// The list of presets changed on the unit; the device thread fetches it again.
     PresetsChanged,
     /// Something the user asked for was refused ("No such preset").

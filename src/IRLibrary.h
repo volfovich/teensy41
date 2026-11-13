@@ -8,6 +8,11 @@ void scanCard();
 
 // Loads file idx (0-based) and, with save, remembers it in the settings (the
 // IR loaded at startup). False on failure.
+// Rescans the card while the sound keeps playing: the loaded IR and model stay loaded and
+// stay marked in the new lists (unless their files have gone). For after files were added
+// or deleted.
+void rescanCard();
+
 bool loadIRIndex(int idx, bool save = true);
 // Remembers the IR playing now in the settings.
 void saveCurrentIR();

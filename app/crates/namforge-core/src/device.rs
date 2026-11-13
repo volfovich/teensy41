@@ -2,6 +2,7 @@
 //! UI's commands, and start over when it is unplugged.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -11,6 +12,7 @@ use serialport::{SerialPort, SerialPortType};
 use namforge_link::msg;
 
 use crate::session::{Session, SessionError};
+use crate::files;
 use crate::types::Event;
 
 /// The Teensy's USB identity with the firmware's "MIDI + Serial" USB type.
@@ -30,6 +32,10 @@ enum Command {
     SetParam { id: u16, value: i32 },
     /// A preset request (its message type) with its name, if it takes one.
     Preset { msg_type: u8, name: Option<String> },
+    /// `MODEL_LOAD`, `IR_LOAD` or `FILE_DELETE` with a path on the card.
+    Path { msg_type: u8, path: String },
+    /// Send this file from the Mac to the card.
+    Send { local: PathBuf },
 }
 
 /// The UI's handle on the device thread. Dropping it stops the thread.
@@ -63,6 +69,23 @@ impl DeviceHandle {
     }
     pub fn delete_preset(&self, name: &str) {
         self.preset(msg::PRESET_DELETE, Some(name));
+    }
+    /// Loads an amp model from the card ("/AMP/x.nam").
+    pub fn load_model(&self, path: &str) {
+        let _ = self.commands.send(Command::Path { msg_type: msg::MODEL_LOAD, path: path.into() });
+    }
+    /// Loads an IR from the card.
+    pub fn load_ir(&self, path: &str) {
+        let _ = self.commands.send(Command::Path { msg_type: msg::IR_LOAD, path: path.into() });
+    }
+    /// Deletes a model or IR file from the card.
+    pub fn delete_file(&self, path: &str) {
+        let _ = self.commands.send(Command::Path { msg_type: msg::FILE_DELETE, path: path.into() });
+    }
+    /// Sends a .nam or .wav file to the card (to /AMP or /IR). Progress and the result arrive
+    /// as [`Event::Transfer`].
+    pub fn send_file(&self, local: impl Into<PathBuf>) {
+        let _ = self.commands.send(Command::Send { local: local.into() });
     }
     fn preset(&self, msg_type: u8, name: Option<&str>) {
         let _ = self.commands.send(Command::Preset { msg_type, name: name.map(str::to_string) });
@@ -145,6 +168,7 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
         Ok(info) => info,
         Err(e) => return lost(e),
     };
+    let max_path = info.max_path as usize;
     emit(Event::Connected { info });
     match s.schema() {
         Ok(settings) => emit(Event::Schema { settings }),
@@ -164,7 +188,12 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
         Err(e) => return lost(e),
     }
 
+    if let Err(e) = file_lists(&mut s, emit) {
+        return lost(e);
+    }
+
     let mut last_state = Instant::now() - KEEPALIVE;
+    let mut card: Option<bool> = None;
     loop {
         if last_state.elapsed() >= KEEPALIVE {
             match s.state() {
@@ -179,6 +208,7 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
         let mut order: Vec<u16> = Vec::new();
         let mut newest: HashMap<u16, i32> = HashMap::new();
         let mut presets: Vec<(u8, Option<String>)> = Vec::new();
+        let mut others: Vec<Command> = Vec::new();
         loop {
             match commands.try_recv() {
                 Ok(Command::SetParam { id, value }) => {
@@ -187,6 +217,7 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
                     }
                 }
                 Ok(Command::Preset { msg_type, name }) => presets.push((msg_type, name)),
+                Ok(other) => others.push(other),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return End::Quit,
             }
@@ -208,10 +239,36 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
             }
         }
 
+        for command in others {
+            let (result, lists) = match command {
+                Command::Path { msg_type, path } => (s.with_path(msg_type, &path), msg_type == msg::FILE_DELETE),
+                Command::Send { local } => (send_file(&mut s, &local, max_path, emit), true),
+                _ => continue,
+            };
+            match result {
+                Ok(()) => last_state = Instant::now() - KEEPALIVE,
+                Err(SessionError::Device { message, .. }) => emit(Event::Refused { message }),
+                Err(e) => return lost(e),
+            }
+            if lists {
+                if let Err(e) = file_lists(&mut s, emit) {
+                    return lost(e);
+                }
+            }
+        }
+
         // Waits up to the port's read timeout, so this loop does not spin.
         match s.events() {
             Ok(events) => {
                 for event in events {
+                    // A card put in or taken out: its files are different ones.
+                    if let Event::Files { files } = &event {
+                        if card.replace(files.card) == Some(!files.card) {
+                            if let Err(e) = file_lists(&mut s, emit) {
+                                return lost(e);
+                            }
+                        }
+                    }
                     if event == Event::PresetsChanged {
                         match s.presets() {
                             Ok(presets) => emit(Event::Presets { presets }),
@@ -225,5 +282,53 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
             }
             Err(e) => return lost(e),
         }
+    }
+}
+
+/// Fetches the model and IR lists. Firmware before file support refuses; the lists stay empty.
+fn file_lists(s: &mut Session<Box<dyn SerialPort>>, emit: &impl Fn(Event)) -> Result<(), SessionError> {
+    for (msg_type, models) in [(msg::MODEL_LIST, true), (msg::IR_LIST, false)] {
+        match s.file_list(msg_type) {
+            Ok(files) => emit(if models { Event::Models { files } } else { Event::Irs { files } }),
+            Err(SessionError::Device { .. }) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+/// Reads, checks and sends one file. Problems with the file itself are reported as a finished
+/// transfer with an error, not as a failure of the connection.
+fn send_file(s: &mut Session<Box<dyn SerialPort>>, local: &Path, max_path: usize, emit: &impl Fn(Event)) -> Result<(), SessionError> {
+    let name = local.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let transfer = |sent: u32, total: u32, done: bool, error: &str| {
+        emit(Event::Transfer { name: name.clone(), sent, total, done, error: error.to_string() })
+    };
+    let data = match std::fs::read(local) {
+        Ok(data) => data,
+        Err(e) => {
+            transfer(0, 0, true, &format!("The file could not be read ({e})."));
+            return Ok(());
+        }
+    };
+    let total = data.len() as u32;
+    let checked = match files::check(local, &data, max_path) {
+        Ok(checked) => checked,
+        Err(why) => {
+            transfer(0, total, true, &why);
+            return Ok(());
+        }
+    };
+    transfer(0, total, false, "");
+    match s.put_file(&checked.device_path, &data, |sent| transfer(sent, total, false, "")) {
+        Ok(()) => {
+            transfer(total, total, true, "");
+            Ok(())
+        }
+        Err(SessionError::Device { message, .. }) => {
+            transfer(0, total, true, &message);
+            Ok(())
+        }
+        Err(e) => Err(e),
     }
 }

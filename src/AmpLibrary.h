@@ -24,6 +24,12 @@ const dsp::NamInfo& ampInfo();
 // Sets the amp's input and output gains and its tone controls from the
 // settings (amp in / out / cal / bass / mid / treble / presence, the input's
 // full scale) and the model: call when any of them change.
+// For a rescan while a model plays (IRLibrary rescanCard): marks the model at path as the
+// loaded one without loading it ("" or not in the list: none).
+void ampMarkLoaded(const char* path);
+// Removes the weights cache of the model at path (after the file was replaced or deleted).
+void ampForgetCache(const char* path);
+
 void ampApplyGains();
 // The input's full scale at the guitar, in dBu: the ADC's (ADC_FULL_SCALE_DBU
 // in config.h; fixed, there is no input gain setting on this hardware) plus

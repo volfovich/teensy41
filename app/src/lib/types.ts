@@ -64,6 +64,21 @@ export interface Preset {
   number: number;
 }
 
+/** A model or IR file on the unit's SD card. */
+export interface FileEntry {
+  path: string;
+  size: number;
+}
+
+/** A file on its way to the unit. `done` with an empty `error` means it arrived. */
+export interface Transfer {
+  name: string;
+  sent: number;
+  total: number;
+  done: boolean;
+  error: string;
+}
+
 export interface Snapshot {
   connected: boolean;
   detail: string;
@@ -72,6 +87,8 @@ export interface Snapshot {
   values: number[];
   files: Files;
   presets: Preset[];
+  models: FileEntry[];
+  irs: FileEntry[];
 }
 
 export type DeviceEvent =
@@ -84,6 +101,9 @@ export type DeviceEvent =
   | { kind: "meters"; meters: Meters }
   | { kind: "presets"; presets: Preset[] }
   | { kind: "presetsChanged" }
+  | { kind: "models"; files: FileEntry[] }
+  | { kind: "irs"; files: FileEntry[] }
+  | ({ kind: "transfer" } & Transfer)
   | { kind: "refused"; message: string }
   | { kind: "disconnected"; reason: string };
 

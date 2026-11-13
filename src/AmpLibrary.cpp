@@ -144,6 +144,17 @@ static bool readCache(const char* path, uint32_t size, uint32_t stamp, dsp::NamI
   return ok;
 }
 
+void ampForgetCache(const char* path) {
+  char cp[IR_PATH_MAX + 16];
+  if (cachePathOf(path, cp, sizeof(cp)) && SD.exists(cp)) SD.remove(cp);
+}
+
+void ampMarkLoaded(const char* path) {
+  g_current = -1;
+  for (int i = 0; i < g_numFiles; i++)
+    if (!strcmp(g_files[i], path)) g_current = i;
+}
+
 // Written through a temporary file, so a failed write leaves no half cache.
 static void writeCache(const char* path, uint32_t size, uint32_t stamp, const dsp::NamInfo& info) {
   char cp[IR_PATH_MAX + 16], tmp[sizeof(kCacheDir) + 16];

@@ -10,7 +10,7 @@ event, and tries bad input. Prints PASS or FAIL per step.
 It changes the reverb mix for a moment and puts it back. Needs pyserial (PlatformIO's Python
 has it). Close any serial monitor first.
 """
-import glob
+import glob, os
 import struct
 import sys
 import time
@@ -224,6 +224,68 @@ def main():
               "the sound from before is back (preset %r, edited mark %d)" % (was, files3["edited"]))
     else:
         print("SKIP  presets: no SD card")
+
+    # Models, IRs and files: lists; send an IR and a model, load the model, delete both.
+    def file_list(t):
+        f, _ = link.request(t, wait=5)
+        r = Reader(f[3])
+        return [(r.str(), r.u32(), r.u32()) for _ in range(r.u16())]
+
+    def put(path, data, crc=None, wait=20):
+        """Uploads data; returns the reply to FILE_PUT_END (or the first error reply) and the seconds it took."""
+        t0 = time.time()
+        f, _ = link.request(0x40, string(path) + struct.pack("<II", len(data), zlib.crc32(data) if crc is None else crc))
+        if f[1] != 1:
+            return f, 0
+        chunk = Reader(f[3]).u16()
+        for off in range(0, len(data), chunk):
+            f, _ = link.request(0x41, struct.pack("<I", off) + data[off:off + chunk], wait=5)
+            if f is None or f[1] != 1:
+                return f, 0
+        f, _ = link.request(0x42, wait=wait)
+        return f, time.time() - t0
+
+    if files["card"]:
+        models, irs = file_list(0x30), file_list(0x38)
+        check(files["model"] in [m[0] for m in models] and files["ir"] in [i[0] for i in irs] and all(m[1] > 0 for m in models),
+              "MODEL_LIST: %d models, IR_LIST: %d IRs, the loaded ones among them" % (len(models), len(irs)))
+        # A 0.1 s mono 16-bit WAV: a click and silence.
+        pcm = struct.pack("<h", 20000) + bytes(2 * 4799)
+        wav = b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 48000, 96000, 2, 16) \
+            + b"data" + struct.pack("<I", len(pcm)) + pcm
+        f, _ = put("/IR/applink test.wav", wav, crc=1)
+        check(f[1] == 3 and Reader(f[3]).u16() == 8 and "/IR/applink test.wav" not in [i[0] for i in file_list(0x38)],
+              "an upload with a wrong CRC: error CHECKSUM, nothing saved")
+        f, secs = put("/IR/applink test.wav", wav)
+        check(f[1] == 1 and ("/IR/applink test.wav", len(wav), 0) in file_list(0x38) and state()[1] == files,
+              "FILE_PUT: a %d-byte IR arrives and is listed; the loaded files stay marked" % len(wav))
+        for bad in ("/SECRET/x.wav", "/AMP/../x.nam", "/AMP/.hidden.nam", "/x.txt", "/AMP/sub/x.nam"):
+            f, _ = put(bad, b"1234")
+            if not (f[1] == 3 and Reader(f[3]).u16() == 5):
+                check(False, "FILE_PUT to %s must be refused" % bad)
+        check(True, "FILE_PUT outside the allowed folders: error BAD_PATH")
+        nam = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../test/fixtures/nam/A2.nam"), "rb").read()
+        f, secs = put("/AMP/applink test.nam", nam)
+        check(f[1] == 1 and ("/AMP/applink test.nam", len(nam), 0) in file_list(0x30),
+              "FILE_PUT: a %d KB model in %.1f s (%.0f KB/s)" % (len(nam) // 1024, secs, len(nam) / 1024 / max(secs, 0.01)))
+        f, _ = link.request(0x31, string("/AMP/applink test.nam"), wait=8)
+        link.poll(0.3)
+        check(f[1] == 1 and state()[1]["model"] == "/AMP/applink test.nam", "MODEL_LOAD loads the model just sent")
+        f, _ = link.request(0x31, string(files["model"]), wait=8)
+        f, _ = link.request(0x39, string(files["ir"]), wait=8)
+        link.poll(0.3)
+        check(f[1] == 1 and state()[1] == files, "MODEL_LOAD and IR_LOAD of the files from before: the state is as it was")
+        for path in ("/AMP/applink test.nam", "/IR/applink test.wav"):
+            f, _ = link.request(0x45, string(path), wait=8)
+        check(f[1] == 1 and file_list(0x30) == models and file_list(0x38) == irs and state()[1] == files,
+              "FILE_DELETE of both: the lists and the state are as before")
+        f, _ = link.request(0x45, string("/AMP/applink test.nam"))
+        check(f[1] == 3 and Reader(f[3]).u16() == 3, "FILE_DELETE of a missing file: error NOT_FOUND")
+        f, _ = link.request(0x49, wait=8)
+        r = Reader(f[3])
+        check((r.u16(), r.u16(), r.u16()) == (len(irs), len(models), len(before)) and state()[1] == files, "RESCAN: the same counts")
+    else:
+        print("SKIP  files: no SD card")
 
     f, _ = link.request(0x7E)
     check(f[1] == 3 and Reader(f[3]).u16() == 1, "unknown message: error UNKNOWN_MESSAGE")
