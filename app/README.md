@@ -31,6 +31,8 @@ Only one program can hold the unit's serial port: close `pio device monitor` bef
 ## State (milestone A5 of APP.md)
 The app connects by itself and shows the main screen: the library on the unit's card (presets, amp models, IRs), the signal chain as blocks (click to edit, power button or Space to switch), the drums and bass lane, the selected block's controls, input and output meters, CPU and the driver's counters. Every control is built from the unit's own settings table; a setting no block names appears under "Other settings".
 
+The master volume is the slider beside the meters: one setting for all presets, kept in the unit's own settings (EEPROM), not in presets, so moving it never marks a preset as edited. The Output block's Level is the preset's own level and is saved with it.
+
 Knobs: drag up and down, Shift for fine steps, scroll or arrow keys, double-click to type a value, right-click for the default.
 
 Presets: click one in the list to recall it, or step with the header's arrows or the arrow keys. Save (Cmd-S) writes over the recalled preset, "Save as…" makes a new one at the lowest free number, Rename and Delete are under the list. When the recalled preset has unsaved edits, recalling a preset asks first (discard, save first, or cancel).

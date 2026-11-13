@@ -1,5 +1,5 @@
 {
-  "comment": "The blocks of the signal chain as both UIs show them (APP.md 3.5): order, names, colours, and which settings belong to each. Settings are named by their serial key (lib/params ParamDefs.cpp); '@Name' names a setting that has no key. 'on' is the block's switch; 'onInverted' means the setting is a bypass. 'file' is the loaded file the block shows: 'model' or 'ir'. 'summary' is the setting whose value the block's tile shows. 'activity' is the METERS bit that shows the block is working. A setting no block names is shown under 'Other', so nothing can go missing.",
+  "comment": "The blocks of the signal chain as both UIs show them (APP.md 3.5): order, names, colours, and which settings belong to each. Settings are named by their serial key (lib/params ParamDefs.cpp); '@Name' names a setting that has no key. 'on' is the block's switch; 'onInverted' means the setting is a bypass. 'file' is the loaded file the block shows: 'model' or 'ir'. 'summary' is the setting whose value the block's tile shows. 'activity' is the METERS bit that shows the block is working. 'master' is the unit's master volume: one value for all presets, kept in the unit's own settings and not in presets, so it is shown apart from the blocks, beside the meters. A setting no block names is shown under 'Other', so nothing can go missing.",
   "blocks": [
     {
       "id": "amp", "name": "Amp", "short": "AMP", "colour": "#ff8a3d", "on": "amp", "file": "model", "activity": "ampRunning",
@@ -26,8 +26,8 @@
       "sections": [{ "settings": ["mix", "size", "tone", "rpre", "rmod", "rera", "rgate", "rmode"] }]
     },
     {
-      "id": "output", "summary": "g", "name": "Output", "short": "OUT", "colour": "#aab2bf",
-      "sections": [{ "settings": ["g", "pvol"] }]
+      "id": "output", "summary": "pvol", "name": "Output", "short": "OUT", "colour": "#aab2bf",
+      "sections": [{ "settings": ["pvol"] }]
     }
   ],
   "lane": {
@@ -38,5 +38,6 @@
       { "title": "Bass", "settings": ["bass", "bass vol", "bass key", "bass tone"] }
     ]
   },
+  "master": "g",
   "meters": { "floorDb": -60, "warnDb": -12, "hotDb": -3, "ok": "#3ddc84", "warn": "#ffc247", "hot": "#ff4d4d" }
 }

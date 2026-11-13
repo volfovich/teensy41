@@ -38,8 +38,8 @@ function build(def: BlockDef, find: (ref: string) => Setting | undefined): Block
   };
 }
 
-/** The chain's blocks in order, the drums lane, and a block for settings no block names. */
-export function buildBlocks(settings: Setting[]): { chain: Block[]; lane: Block; other: Block | null } {
+/** The chain's blocks in order, the drums lane, a block for settings no block names, and the master volume. */
+export function buildBlocks(settings: Setting[]): { chain: Block[]; lane: Block; other: Block | null; master: Setting | null } {
   const used = new Set<number>();
   const find = (ref: string) => {
     const s = ref.startsWith("@") ? settings.find((x) => x.name === ref.slice(1)) : settings.find((x) => x.key === ref);
@@ -48,11 +48,12 @@ export function buildBlocks(settings: Setting[]): { chain: Block[]; lane: Block;
   };
   const chain = (defs.blocks as BlockDef[]).map((d) => build(d, find));
   const lane = build(defs.lane as BlockDef, find);
+  const master = find(defs.master) ?? null;
   const rest = settings.filter((s) => !used.has(s.id));
   const other: Block | null = rest.length
     ? { def: { id: "other", name: "Other", short: "OTHER", colour: "#aab2bf", sections: [] }, on: null, summary: null, sections: [{ title: "", settings: rest }] }
     : null;
-  return { chain, lane, other };
+  return { chain, lane, other, master };
 }
 
 /** Whether the block is switched on (a block without a switch always is). */

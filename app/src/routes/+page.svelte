@@ -190,7 +190,8 @@
 {/if}
 
 <header>
-  <div class="brand">VOLFOVICH <b>NAM FORGE</b></div>
+  <!-- Connected, the name is at the top of the library column: the header needs the room. -->
+  {#if !device.connected}<div class="brand">VOLFOVICH <b>NAM FORGE</b></div>{/if}
   <div class="status" class:on={device.connected} title={device.connected ? (preview.on ? "Preview with saved data, no unit" : `Connected on ${device.info?.port}`) : "Not connected"}>
     <span class="dot"></span>
     {device.connected ? (preview.on ? "Preview" : "") : "Not connected"}
@@ -208,9 +209,24 @@
     <div class="meters">
       <Meter label="IN" peak={meters.inputPeak} />
       <Meter label="OUT" peak={meters.outputPeak} clipped={clipping} />
-      <div class="cpu" class:warn={meters.cpuMax >= 80} title="Audio processing time as a share of one block: average, and the highest lately">
-        <span>CPU</span><b>{meters.cpu.toFixed(0)}%</b>
-      </div>
+      {#if blocks.master}
+        {@const m = blocks.master}
+        {@const v = value(m.id, m.default)}
+        <label class="master" title="Master volume: one setting for all presets, kept by the unit and not saved in presets. Right-click for the default.">
+          <span>MASTER</span>
+          <input
+            type="range"
+            min={Math.max(m.min, -80)}
+            max={m.max}
+            step="1"
+            value={v}
+            aria-valuetext={formatValue(m, v)}
+            oninput={(e) => setParam(m.id, Number(e.currentTarget.value))}
+            oncontextmenu={(e) => (e.preventDefault(), setParam(m.id, m.default))}
+          />
+          <b>{formatValue(m, v)}</b>
+        </label>
+      {/if}
     </div>
   {/if}
 </header>
@@ -226,6 +242,7 @@
 
   <div class="columns">
   <aside aria-label="Library" class:dropping={dropping.on}>
+    <div class="brand">VOLFOVICH <b>NAM FORGE</b></div>
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected={tab === "presets"} onclick={() => (tab = "presets")}>Presets</button>
       <button role="tab" aria-selected={tab === "models"} onclick={() => (tab = "models")}>Amps</button>
@@ -387,7 +404,7 @@
   <footer>
     <span>Firmware {device.info?.firmware}</span>
     <span>{device.info?.blockSize}-sample blocks at {(device.info?.sampleRate ?? 0) / 1000} kHz</span>
-    <span>CPU max {meters.cpuMax.toFixed(0)}%</span>
+    <span class:bad={meters.cpuMax >= 80} title="Audio processing time as a share of one block: average, and the highest lately">CPU {meters.cpu.toFixed(0)}% (max {meters.cpuMax.toFixed(0)}%)</span>
     <span class:bad={meters.overruns > 0}>Overruns {meters.overruns}</span>
     <span class:bad={meters.overloadMutes > 0}>Overload mutes {meters.overloadMutes}</span>
     <span class:bad={meters.clipped > 0}>Clipped samples {meters.clipped}</span>
@@ -570,6 +587,9 @@
     background: #14171c;
     border-right: 1px solid #2a2e37;
     overflow-y: auto;
+  }
+  aside .brand {
+    padding: 0 8px 14px;
   }
   aside.dropping {
     outline: 2px dashed #ffb347;
@@ -756,22 +776,27 @@
     align-items: center;
     gap: 12px;
   }
-  .cpu {
+  .master {
     display: flex;
-    align-items: baseline;
-    gap: 6px;
+    align-items: center;
+    gap: 7px;
+    padding-left: 12px;
+    border-left: 1px solid #2a2e37;
   }
-  .cpu span {
+  .master span {
     font-size: 10.5px;
     letter-spacing: 0.08em;
     color: #8a92a0;
   }
-  .cpu b {
-    width: 34px;
-    font-variant-numeric: tabular-nums;
+  .master input {
+    width: 96px;
+    accent-color: #e6e8ec;
   }
-  .cpu.warn b {
-    color: #ff4d4d;
+  .master b {
+    width: 58px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .alert {
     background: #4a1c1c;
