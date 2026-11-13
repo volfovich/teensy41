@@ -13,8 +13,10 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Host unit tests for portable DSP: `pio test -e native`
 - I2S driver self-test (bare board, jumper pin 7 -> pin 8; replaces app firmware until you re-upload):
   `pio run -e i2s_loopback -t upload && pio device monitor -e i2s_loopback`
-- NAM A2-Lite CPU benchmark (bare board, no audio; fetches the reference engine into `third_party/` on first build):
+- Reference NAM engine (NeuralAmpModelerCore) benchmark, for comparison only (fetches it into `third_party/` on first build):
   `pio run -e nam_bench -t upload && pio device monitor -e nam_bench`
+- Own NAM A2-Lite engine: on-board correctness check + CPU benchmark (bare board, no audio):
+  `pio run -e nam_a2_bench -t upload && pio device monitor -e nam_a2_bench`
 - PSRAM hardware test: `pio run -e psram_test -t upload && pio device monitor -e psram_test`
 - Deep PSRAM inspection (~3 min + endless soak): `pio run -e psram_deep -t upload && pio device monitor -e psram_deep`
 - Refresh editor IntelliSense after adding libs/flags: `pio run -t compiledb`
@@ -22,7 +24,9 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 ## Layout
 - `src/main.cpp` – setup, audio block callback, serial command shell, USB MIDI
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
-- `lib/dsp/` – **portable, header-only float DSP** (no Arduino/Teensy includes). Put algorithms here so they are unit-testable on the host.
+- `lib/dsp/` – **portable float DSP, header-only where practical** (no Arduino/Teensy includes). Put algorithms here so they are unit-testable on the host.
+- `lib/dsp/src/dsp/nam/` – NAM A2-Lite engine (`NamA2.h`, 32% CPU at 32-frame blocks) and `.nam` file reader (`NamFile.*`), ported from the teensy-ir-loader project. Give the engine's history buffer DTCM memory (a plain global), not `DMAMEM`.
+- `test/fixtures/nam/` – example A2 model and NeuralAmpModelerCore reference output used by the tests and the on-board check.
 - `hw_tests/` – standalone firmware images that test hardware (PSRAM, I2S loopback); each has its own env.
 - `test/` – Unity tests, run on the host via the `native` env.
 

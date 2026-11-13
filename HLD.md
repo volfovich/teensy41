@@ -47,9 +47,9 @@ At 600 MHz and 48 kHz there are **12,500 CPU cycles per sample**: 400 k cycles p
 
 | Stage | Target share | Notes |
 | --- | --- | --- |
-| NAM A2-Lite | **62.5 % measured at B = 32** (75.5 % at B = 16) | Reference engine, unoptimised placement (§6.2 M1 result). Above the 50 % target, so the effects budget shrinks until the engine is optimised. |
+| NAM A2-Lite | **32.4 % measured at B = 32** (35.0 % at B = 16) | Own engine `dsp::NamA2`, history in DTCM (§6.2). The reference engine measured 62.5 % / 75.5 %. |
 | IR cab, 2048 taps | ~4 % (B=32) / ~7 % (B=16) | Partitioned FFT convolution (§6.3) |
-| Gate, comp, EQ, mod, delay, reverb | ≤ 20 % target; **about 12 % available today at B = 32** | 80 % rule minus NAM 62.5 %, IR 4 %, driver 2 % |
+| Gate, comp, EQ, mod, delay, reverb | ≤ 20 % target; **about 40 % available at B = 32, about 36 % at B = 16** | 80 % rule minus NAM, IR and driver |
 | Driver, conversion, parameter smoothing | ~2 % | |
 | **Headroom** | **≥ 20 %** | Covers interrupt jitter, PSRAM cache misses, and USB/SD activity |
 
@@ -82,9 +82,9 @@ Rule: the sum of worst-case stage costs per block, measured with the DWT cycle c
 | OpenAudio_ArduinoLibrary (F32) | **Don't use** | An AudioStream-style graph scheduled from a software interrupt adds buffering. Its I2S 24/32-bit support is uncertain **(verify)**. We need none of its blocks. |
 | **Own I2S driver** (`lib/i2s32`) | **Build** | SAI1 + eDMA ping-pong, 32-bit words, PLL4 at exactly 48 kHz, compile-time B, processing in the DMA interrupt. Modelled on the core's `output_i2s.cpp`/`input_i2s.cpp` configuration and on Teensy4i2s. |
 | CMSIS-DSP (`arm_math.h`, already linked) | **Use** | `arm_rfft_fast_f32` for the IR, `arm_biquad_cascade_df2T_f32` for EQ, vector multiply/add/scale, and complex multiply-accumulate. |
-| [NAM A2](https://www.tone3000.com/guides/nam-a2-the-complete-guide) (MIT) | **Use the model format and architecture** | A2-Lite variant (3 channels). Converted on the host from `.nam` to `.namb` with `nam2namb` from `nam-binary-loader`. |
+| [NAM A2](https://www.tone3000.com/guides/nam-a2-the-complete-guide) (MIT) | **Use the model format and architecture** | A2-Lite variant (3 channels). `.nam` files are read directly on the device (§6.2); no converter. |
 | NeuralAmpModelerCore + `nam-binary-loader` (as used in [tone-3000/nam-pedal](https://github.com/tone-3000/nam-pedal), MIT) | **Use as reference, then tune or replace** | Phase A runs it on the Teensy with the A2 fast path (`NAM_ENABLE_A2_FAST`) to benchmark, and on the host to produce golden vectors. Phase B is an optimised engine: TONE3000's C engine if it is published, otherwise our own (§6.2). |
-| SdFat (bundled with Teensyduino, built-in SDIO slot) | **Use** | Reads `.namb` models, IR WAVs and presets from `loop()` only. |
+| SdFat (bundled with Teensyduino, built-in SDIO slot) | **Use** | Reads `.nam` models, IR WAVs and presets from `loop()` only. |
 | ArduinoJson | **Use** | Preset files. |
 | `usbMIDI` (core) | **Use** | Program change selects presets; control changes set parameters. |
 | `lib/dsp` (ours, portable, header-only) | **Build and extend** | All algorithms, unit-tested on the host. The existing `dsp::Biquad` is reused. |
@@ -201,7 +201,6 @@ Every stage has bypass (with a 5–10 ms crossfade) and its own cycle meter. Spi
 **What the reference actually provides (checked Nov 2026):**
 - The `nam-pedal` README publishes no A2 numbers at all, so the A2-Lite CPU claim is unverified until our own M1 benchmark.
 - TONE3000's A2 guide says A2-Lite is real-time on a Cortex-M7 through two routes: the **A2 fast path** in NeuralAmpModelerCore (`NAM_ENABLE_A2_FAST`, on by default; unrolled kernels sized to A2's channel counts, about 6× faster than the Eigen path on desktop), and a "purpose-built", dependency-free C engine. Whether that C engine is published in `nam-pedal` is unclear **(verify)**.
-- The size of an A2 `.namb` file, which packs Full and Lite, is unknown **(verify)**. Our loader keeps only the Lite weights.
 
 **Phase A: benchmark and reference (M1)**
 - First step: inspect the current NeuralAmpModelerCore, `nam-binary-loader` and `nam-pedal` repos to see what is published for A2 (fast path, C engine).
@@ -231,18 +230,32 @@ Measured on the board with `env:nam_bench` (`hw_tests/nam_bench.cpp`): NeuralAmp
 - Build notes: the core needs C++20; exceptions are enabled per file only (enabling them globally does not link on the Teensy); its one `thread_local` becomes a plain global; NAM/Eigen headers must be included before `Arduino.h`. All of this is in `scripts/nam_core.py`.
 - Not yet done from M1: host build and golden vectors.
 
-**Phase B: optimised engine (M4)**, in `lib/dsp/nam/`:
-- No separate C engine is published, so we write our own, starting from the logic of the core's `A2FastModel` (MIT): same kernels, without Eigen, JSON, exceptions or heap. Targets: state in DTCM, cold code out of ITCM, and a lower per-block overhead so that B = 16 becomes possible.
-- Fixed-topology A2 implementation: static buffers, no Eigen.
-- Inner loops written for the M7: 3-channel dot products unrolled, kernel-major loops over the block, ring buffers sized to powers of two (masking instead of modulo), weights in DTCM, code `FASTRUN` (ITCM).
-- Leaky ReLU is branch-free (`fmaxf(x, 0.01f*x)`). That is cheap (no tanh).
-- Accepted when outputs match the golden vectors within about −100 dB RMS error, at no more CPU than Phase A.
-- Only Phase B ships if it is faster. Otherwise Phase A stays.
+**Own engine result (13 Nov 2026): 32.4 % CPU at B = 32, bit-compatible with the reference.**
+
+`lib/dsp/src/dsp/nam/NamA2.h` is ported from the author's earlier project, [teensy-ir-loader](https://github.com/volfovich/teensy-ir-loader) (`NamA2.h`, `NamFile.*`), where it ran on a Teensy 4.0 behind a 16-bit / 44.1 kHz codec with resampling to 48 kHz. Here it runs natively at 48 kHz with no resampling. Measured on this board with `env:nam_a2_bench` (`hw_tests/nam_a2_bench.cpp`), same model and conditions as the reference benchmark above:
+
+| Block (frames) | History | Cycles/sample avg | CPU avg | CPU worst block | Reference engine |
+| --- | --- | --- | --- | --- | --- |
+| 16 | DTCM, 80 KB | 4,378 | 35.0 % | 36.0 % | 75.5 % |
+| 32 | DTCM, 87 KB | 4,045 | 32.4 % | 32.9 % | 62.5 % |
+| 64 | DTCM, 101 KB | 3,936 | 31.5 % | 31.8 % | 56.1 % |
+| 32 | OCRAM, 87 KB | 4,511 | 36.1 % | 38.0 % | – |
+
+- **Correct:** on the board and on the host, the output matches NeuralAmpModelerCore on the golden test signal to a maximum error of 4.8e-7, 130 dB below the signal (`test/test_nam_a2`, fixtures in `test/fixtures/nam`). All block sizes give identical output.
+- **About half the CPU of the reference engine**, with a steady worst case, and almost no penalty for small blocks. **B = 16 is now possible**: NAM 35 % + IR about 7 % + driver 2 % leaves about 36 % for effects, and would cut latency by 0.67 ms. B stays 32 until the rest of the chain exists; revisit at M5.
+- **DTCM matters:** the same engine with its history in OCRAM costs 36.1 %.
+- **Model files are read directly:** `dsp::readNamA2Lite` streams a `.nam` JSON file (A2 container or plain A2-Lite WaveNet) and extracts the Lite weights and metadata. The 666 KB example file parses in 43 ms from flash on the board; from SD it will be slower **(measure)**. So **no host converter and no `.namb` format are needed**: copy `.nam` files to the SD card. Files that are not A2 are refused with a message.
+- No Eigen, JSON library, exceptions or heap: the reference engine is now only a benchmark and the source of golden vectors.
+
+**How the engine works (design notes for further tuning):**
+- A layer at a time over the whole block; two taps per pass with their 18 weights held in registers; one more pass for LeakyReLU, the head sum and the 1x1 residual, written straight into the next layer's ring buffer.
+- One ring buffer per layer, sized to the taps' reach plus a block, so every block costs the same.
+- Remaining levers, from the earlier project's measurements: hand-written assembly for the tap passes (about −3 % CPU) and 720 MHz overclock (not planned).
 
 **Model loading and switching:**
-- Host: `tools/nam_convert` (wraps `nam2namb`) produces `.namb`, which is copied to SD under `/models/`.
+- `.nam` files are copied to the SD card under `/models/` as downloaded.
 - `loop()`:
-  1. Read `.namb` into a staging buffer.
+  1. Stream the `.nam` file through `dsp::readNamA2Lite` into a staging weight buffer (1,871 floats). A small cache file next to the model can skip the JSON parse on later loads, as in teensy-ir-loader (`NamCache.h`), if SD parsing proves slow.
   2. Validate (architecture = A2, Lite variant, 48 kHz).
   3. Ask the interrupt to fade out (10 ms). The interrupt then skips the NAM stage.
   4. `loop()` swaps the weights and clears the history. Clearing about 150 KB is too slow to do inside one block, which is why it happens here and not in the interrupt.
@@ -280,7 +293,7 @@ Measured on the board with `env:nam_bench` (`hw_tests/nam_bench.cpp`): NeuralAmp
 | DTCM (RAM1) | (rest of 512 KB) | NAM weights and history (130–150 KB), small DSP state (gate, comp, EQ, chorus ≤ 30 ms ≈ 6 KB), per-block scratch, parameter sets |
 | OCRAM (RAM2, `DMAMEM`) | 512 KB | DMA buffers (1 KB), IR spectra and delay line (~34 KB ×2 during crossfade), reverb delay lines (~128 KB), asset staging buffers, heap |
 | PSRAM (`EXTMEM`) | 8 MB | Delay line (2.5 s × 2 ch × 4 B ≈ 1 MB), future looper. **Zeroed in `setup()`** (not initialised at boot). Accessed block-wise with memcpy to and from DTCM scratch, never with scattered per-sample reads (≈ 0.9 µs per cache miss). |
-| SD card | – | `/models/*.namb`, `/irs/*.wav`, `/presets/*.json` |
+| SD card | – | `/models/*.nam`, `/irs/*.wav`, `/presets/*.json` |
 
 RAM1 is shared between code (ITCM) and data (DTCM), and Teensyduino places all code in ITCM by default. Cold code (SdFat, ArduinoJson, the shell, the loaders) is marked `FLASHMEM` so that it stays in flash and leaves RAM1 for the NAM state.
 
@@ -365,7 +378,7 @@ lib/
   dsp/src/dsp/
     Biquad.h       (existing)
     Processor.h  Chain.h  Params.h  Smoother.h  Convert.h
-    nam/           A2 engine (Phase B), .namb parser
+    nam/           NamA2.h (A2-Lite engine), NamFile.* (.nam reader), GoldenSignal.h
     conv/          UPOLS convolver, FFT abstraction (CMSIS on target, simple FFT on host)
     fx/            gate, comp, eq, chorus, delay, reverb, tuner
 src/
@@ -374,7 +387,6 @@ src/
 hw_tests/
   psram_*.cpp      (existing)  i2s_bringup.cpp  nam_bench.cpp  latency_test.cpp
 tools/
-  nam_convert/     .nam → .namb (wraps nam2namb)
   ir_prep/         resample / trim / normalise IRs to 48 kHz
   render/          host WAV → Chain → WAV renderer
 test/              Unity suites (§10)
@@ -394,7 +406,7 @@ The FFT used in the convolver must also run on the host, where CMSIS is unavaila
 | M1 ✔ (benchmark done: go, B = 32) | **NAM A2-Lite benchmark (go/no-go).** A2-Lite models only. Reference core with the A2 fast path on the Teensy, no audio I/O. Host build produces golden vectors. Choose B (16 or 32). | A2-Lite cycles per sample measured at B = 16/32/48; CPU budget in §2.1 confirmed or revised; golden vectors generated |
 | M2 | Own driver `lib/i2s32` plus float passthrough chain, serial stats, `USB_MIDI_SERIAL`, software fault path (silence on overrun streak). Host renderer `tools/render`. | Round-trip latency measured ≈ 2·B + converter delays; zero overruns; Audio Library removed |
 | M3 | IR loader (UPOLS) plus SD loading and crossfade | Matches FIR reference; ~4 % CPU; glitch-free IR swap |
-| M4 | NAM A2-Lite in the chain (model loading, prewarm, calibration), then the optimised engine | Real time with IR inside the 80 % rule; matches golden vectors; CPU ≤ Phase A |
+| M4 (engine ✔) | NAM A2-Lite in the chain: model loading from SD, prewarm, calibration. The engine itself is done (32.4 % at B = 32, matches the reference). | Guitar through a real model on the board, inside the 80 % rule |
 | M5 | Gate, comp, EQ, chorus, delay (PSRAM), reverb, tuner; presets plus MIDI | All host tests pass; worst-case CPU ≤ 80 % |
 | M6 | Switchable-gain preamp (hardware) plus physical controls | Calibrated input; footswitch and encoder UI |
 
@@ -408,9 +420,7 @@ The order puts the largest risk first: M1 needs only the bare Teensy, so it can 
 
 | Risk / question | Impact | Mitigation |
 | --- | --- | --- |
-| A2-Lite measures 62.5 % at B = 32 with the reference engine (target was 50 %) | Only about 12 % left for effects; B = 16 is out of reach | Phase B engine: DTCM placement, lower per-block overhead, -O3 for the kernels. Re-measure before sizing the effects. |
-| Reference engine fills RAM1 (392 KB of code, 22 KB stack left) | Cannot ship alongside the rest of the firmware | Use it only for the benchmark and for golden vectors on the host. Phase B replaces it on the target. |
-| `.namb` loader predates A2 and is untested with A2 files | Model file format for the device is undecided | Test `nam2namb` on an A2 file on the host; otherwise define our own small binary format (config is fixed for A2, so it is just the Lite weights plus metadata). |
+| `.nam` parse time from SD is unmeasured (43 ms from flash) | Slow preset changes | Measure at M4; add the weights cache file if needed. |
 | Datasheet figures quoted from memory (ADC/DAC group delay, full-scale levels, PCM1808 LSB padding) | Latency and calibration numbers off | Measure in M0/M2 and update this doc. |
 | DAC cannot be muted by firmware (XSMT rework deferred) | Buzz on a firmware crash; possible pop on boot or flash | Volume down before flashing or resetting. Revisit the rework before the unit is used with an amp at volume. |
 | No Hi-Z input yet | Tone cannot be judged with a guitar plugged straight in | Build the unity-gain buffer alongside M2. Use a buffered pedal or DI until then, and DI recordings through `tools/render`. |
