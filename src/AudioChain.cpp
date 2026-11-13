@@ -23,17 +23,21 @@ DMAMEM static float g_bassMem[AudioChain::kBassBufLen];
 // The doubler's line (8 KB) and the tuner's ring (16 KB).
 DMAMEM static float g_doublerLine[AudioChain::kDoublerFloats];
 DMAMEM static float g_tunerRing[AudioChain::kTunerRing];
+// The mod's two lines (8 KB each).
+DMAMEM static float g_modLineL[AudioChain::kModFloats], g_modLineR[AudioChain::kModFloats];
 // The amp network's history (87 KB): read every block, so in DTCM (OCRAM
 // measured 12 % slower).
 static float g_ampHistory[AudioChain::kAmpHistoryFloats];
 
 FLASHMEM void AudioChain::begin(float* reverbMem, float* delayA, float* delayB, int delayLen, float* bassBuf,
-                                float* ampHistory, float* doublerLine, float* tunerRing) {
+                                float* ampHistory, float* doublerLine, float* modLineL, float* modLineR,
+                                float* tunerRing) {
   engine_.setFadeLength((int)(kSampleRate * IR_FADE_MS / 1000.0f));
   __disable_irq();
   reverb_.fx().init(reverbMem);
   delay_.fx().init(delayA, delayB, delayLen);
   doubler_.init(doublerLine);
+  mod_.init(modLineL, modLineR);
   tunerRing_ = tunerRing;
   __enable_irq();
   drums_.setBassBuffer(bassBuf);
@@ -41,7 +45,8 @@ FLASHMEM void AudioChain::begin(float* reverbMem, float* delayA, float* delayB, 
 }
 
 FLASHMEM void audioBegin() {
-  chain.begin(g_reverbMem, g_delayA, g_delayB, kDelayLen, g_bassMem, g_ampHistory, g_doublerLine, g_tunerRing);
+  chain.begin(g_reverbMem, g_delayA, g_delayB, kDelayLen, g_bassMem, g_ampHistory, g_doublerLine, g_modLineL,
+              g_modLineR, g_tunerRing);
 
   // The delay's fixed voicing (config.h); the rest is the saved settings.
   dsp::StudioDelay& d = chain.delay();

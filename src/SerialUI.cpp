@@ -45,6 +45,8 @@ static void argHint(int id, char* buf, int n) {
     if (len < n) snprintf(buf + len, n - len, ">");
   } else if (d.unit == Unit::kHalfDb || d.unit == Unit::kDb) {
     snprintf(buf, n, "<dB>");
+  } else if (d.unit == Unit::kCentiHz) {
+    snprintf(buf, n, "<Hz>");
   } else {
     int lo, hi;
     paramLimits(id, &lo, &hi);
@@ -248,6 +250,9 @@ static void printStatus() {
   Serial.printf("Doubler:   %s", getParam(kDblOn) ? "on" : "off");
   printValues({kDblTime, kDblWidth});
   Serial.println();
+  Serial.printf("Mod:       %s", getParam(kModOn) ? "on" : "off");
+  printValues({kModType, kModRate, kModDepth, kModFeedback, kModMix, kModWidth});
+  Serial.println();
   Serial.printf("Delay:     %s", effectState(kDelayOn, chain.delayActive()));
   printValues({kDelayMix, kDelayTime, kDelayRepeats, kDelayTone, kDelayMod, kDelayDuck, kDelayDrive, kDelayEra});
   Serial.println();
@@ -256,9 +261,9 @@ static void printStatus() {
   printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone, kReverbPreDelay, kReverbEra});
   printValues({getParam(kReverbMode) ? kReverbGate : kReverbMod});
   Serial.println();
-  Serial.printf("CPU:       IR + effects %.1f%% avg / %.1f%% max (amp %.1f%%, doubler %.1f%%, delay %.1f%%, reverb %.1f%%, drums %.1f%%), audio total %.1f%% max\n",
+  Serial.printf("CPU:       IR + effects %.1f%% avg / %.1f%% max (amp %.1f%%, doubler %.1f%%, mod %.1f%%, delay %.1f%%, reverb %.1f%%, drums %.1f%%), audio total %.1f%% max\n",
                 chain.cpuPercent(), chain.cpuPercentMax(), chain.ampCpuPercent(),
-                chain.doublerCpuPercent(), chain.delayCpuPercent(),
+                chain.doublerCpuPercent(), chain.modCpuPercent(), chain.delayCpuPercent(),
                 chain.reverbCpuPercent(), chain.drumCpuPercent(), 100.0f * i2s32::load(drv.maxCycles));
   Serial.printf("Driver:    overruns %lu, FIFO errors %lu, overload mutes %lu\n", (unsigned long)drv.overruns,
                 (unsigned long)drv.fifoErrors, (unsigned long)drv.faults);

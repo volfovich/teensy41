@@ -19,6 +19,7 @@ static const char* const kReverbModes[] = {"hall", "gated"};
 static const char* const kCrashNames[] = {"off", "2 bars", "4 bars", "8 bars", "16 bars"};
 static const char* const kCountNames[] = {"off", "1 bar", "2 bars", "3 bars", "4 bars"};
 static const char* const kGateTypes[] = {"nam", "hard"};
+static const char* const kModTypes[] = {"chorus", "flanger"};
 static const char* const kKeyNames[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
 
 using U = Unit;
@@ -81,6 +82,14 @@ static const ParamDef kParams[kValueCount] = {
     {"pvol",         "Preset level",       "Level",        -48,   24,   0, 1, U::kHalfDb,  nullptr, kPreset},
     // The last gain before the DAC: 0 dB (no change) down to -60 dB; the minimum is silence.
     {"master",       "Master volume",      "Master",      -120,    0,   0, 1, U::kHalfDb,  nullptr, 0},
+    // The Mod block: a chorus or a flanger between the doubler and the delay.
+    {"mod",          "Mod",                "On",             0,    1,   0, 1, U::kOnOff,   nullptr, kPreset},
+    {"mod type",     "Mod type",           "Type",           0,    1,   0, 1, U::kNone,    kModTypes, kPreset},
+    {"mod rate",     "Mod rate",           "Rate",           5, 1000,  80, 5, U::kCentiHz, nullptr, kPreset},
+    {"mod depth",    "Mod depth",          "Depth",          0,  100,  50, 1, U::kPercent, nullptr, kPreset},
+    {"mod fb",       "Mod feedback",       "Feedback",       0,  100,   0, 1, U::kPercent, nullptr, kPreset},
+    {"mod mix",      "Mod mix",            "Mix",            0,  100,  50, 1, U::kPercent, nullptr, kPreset},
+    {"mod width",    "Mod width",          "Width",          0,  100,  50, 1, U::kPercent, nullptr, kPreset},
     // Not saved.
     {"drum",         "Drums",              "Play",           0,    1,   0, 1, U::kOnOff,   nullptr, 0},
     {nullptr,        "Loop from",          "Loop from",      0,  512,   0, 1, U::kNone,    nullptr, 0},
@@ -111,6 +120,7 @@ void formatValue(const ParamDef& d, int v, bool spaced, char* buf, int n) {
     case Unit::kBars: snprintf(buf, n, "%d bar%s", v, v == 1 ? "" : "s"); break;
     case Unit::kName: snprintf(buf, n, "%d", v + 1); break;
     case Unit::kDb: snprintf(buf, n, "%d%sdB", v, sp); break;
+    case Unit::kCentiHz: snprintf(buf, n, "%d.%02d%sHz", v / 100, v % 100, sp); break;
     case Unit::kHalfDb: {
       char num[16];
       halfDb(v, num, sizeof(num));
@@ -125,6 +135,7 @@ void formatTyped(const ParamDef& d, int v, char* buf, int n) {
   if (d.unit == Unit::kOnOff) snprintf(buf, n, "%s", v ? "on" : "off");
   else if (d.choices && v >= d.min && v <= d.max) snprintf(buf, n, "%s", d.choices[v]);
   else if (d.unit == Unit::kHalfDb) halfDb(v, buf, n);
+  else if (d.unit == Unit::kCentiHz) snprintf(buf, n, "%d.%02d", v / 100, v % 100);
   else snprintf(buf, n, "%d", v);
 }
 
@@ -152,11 +163,11 @@ bool parseValue(const ParamDef& d, const char* text, int* v) {
       if (!strcasecmp(c, text) || (!strncasecmp(c, text, len) && c[len] == ' ')) return *v = i, true;
     }
   }
-  if (d.unit == Unit::kHalfDb) {
+  if (d.unit == Unit::kHalfDb || d.unit == Unit::kCentiHz) {
     char* end;
-    const double db = strtod(text, &end);
+    const double x = strtod(text, &end);
     if (end == text || *end) return false;
-    *v = (int)lround(db * 2.0);
+    *v = (int)lround(x * (d.unit == Unit::kHalfDb ? 2.0 : 100.0));
     return true;
   }
   return parseInt(text, v);

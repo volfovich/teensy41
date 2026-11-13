@@ -13,7 +13,8 @@
 //   amped -> IR convolution -> x (output gain + preset level), blended with
 //            the IR's input by the bypass (bypassed: no IR and no gain)  = core (mono)
 //   core   -> doubler (mono in, stereo out, see dsp/fx/Doubler.h) -> cL, cR
-//   cL, cR -> studio 80s delay (fed from cL, dry/wet)         -> dL, dR
+//   cL, cR -> mod: chorus or flanger (stereo, see dsp/fx/Modulation.h) -> mL, mR
+//   mL, mR -> studio 80s delay (fed from mL, dry/wet)         -> dL, dR
 //   dL, dR -> 80s reverb, hall or gated (stereo, dry/wet)      -> out L / R
 //   + drum machine and bass (stereo, added to the outputs, never through
 //     the effects)
@@ -39,6 +40,7 @@
 #include <dsp/drums/DrumMachine.h>
 #include <dsp/fx/Doubler.h>
 #include <dsp/fx/FxStage.h>
+#include <dsp/fx/Modulation.h>
 #include <dsp/fx/NoiseGate.h>
 #include <dsp/fx/Reverb80.h>
 #include <dsp/fx/StudioDelay.h>
@@ -56,6 +58,7 @@ class AudioChain {
   static constexpr int kReverbMemFloats = dsp::Reverb80::kMemFloats;
   static constexpr int kBassBufLen = dsp::DrumMachine::kBassBufLen;
   static constexpr int kDoublerFloats = dsp::Doubler::kLen;
+  static constexpr int kModFloats = dsp::Modulation::kLen;  // each of its two lines
   static constexpr int kTunerRing = 4096;  // floats at 24 kHz (170 ms)
   static constexpr float kTunerRate = kSampleRate / 2;
 
@@ -65,6 +68,7 @@ class AudioChain {
         delay_(kSampleRate),
         reverb_(kSampleRate),
         doubler_(kSampleRate),
+        mod_(kSampleRate),
         drums_(kSampleRate) {
     tunerLp_.setLowpass(4000.0f, kSampleRate);
   }
@@ -72,10 +76,10 @@ class AudioChain {
   // Hands over the effects' memory before the audio runs: the reverb's lines
   // (kReverbMemFloats), the delay's two lines (delayLen floats each), the
   // bass's buffer (kBassBufLen), the amp's history (kAmpHistoryFloats), the
-  // doubler's line (kDoublerFloats) and the tuner's ring (kTunerRing). Until
-  // then the effects stay off.
+  // doubler's line (kDoublerFloats), the mod's two lines (kModFloats each) and
+  // the tuner's ring (kTunerRing). Until then the effects stay off.
   void begin(float* reverbMem, float* delayA, float* delayB, int delayLen, float* bassBuf, float* ampHistory,
-             float* doublerLine, float* tunerRing);
+             float* doublerLine, float* modLineL, float* modLineR, float* tunerRing);
 
   Engine& engine() { return engine_; }
   Amp& amp() { return amp_; }
@@ -83,6 +87,7 @@ class AudioChain {
   dsp::StudioDelay& delay() { return delay_.fx(); }
   dsp::Reverb80& reverb() { return reverb_.fx(); }
   dsp::Doubler& doubler() { return doubler_; }
+  dsp::Modulation& mod() { return mod_; }
   dsp::DrumMachine& drums() { return drums_; }
 
   // The output gain plus the preset's level: applied after the cab, before the doubler,
@@ -129,7 +134,8 @@ class AudioChain {
   uint32_t clipCount() const { return clips_; }
   // The peak at a block's output since the last call, as takeInputPeak(). Above 1.0 is over
   // full scale: fine between blocks (the chain is float), but it would clip at the output.
-  enum Stage { kStageAmp, kStageGate, kStageCab, kStageDoubler, kStageDelay, kStageReverb, kStageCount };
+  // In the order the app link sends them (PROTOCOL.md, METERS): new ones go at the end.
+  enum Stage { kStageAmp, kStageGate, kStageCab, kStageDoubler, kStageDelay, kStageReverb, kStageMod, kStageCount };
   float takeStagePeak(int stage) { float p = stagePeak_[stage]; stagePeak_[stage] = 0.0f; return p; }
   // CPU load of this object, in percent of one core, and the shares of it
   // spent in the amp, the delay, the reverb and the drums.
@@ -139,6 +145,7 @@ class AudioChain {
   float delayCpuPercent() const { return cyclesToPercent(delay_.cyclesAvg()); }
   float reverbCpuPercent() const { return cyclesToPercent(reverb_.cyclesAvg()); }
   float doublerCpuPercent() const { return cyclesToPercent(doublerCyclesAvg_); }
+  float modCpuPercent() const { return cyclesToPercent(modCyclesAvg_); }
   float drumCpuPercent() const { return cyclesToPercent(drumCyclesAvg_); }
   void resetCpuMax() { cyclesMax_ = 0; }
 
@@ -206,15 +213,23 @@ class AudioChain {
     const float cabPk = peakOf(y);  // after the cab, the output gain and the preset's level
     notePeak(kStageCab, cabPk);
 
-    // The doubler, the delay, then the reverb. An idle effect passes its
-    // input through, so with all idle the signal stays mono.
+    // The doubler, the mod, the delay, then the reverb. An idle effect passes
+    // its input through, so with all idle the signal stays mono.
     const uint32_t tdb = ARM_DWT_CYCCNT;
     float cl[B], cr[B];
     const bool doubled = doubler_.process(y, cl, cr, B);
     const float* sl0 = doubled ? cl : y;
     const float* sr0 = doubled ? cr : y;
+    const uint32_t tm = ARM_DWT_CYCCNT;
+    doublerCyclesAvg_ = doublerCyclesAvg_ + ((float)(tm - tdb) - doublerCyclesAvg_) * 0.01f;
+    float ml[B], mr[B];
+    const bool modded = mod_.process(sl0, sr0, ml, mr, B);
+    if (modded) {
+      sl0 = ml;
+      sr0 = mr;
+    }
     const uint32_t t1 = ARM_DWT_CYCCNT;
-    doublerCyclesAvg_ = doublerCyclesAvg_ + ((float)(t1 - tdb) - doublerCyclesAvg_) * 0.01f;
+    modCyclesAvg_ = modCyclesAvg_ + ((float)(t1 - tm) - modCyclesAvg_) * 0.01f;
     const bool delayed = delay_.process(sl0, sr0, dl, dr);
     const uint32_t t2 = ARM_DWT_CYCCNT;
     delay_.addCycles(t2 - t1);
@@ -226,8 +241,10 @@ class AudioChain {
     const float* fr = reverbed ? orr : sr;
     // An idle effect's output is its input: the level before it.
     const float dblPk = doubled ? fmaxf(peakOf(cl), peakOf(cr)) : cabPk;
-    const float dlyPk = delayed ? fmaxf(peakOf(dl), peakOf(dr)) : dblPk;
+    const float modPk = modded ? fmaxf(peakOf(ml), peakOf(mr)) : dblPk;
+    const float dlyPk = delayed ? fmaxf(peakOf(dl), peakOf(dr)) : modPk;
     notePeak(kStageDoubler, dblPk);
+    notePeak(kStageMod, modPk);
     notePeak(kStageDelay, dlyPk);
     notePeak(kStageReverb, reverbed ? fmaxf(peakOf(ol), peakOf(orr)) : dlyPk);
 
@@ -243,7 +260,7 @@ class AudioChain {
     uint32_t clips = 0;
     const float m0 = masterCur_, m1 = ramp(m0, masterTarget_);  // 20 ms between silent and full
     masterCur_ = m1;
-    if (!doubled && !delayed && !reverbed && !drums) {
+    if (!doubled && !modded && !delayed && !reverbed && !drums) {
       // Effects and drums idle: the dry signal goes to both outputs.
       toOutput(y, nullptr, m0, m1, outL, opk, clips);
       memcpy(outR, outL, sizeof(float) * B);
@@ -302,8 +319,9 @@ class AudioChain {
   DelayStage delay_;
   ReverbStage reverb_;
   dsp::Doubler doubler_;
+  dsp::Modulation mod_;
   dsp::DrumMachine drums_;
-  volatile float drumCyclesAvg_ = 0.0f, doublerCyclesAvg_ = 0.0f;
+  volatile float drumCyclesAvg_ = 0.0f, doublerCyclesAvg_ = 0.0f, modCyclesAvg_ = 0.0f;
   volatile bool tunerOn_ = false;
   float* tunerRing_ = nullptr;
   volatile float tunerTestStep_ = 0.0f;  // cycles per sample; 0 = the input

@@ -44,6 +44,9 @@ The choices made so far, with their reasons, newest group last. Add a line when 
 | --- | --- |
 | Output gain (`g`, global) and preset level (`pvol`) stay one gain right after the cab | Exactly as ported |
 | A separate master volume as the last gain, silent to 0 dB, global, never in presets (13 Nov 2026) | The author wanted a master outside the blocks, near the meters, that does not mark a preset as edited. At 0 dB it changes nothing, so the ported sound is intact. |
+| A Mod block (chorus / flanger) after the doubler and before the delay (13 Nov 2026) | The author's choice: after the amp and cab the modulation stays clean and wide, and the delay and reverb carry it. Off, it passes its input bit for bit, so the ported sound is intact. |
+| The Mod rate is shown in Hz, on a logarithmic knob | The author's choice; the real speed is visible, and slow rates get fine steps |
+| New saved settings are appended after the last saved one | Existing EEPROM records and setting ids stay valid |
 | Block level meters show peaks at each block's output | To see where a level gets too hot before it reaches the next block or the output |
 
 ## The app

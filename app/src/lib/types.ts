@@ -165,4 +165,4 @@ export type DeviceEvent =
   | { kind: "disconnected"; reason: string };
 
 // A setting's unit (protocol/PROTOCOL.md section 6).
-export const Unit = { None: 0, OnOff: 1, Percent: 2, Ms: 3, HalfDb: 4, Bpm: 5, Bars: 6, Db: 7, Name: 8 } as const;
+export const Unit = { None: 0, OnOff: 1, Percent: 2, Ms: 3, HalfDb: 4, Bpm: 5, Bars: 6, Db: 7, Name: 8, CentiHz: 9 } as const;

@@ -12,6 +12,7 @@ The tracking page: what works and how that is known, what has not been checked, 
 | Noise gate, tone, DC blocker | Working | Host tests against references; in use |
 | Cab IR loading and convolution | Working | Host tests; IRs loaded from the card and played |
 | Doubler, delay, reverb | Working | Host tests; in use |
+| Mod (chorus, flanger) | Working, **not yet heard by the author** | 10 host tests (clicks, stability, ranges, rate); on the unit with test tones: 2.3 % CPU, levels and CPU unchanged with Mod off |
 | Presets on the card | Working | Recall, save, new, rename, delete from the shell and the app |
 | Drums and bass | Working | Host tests; running on the board |
 | Tuner | Working | Test tone (`tuner test 110`) shows the right note; the author reported it fine with a guitar |
@@ -21,7 +22,7 @@ The tracking page: what works and how that is known, what has not been checked, 
 | USB MIDI | Built, **not tried** | Map prints; no real controller or DAW has sent messages |
 | Sound | **As ported** | Confirmed by the author on 13 Nov 2026 after two unrequested level changes were reverted; test tones matched the morning's firmware within 0.3 dB over 36 points |
 
-Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb) 56.8 % CPU average, 57.6 % maximum, 0 overruns. RAM1 code 56 KB, 95 KB free for the stack.
+Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb) 56.3 % CPU average, 57.1 % maximum, 0 overruns. With everything on (doubler, mod, delay, reverb, drums and bass) 69 % average, 80.4 % maximum, 0 overruns. RAM1 code 57 KB, 95 KB free for the stack.
 
 ## App
 
@@ -49,6 +50,9 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - The worst-case CPU (long IR, busy drums at 240 BPM, IR switching) at 32-sample blocks.
 
 ## Known issues and observations
+- **With every block and the drums on, the worst block reaches the 80 % CPU budget** (80.4 % measured; by subtraction about 78 % before the Mod block). No overruns, and the overload protection covers a spike, but there is no margin left for another effect without making room.
+- **The Mod block raises the level** where dry and wet add up (chorus about +3 dB, flanger with feedback up to about +8 dB on a sine). Not compensated; the preset level is the tool.
+- The Mod block's voicing (centre delays, depth scaling, feedback tone) is a first version, to be tuned by ear.
 - **Cab bypass also skips the output gain and preset level.** As ported; see [SIGNAL_CHAIN.md](SIGNAL_CHAIN.md). Left alone unless the author wants it changed.
 - **Levels after the cab can exceed 0 dBFS** with a high-gain model and a resonant IR at amp output 0 dB. Harmless inside the chain; left alone.
 - **Presets 01 and 03** could not be put back to their contents of the morning of 13 Nov 2026 after that day's level experiments; preset 02 was rewritten once.
@@ -70,7 +74,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - Try USB MIDI with a controller or a DAW.
 - The touch screen UI (2.8-inch TFT): display choice, pins, screens. To read `protocol/blocks.json` like the app.
 - Lower latency, if wanted: a non-uniformly partitioned convolver, then 16-sample blocks again.
-- Later effects: compressor, chorus, parametric EQ; a longer delay or a looper in PSRAM.
+- Later effects: compressor, parametric EQ, more Mod types (phaser, tremolo); a longer delay or a looper in PSRAM.
 
 ### Hardware (the author's side)
 - Input buffer (1 MΩ), then set `INPUT_PAD_DB`.
@@ -81,4 +85,4 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 | Date | What |
 | --- | --- |
 | 11 Nov 2026 | Project set up; PSRAM soldered and verified |
-| 13 Nov 2026 | Hardware doc and design (HLD); I2S driver; NAM benchmarks; the chain, effects, presets and drums ported from teensy-ir-loader; codec settings removed; link protocol; the app through milestones A0 to A5 and part of A6; master volume; block meters; backup and restore; documentation set |
+| 13 Nov 2026 | Hardware doc and design (HLD); I2S driver; NAM benchmarks; the chain, effects, presets and drums ported from teensy-ir-loader; codec settings removed; link protocol; the app through milestones A0 to A5 and part of A6; master volume; block meters; backup and restore; documentation set; the Mod block (chorus and flanger) |

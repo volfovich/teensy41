@@ -71,7 +71,7 @@ void testSignal(float hz, float dbfs) {
 // The overload protection (lib/i2s32, Config::faultAfterOverruns): when the chain cannot keep
 // up for 16 blocks in a row the driver goes silent and stops calling it, which gives loop()
 // the CPU back. Here the load is reduced, then the audio resumes after a second: first the
-// drums and bass stop; if it trips again within 10 s the doubler, delay and reverb go off too.
+// drums and bass stop; if it trips again within 10 s the doubler, mod, delay and reverb go off too.
 static void serviceFault() {
   static uint32_t faultAt = 0, lastFaultAt = 0;
   static bool handling = false;
@@ -87,8 +87,9 @@ static void serviceFault() {
     if (getParam(ui::kDrumsPlay)) {
       setParam(ui::kDrumsPlay, 0);
     } else if (again) {
-      Serial.println("Again: switching the doubler, delay and reverb off.");
+      Serial.println("Again: switching the doubler, mod, delay and reverb off.");
       setParam(ui::kDblOn, 0);
+      setParam(ui::kModOn, 0);
       setParam(ui::kDelayOn, 0);
       setParam(ui::kReverbOn, 0);
     }

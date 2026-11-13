@@ -45,6 +45,7 @@ const CcMap kMap[] = {
     {84, kReverbOn, 0, 1, true},
     {85, kBypass, 0, 1, true},        // the cab IR's bypass
     {86, kDrumsPlay, 0, 1, true},
+    {88, kModOn, 0, 1, true},         // 87 is the tuner, below
 };
 constexpr uint8_t kTunerCc = 87;      // the tuner (mutes the guitar while open)
 

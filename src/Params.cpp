@@ -133,6 +133,16 @@ static void applyParam(int id, int v) {
     case kDblOn: chain.doubler().setOn(v); break;
     case kDblTime:
     case kDblWidth: chain.doubler().set(s[kDblTime], s[kDblWidth] / 100.0f); break;
+    case kModOn: chain.mod().setOn(v); break;
+    case kModType:
+    case kModRate:
+    case kModDepth:
+    case kModFeedback:
+    case kModMix:
+    case kModWidth:
+      chain.mod().set(s[kModType], s[kModRate] / 100.0f, s[kModDepth] / 100.0f, s[kModFeedback] / 100.0f,
+                      s[kModMix] / 100.0f, s[kModWidth] / 100.0f);
+      break;
     case kDrumsPlay:
       if (v) dm.start();
       else dm.stop();

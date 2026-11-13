@@ -18,6 +18,10 @@
       "sections": [{ "settings": ["dbl time", "dbl width"] }]
     },
     {
+      "id": "mod", "peak": 6, "summary": "mod type", "name": "Mod", "short": "MOD", "colour": "#3fd6a0", "on": "mod",
+      "sections": [{ "settings": ["mod type", "mod rate", "mod depth", "mod fb", "mod mix", "mod width"] }]
+    },
+    {
       "id": "delay", "peak": 4, "summary": "dtime", "name": "Delay", "short": "DELAY", "colour": "#5b8cff", "on": "dl", "activity": "delayRinging",
       "sections": [{ "settings": ["dmix", "dtime", "dfb", "dtone", "dmod", "dduck", "ddrive", "dera"] }]
     },

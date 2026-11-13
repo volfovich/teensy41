@@ -180,7 +180,7 @@ ADC R ─► 30 Hz high-pass (src/main.cpp, removes supply thumps)
 tuner tap on the input (decimated to 24 kHz) → pitch detection in loop(); mutes the guitar
 ```
 
-The chain in full, with every gain and setting: [`../SIGNAL_CHAIN.md`](../SIGNAL_CHAIN.md).
+The chain in full, with every gain and setting, and the Mod block added later: [`../SIGNAL_CHAIN.md`](../SIGNAL_CHAIN.md).
 
 | Stage | What it does | Memory |
 | --- | --- | --- |

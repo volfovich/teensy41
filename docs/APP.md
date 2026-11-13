@@ -48,7 +48,7 @@ Events to the window (one channel, `device`): searching, connected, schema, stat
 
 ## The screen is built from the unit's table
 
-The app has no list of settings of its own. It reads the unit's table (names, ranges, units, choices) and joins it with [`protocol/blocks.json`](../protocol/blocks.json), which says how the chain is shown: the blocks in order, each one's colour, switch, settings, which meter peak and activity bit belong to it. `lib/blocks.ts` does the join; `lib/format.ts` formats values the way the unit does.
+The app has no list of settings of its own. It reads the unit's table (names, ranges, units, choices) and joins it with [`protocol/blocks.json`](../protocol/blocks.json), which says how the chain is shown: the blocks in order, each one's colour, switch, settings, which meter peak and activity bit belong to it. `lib/blocks.ts` does the join; `lib/format.ts` formats values the way the unit does. A rate in Hz gets a logarithmic knob (`controls/Knob.svelte`).
 
 - A new setting in the firmware appears in the app by itself. Until `blocks.json` names it, it shows under "Other settings".
 - The planned touch screen on the unit is meant to read the same `blocks.json`.
@@ -57,7 +57,7 @@ The app has no list of settings of its own. It reads the unit's table (names, ra
 
 - **Top bar:** connection, preset name with ‹ ›, Save, Save as…, Tuner, Levels, input and output meters (with CLIP), the master volume slider.
 - **Left:** the library on the card in four tabs: Presets, Amps, IRs, Card (backup and restore).
-- **Middle:** the chain as tiles (Amp, Noise gate, Cab, Doubler, Delay, Reverb), each with its switch and a level bar; under it the Drums and bass lane.
+- **Middle:** the chain as tiles (Amp, Noise gate, Cab, Doubler, Mod, Delay, Reverb), each with its switch and a level bar; under it the Drums and bass lane.
 - **Bottom:** the selected block's controls; for Amp and Cab also the loaded file's facts.
 - **Footer:** firmware version, block size and sample rate, CPU (average and maximum), overruns, overload mutes, clipped samples.
 - Dialogs ask before a recall discards unsaved edits, before a sent file replaces one, before a delete and before a restore.

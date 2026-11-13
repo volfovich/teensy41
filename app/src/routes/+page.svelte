@@ -200,7 +200,7 @@
     } else if (e.key === " ") {
       if (selected) toggle(selected);
     } else if (e.key >= "1" && e.key <= "9" && !e.metaKey && !e.ctrlKey) {
-      // 1 .. 6 open the chain's blocks, the next number the drums.
+      // The numbers open the chain's blocks in order, the next one the drums.
       const b = [...blocks.chain, blocks.lane][Number(e.key) - 1];
       if (!b) return;
       selectedId = b.def.id;
@@ -958,7 +958,7 @@
   }
   .wire {
     flex: 1 1 10px;
-    min-width: 8px;
+    min-width: 6px;
     height: 2px;
     background: #353b47;
   }
@@ -968,7 +968,7 @@
   .tile {
     position: relative;
     flex: 0 1 138px;
-    min-width: 92px;
+    min-width: 84px;
     height: 84px;
     border-radius: 12px;
     background: linear-gradient(180deg, color-mix(in srgb, var(--c) 26%, #1c1f26), color-mix(in srgb, var(--c) 12%, #181b21));
@@ -1015,6 +1015,16 @@
   }
   .tile.off .short {
     color: #aab2bf;
+  }
+  /* A narrow window: seven tiles get tight, so the names shrink to stay clear of the switch. */
+  @media (max-width: 1180px) {
+    .short {
+      font-size: 11px;
+      letter-spacing: 0.05em;
+    }
+    .tile .body {
+      padding-left: 9px;
+    }
   }
   .summary {
     width: 100%;

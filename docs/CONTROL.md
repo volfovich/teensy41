@@ -14,7 +14,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 ```
 
 - A switch alone flips (`amp`), a choice alone steps to the next (`rmode`).
-- Decibels may have a half: `g -6.5`.
+- Decibels may have a half: `g -6.5`. A rate is typed in Hz: `mod rate 0.8`.
 - `drum style`, `drum kit`, `drum song` take a name or a number; alone they list what there is.
 
 ### Other commands
@@ -55,7 +55,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 
 ## Settings table
 
-56 values in the firmware's order (the number is the setting's id in the link protocol). The first 53 are saved in the unit; "In presets" marks the 35 a preset stores. Defaults are what a blank unit starts with.
+63 values in the firmware's order (the number is the setting's id in the link protocol). The first 60 are saved in the unit; "In presets" marks the 42 a preset stores. New settings are added after the last saved one, so ids of saved settings never change; the three unsaved ones at the end move up. Defaults are what a blank unit starts with.
 
 | # | Key | Name | Range | Default | In presets |
 | --- | --- | --- | --- | --- | --- |
@@ -112,9 +112,16 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | 50 | `gate type` | Gate type | nam, hard | hard | yes |
 | 51 | `pvol` | Preset level | -24.0 dB to +12.0 dB | 0 dB | yes |
 | 52 | `master` | Master volume | silent (the lowest step), -59.5 dB to 0 dB | 0 dB | no |
-| 53 | `drum` | Drums | on, off | off | no |
-| 54 | – | Loop from | off, or a bar of the song | off | no |
-| 55 | – | Loop to | a bar of the song | the last bar | no |
+| 53 | `mod` | Mod | on, off | off | yes |
+| 54 | `mod type` | Mod type | chorus, flanger | chorus | yes |
+| 55 | `mod rate` | Mod rate | 0.05 Hz to 10.00 Hz | 0.80 Hz | yes |
+| 56 | `mod depth` | Mod depth | 0 % to 100 % | 50 % | yes |
+| 57 | `mod fb` | Mod feedback | 0 % to 100 % | 0 % | yes |
+| 58 | `mod mix` | Mod mix | 0 % to 100 % | 50 % | yes |
+| 59 | `mod width` | Mod width | 0 % to 100 % | 50 % | yes |
+| 60 | `drum` | Drums | on, off | off | no |
+| 61 | – | Loop from | off, or a bar of the song | off | no |
+| 62 | – | Loop to | a bar of the song | the last bar | no |
 
 Notes:
 - `g` and `pvol` are one gain after the cab; `master` is the last gain before the DAC ([SIGNAL_CHAIN.md](SIGNAL_CHAIN.md)).
@@ -138,5 +145,6 @@ Any channel. `midi` in the shell prints this map from the code.
 | CC 85 | Cab bypass |
 | CC 86 | Drums play / stop |
 | CC 87 | Tuner |
+| CC 88 | Mod on / off |
 
 Not yet tried with a real controller ([STATUS.md](STATUS.md)).

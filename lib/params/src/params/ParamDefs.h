@@ -44,6 +44,11 @@ enum Param : uint8_t {
   kGateType,        // 0 nam (the NAM plugin's expander), 1 hard (the default; release applies)
   kPresetLevel,     // half-dB steps, added to the output gain; saved in presets (PRESETS.md)
   kMaster,          // the master volume, the last gain before the DAC: half-dB steps up to 0 dB; the minimum is silence. Not in presets.
+  // The Mod block (chorus / flanger), between the doubler and the delay.
+  kModOn,
+  kModType,   // 0 chorus, 1 flanger
+  kModRate,   // hundredths of a Hz
+  kModDepth, kModFeedback, kModMix, kModWidth,  // %
   kParamCount,
   // Not saved.
   kDrumsPlay = kParamCount,
@@ -57,6 +62,7 @@ enum class Unit : uint8_t {
   kPercent, kMs, kHalfDb, kBpm, kBars,
   kDb,     // whole dB
   kName,   // shown by name: `choices`, or the firmware's paramText() when it has none
+  kCentiHz,  // hundredths of a Hz, shown and typed in Hz: 80 = "0.80 Hz"
 };
 
 // ParamDef::flags

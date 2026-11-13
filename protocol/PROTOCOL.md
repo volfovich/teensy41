@@ -199,7 +199,7 @@ A `FILE_PUT_BEGIN` while an upload is open abandons the earlier one. An upload w
 
 | Dir | Fields |
 | --- | --- |
-| ← | `f32` input peak, linear, since the last frame · `f32` output peak · `f32` gate gain, 0 to 1 · `u32` clipped samples since start · `f32` CPU percent, whole chain, average · `f32` the same, maximum since the last frame · `f32` amp CPU percent · `f32` doubler · `f32` delay · `f32` reverb · `f32` drums · `u32` overruns since start · `u32` overload mutes since start · `u8` activity bits (0 amp running, 1 delay ringing, 2 reverb ringing, 3 drums playing, 4 output muted by overload, 5 tuner open) · 6 × `f32` the peak at each block's output since the last frame, in chain order: amp, noise gate, cab (after the output gain and the preset's level), doubler, delay, reverb. Linear; above 1.0 is over full scale, which only clips at the output. A block that is off shows the level that passes through it. (These six were added after the first A2 firmware: an app must accept a frame without them.) |
+| ← | `f32` input peak, linear, since the last frame · `f32` output peak · `f32` gate gain, 0 to 1 · `u32` clipped samples since start · `f32` CPU percent, whole chain, average · `f32` the same, maximum since the last frame · `f32` amp CPU percent · `f32` doubler · `f32` delay · `f32` reverb · `f32` drums · `u32` overruns since start · `u32` overload mutes since start · `u8` activity bits (0 amp running, 1 delay ringing, 2 reverb ringing, 3 drums playing, 4 output muted by overload, 5 tuner open) · 7 × `f32` the peak at each block's output since the last frame: amp, noise gate, cab (after the output gain and the preset's level), doubler, delay, reverb, mod (the mod sits between the doubler and the delay; its peak is last because it was added last). Linear; above 1.0 is over full scale, which only clips at the output. A block that is off shows the level that passes through it. (The first six were added after the first A2 firmware and the seventh with the Mod block: an app must accept a frame with none, six or seven, and ignore more.) |
 
 **`52 TUNER_OPEN`**: → `bool` open. ← (empty). The guitar is muted while the tuner is open. A tuner the app opened is closed when its session ends.
 
@@ -239,6 +239,7 @@ The `unit` byte of `GET_SCHEMA`, as in the firmware's settings table (`lib/param
 | 6 | Bars | `2 bars` |
 | 7 | dB | `-64 dB` |
 | 8 | Name | A choice's name, or a name the device supplies (a drum style, kit or song) |
+| 9 | Hundredths of a Hz | value ÷ 100: `0.80 Hz` |
 
 ## 7. Changing the protocol
 

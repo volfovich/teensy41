@@ -62,18 +62,18 @@ One serial port carries two languages: text lines for the shell and binary frame
 - Low FIFO watermarks, so the path adds about 2 frames beyond the two blocks of buffering.
 - Sets flush-to-zero and default-NaN for the interrupt, so denormals cost nothing.
 - Counts overruns (a block that took too long) and FIFO errors; `s` in the shell shows them.
-- **Overload protection:** after 16 overruns in a row it sends silence and stops calling the callback, which gives `loop()` the CPU back. `serviceFault()` in `main.cpp` then stops the drums, resumes after 1 s, and on a second trip within 10 s switches the doubler, delay and reverb off.
+- **Overload protection:** after 16 overruns in a row it sends silence and stops calling the callback, which gives `loop()` the CPU back. `serviceFault()` in `main.cpp` then stops the drums, resumes after 1 s, and on a second trip within 10 s switches the doubler, mod, delay and reverb off.
 
 ## Settings
 
 Everything adjustable is a row in one table: `lib/params/src/params/ParamDefs.cpp` (key, name, range, default, step, unit, choices, "in presets"). The shell's commands and help, the EEPROM record, the preset files, the MIDI map and the app's whole screen are generated from it.
 
-- 56 values: 53 saved, 3 not (drums playing, loop from, loop to). 35 are in presets.
-- Values are whole numbers; decibel settings are in half-dB steps.
+- 63 values: 60 saved, 3 not (drums playing, loop from, loop to). 42 are in presets.
+- Values are whole numbers; decibel settings are in half-dB steps, the Mod rate in hundredths of a Hz.
 - A few ranges are narrowed at run time by `paramLimits()` (the number of drum styles, kits and songs, the song's bars).
 - `Params.cpp`'s `applyParam()` is the one place that says what a setting does.
 
-**EEPROM record** (`Settings.cpp`): a magic number ("NFG1"), the count of values, the last IR, model and preset paths, then the 53 values. Saved a moment after the last change. A record from newer or older firmware keeps the values it has and takes defaults for the rest. teensy-ir-loader's record ("IRLR", which also held three codec levels) is converted once at boot.
+**EEPROM record** (`Settings.cpp`): a magic number ("NFG1"), the count of values, the last IR, model and preset paths, then the 60 values. Saved a moment after the last change. A record from newer or older firmware keeps the values it has and takes defaults for the rest. teensy-ir-loader's record ("IRLR", which also held three codec levels) is converted once at boot.
 
 **Preset files** (`lib/params` `PresetFile.*`, `PresetLibrary.cpp`): plain text in `/PRESETS`, named `NN Name.txt`. One line per setting as you would type it in the shell, plus the model's and the IR's paths:
 
@@ -104,9 +104,9 @@ The Teensy 4.1 has several kinds of memory with very different speeds. RAM1 is t
 
 | Region | Used (13 Nov 2026) | Holds |
 | --- | --- | --- |
-| RAM1 code (ITCM) | 56 KB of a 64 KB step | The audio path only |
+| RAM1 code (ITCM) | 57 KB of a 64 KB step | The audio path only |
 | RAM1 data (DTCM) | 364 KB, 95 KB left for the stack | Amp history (87 KB), one delay line (144 KB), the convolver's spectra |
-| RAM2 (OCRAM, `DMAMEM`) | 449 KB, 75 KB heap | The other delay line, reverb, doubler, file lists, load buffers |
+| RAM2 (OCRAM, `DMAMEM`) | 466 KB, 58 KB heap | The other delay line, reverb, doubler, mod, file lists, load buffers |
 | PSRAM (`EXTMEM`, 8 MB) | under 1 MB | IR resampler table, app link buffers, the raw capture buffer |
 | Flash | 1.6 MB of 8 MB | Background code, the built-in model, drum kits |
 
@@ -121,7 +121,7 @@ The Teensy 4.1 has several kinds of memory with very different speeds. RAM1 is t
 | Env | What it is |
 | --- | --- |
 | `teensy41` (default) | The firmware: `USB_MIDI_SERIAL`, `DSP_BLOCK=32`, the cold-code linker script; drum kits and songs are compiled in by `tools/pio_kits.py` |
-| `native` | Host tests: 16 suites, 51 cases |
+| `native` | Host tests: 17 suites, 61 cases |
 | `i2s_loopback` | Driver self-test on a bare board (jumper pin 7 to pin 8); never with the converter boards attached |
 | `nam_a2_bench` | The NAM engine against the reference output, and its CPU cost |
 | `nam_bench` | The reference engine (NeuralAmpModelerCore) for comparison; fetched into `third_party/` |

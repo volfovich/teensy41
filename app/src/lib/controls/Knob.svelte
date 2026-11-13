@@ -1,8 +1,9 @@
 <script lang="ts">
   // A rotary control for one setting. Drag up and down (Shift for fine steps), scroll, or use
   // the arrow keys; double-click to type a value; right-click for the default.
+  // A rate in Hz turns logarithmically: as much travel from 0.1 to 1 Hz as from 1 to 10 Hz.
   import { formatValue, parseTyped, typedValue } from "$lib/format";
-  import type { Setting } from "$lib/types";
+  import { Unit, type Setting } from "$lib/types";
 
   let { setting, value, colour = "#ffb347", onchange }: { setting: Setting; value: number; colour?: string; onchange: (v: number) => void } = $props();
 
@@ -10,7 +11,12 @@
   const DRAG_PIXELS = 180; // a full turn of the range
 
   const span = $derived(Math.max(1, setting.max - setting.min));
-  const frac = $derived(Math.min(1, Math.max(0, (value - setting.min) / span)));
+  const log = $derived(setting.unit === Unit.CentiHz && setting.min > 0);
+  // A value's place on the dial's travel, 0 .. 1, and back.
+  const toPos = (v: number) =>
+    Math.min(1, Math.max(0, log ? Math.log(v / setting.min) / Math.log(setting.max / setting.min) : (v - setting.min) / span));
+  const fromPos = (p: number) => (log ? setting.min * Math.pow(setting.max / setting.min, p) : setting.min + p * span);
+  const frac = $derived(toPos(value));
   // A setting that goes below and above zero is drawn from its centre (tone controls, gains).
   const bipolar = $derived(setting.min < 0 && setting.max > 0);
   const zeroFrac = $derived(bipolar ? -setting.min / span : 0);
@@ -35,7 +41,7 @@
 
   let dragging = $state(false);
   let startY = 0;
-  let startValue = 0;
+  let startPos = 0;
   let acc = 0;
 
   function down(e: PointerEvent) {
@@ -43,27 +49,33 @@
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     dragging = true;
     startY = e.clientY;
-    startValue = value;
+    startPos = toPos(value);
     acc = 0;
   }
   function move(e: PointerEvent) {
     if (!dragging) return;
     // Accumulated, so that pressing Shift half way does not make the value jump.
-    acc += ((startY - e.clientY) * span) / DRAG_PIXELS / (e.shiftKey ? 8 : 1);
+    acc += (startY - e.clientY) / DRAG_PIXELS / (e.shiftKey ? 8 : 1);
     startY = e.clientY;
-    set(startValue + acc);
+    set(fromPos(Math.min(1, Math.max(0, startPos + acc))));
   }
   function up() {
     dragging = false;
   }
+  // One notch up or down: the setting's step, or on a logarithmic dial 2 % of the travel
+  // (at least one count). Shift: one count.
+  const nudge = (dir: number, fine: boolean) => {
+    if (fine || !log) return set(value + dir * (fine ? 1 : setting.step || 1));
+    const v = Math.round(fromPos(toPos(value) + dir * 0.02));
+    set(v === value ? value + dir : v);
+  };
   function wheel(e: WheelEvent) {
     e.preventDefault();
-    set(value + (e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 1 : setting.step || 1));
+    nudge(e.deltaY < 0 ? 1 : -1, e.shiftKey);
   }
   function key(e: KeyboardEvent) {
-    const step = e.shiftKey ? 1 : setting.step || 1;
-    if (e.key === "ArrowUp" || e.key === "ArrowRight") set(value + step);
-    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") set(value - step);
+    if (e.key === "ArrowUp" || e.key === "ArrowRight") nudge(1, e.shiftKey);
+    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") nudge(-1, e.shiftKey);
     else if (e.key === "Enter") startTyping();
     else return;
     e.preventDefault();

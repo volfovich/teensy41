@@ -21,6 +21,8 @@ export function formatValue(s: Setting, v: number): string {
       return `${v} ${v === 1 ? "bar" : "bars"}`;
     case Unit.Db:
       return `${v} dB`;
+    case Unit.CentiHz:
+      return `${(v / 100).toFixed(2)} Hz`;
     case Unit.Name:
       // Without names: numbered from 1, as the device's shell shows them. 0 can mean none.
       return s.key === "drum song" ? (v ? String(v) : "off") : String(v + 1);
@@ -43,11 +45,11 @@ export function toDb(peak: number, floor = -120): number {
 export function parseTyped(s: Setting, text: string): number | null {
   const x = parseFloat(text.replace(",", "."));
   if (!Number.isFinite(x)) return null;
-  const raw = Math.round(s.unit === Unit.HalfDb ? x * 2 : x);
+  const raw = Math.round(s.unit === Unit.HalfDb ? x * 2 : s.unit === Unit.CentiHz ? x * 100 : x);
   return Math.min(s.max, Math.max(s.min, raw));
 }
 
 /** The number to start typing from: the value in the unit shown, without the unit. */
 export function typedValue(s: Setting, v: number): string {
-  return s.unit === Unit.HalfDb ? (v / 2).toFixed(1) : String(v);
+  return s.unit === Unit.HalfDb ? (v / 2).toFixed(1) : s.unit === Unit.CentiHz ? (v / 100).toFixed(2) : String(v);
 }

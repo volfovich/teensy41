@@ -2,7 +2,7 @@
 
 The audio path as it is in the code. Source: `src/main.cpp` (the block callback), `src/AudioChain.h` (`process()`), `src/Params.cpp` (what each setting does). Last checked against the code: 13 Nov 2026.
 
-**The path is kept as ported from teensy-ir-loader: the author wants the sound unchanged.** The only addition is the master volume at the end. A change to any gain, level or order here needs the author's say first.
+**The path is kept as ported from teensy-ir-loader: the author wants the sound unchanged.** Two things were added, both at the author's request and neither changing the ported sound: the master volume at the end, and the Mod block (chorus / flanger), which passes its input bit for bit while it is off. A change to any gain, level or order here needs the author's say first.
 
 ## Overview
 
@@ -31,6 +31,8 @@ CAB        IR convolution
 tuner mute                              mono up to here
   ▼
 DOUBLER    mono in, stereo out
+  ▼
+MOD        chorus or flanger, stereo
   ▼
 DELAY      stereo
   ▼
@@ -91,13 +93,29 @@ While the tuner is open the guitar is faded out here (20 ms), before the delay a
 ### Doubler (`dbl`, in presets)
 `dsp/fx/Doubler.h`. A second "take" 1 to 35 ms later (`dbl time`), panned opposite (`dbl width`). Makes the signal stereo.
 
+### Mod (`mod`, in presets)
+`dsp/fx/Modulation.h`. New in this project (13 Nov 2026), not ported. A chorus or a flanger (`mod type`), stereo in and out; with the doubler off its input is mono and the two sides get the sweep at different points of its cycle, which makes it wide.
+
+| Setting | Does |
+| --- | --- |
+| `mod type` | `chorus`: the delay moves around 12 ms, by up to ±5 ms. `flanger`: it moves between 0.3 ms and up to 7 ms. |
+| `mod rate` | The sweep's speed, 0.05 to 10 Hz. Above 1 Hz (chorus) or 2 Hz (flanger) the sweep gets narrower as the rate goes up, so the pitch wobble does not grow. |
+| `mod depth` | How far the delay moves |
+| `mod fb` | Feedback, up to 90 %: the flanger's resonance; on the chorus a thicker, ringing sound |
+| `mod mix` | Dry against wet, equal power. 50 % is equal parts (the flanger's deepest notches); 100 % on the chorus is vibrato. |
+| `mod width` | How far apart the two sides' sweeps are: 0 keeps mono, 100 % is half a cycle |
+
+- The dry signal is not delayed, so the block adds no latency.
+- **Level:** it is louder than the dry signal where dry and wet add up: up to 3 dB at mix 50 %, more with feedback. Measured with sine tones on 13 Nov 2026: chorus at its defaults +2 to +3 dB at the output, flanger with feedback 70 % and full depth +6 to +8 dB. A sine is the worst case; watch the Mod tile's level bar and use the preset level to compensate.
+- Switching on fills the delay lines for 20 ms, then fades in over 20 ms; a change of type fades out and back in. No clicks.
+
 ### Delay (`dl`, in presets)
 `dsp/fx/StudioDelay.h`. An 80s studio dual delay: `dtime` 20 to 750 ms (the right side at 0.75 of it), `dfb` repeats, `dmix`, `dtone`, `dmod`, `dduck` (the repeats duck while playing), `ddrive`, `dera`. Fixed voicing in `include/config.h` (`DELAY80_*`).
 
 ### Reverb (`rv`, in presets)
 `dsp/fx/Reverb80.h`. `rmode` hall (8-line FDN) or gated, `mix`, `size`, `tone`, `rpre` pre-delay, `rmod`, `rera`, `rgate` (gate time of the gated mode).
 
-An effect that is off and has rung out is idle: it costs no CPU and passes its input through bit for bit. With doubler, delay, reverb and drums all idle, the mono signal goes to both outputs.
+An effect that is off and has rung out is idle: it costs no CPU and passes its input through bit for bit. With doubler, mod, delay, reverb and drums all idle, the mono signal goes to both outputs.
 
 ### Drums and bass (`drum`, not in presets)
 `dsp/drums/`. Sampled kit, styles, songs (built in and MIDI files from `/DRUMS`), a plucked bass, count-in, speed trainer. Added to the outputs after the reverb.
@@ -120,7 +138,7 @@ Samples beyond full scale are clipped and counted (the app's CLIP label, `s` in 
 | Master volume | `master` | global | last, before the DAC |
 
 - A high-gain model with a resonant IR can peak near or above 0 dBFS after the cab at `amp out` 0 dB. Between blocks that is harmless (float); the output gain's default of −6 dB is the headroom before the DAC.
-- **Block meters:** the chain keeps the peak at the output of amp, gate, cab (after the output gain and preset level), doubler, delay and reverb (`takeStagePeak`). The app shows them on the blocks' tiles: green, yellow from −6 dBFS, red from −1 dBFS. An idle effect reports the level before it.
+- **Block meters:** the chain keeps the peak at the output of amp, gate, cab (after the output gain and preset level), doubler, mod, delay and reverb (`takeStagePeak`). The app shows them on the blocks' tiles: green, yellow from −6 dBFS, red from −1 dBFS. An idle effect reports the level before it.
 - **Checking levels without a guitar:** `sig 220 -20` in the shell replaces the guitar with a sine (`sig 0` ends it). Turn the master down first: a high-gain model makes any input loud.
 
 ## Tuner
@@ -134,19 +152,25 @@ Measured on the board, 32-sample blocks (budget: worst case at or below 80 % of 
 | --- | --- | --- |
 | Amp (network, DC blocker, tone) | 32.9 % | 13 Nov 2026 |
 | Doubler | 1.1 % | 13 Nov 2026 |
+| Mod (chorus or flanger) | 2.3 % | 13 Nov 2026 |
 | Delay | 4.7 % | 13 Nov 2026 |
 | Reverb, hall | 8.4 % | 13 Nov 2026 |
 | Drums and bass, rock at 100 BPM | 4.0 % avg | 13 Nov 2026 |
 | Driver, conversion, gate, idle convolver | about 4.5 % | 13 Nov 2026 |
-| A typical preset: amp + 4 k IR + reverb | 56.8 % avg, 57.6 % max | 13 Nov 2026 |
+| A typical preset: amp + 4 k IR + reverb | 56.3 % avg, 57.1 % max | 13 Nov 2026 |
+| The same + mod | 58.7 % avg, 59.5 % max | 13 Nov 2026 |
+| Everything on: + doubler, mod, delay, drums and bass (rock, 100 BPM) | 69 % avg, **80.4 % max** | 13 Nov 2026 |
 
 | Stage | Memory |
 | --- | --- |
 | Amp history | 87 KB, DTCM (must stay there: OCRAM costs about 4 % CPU) |
 | Cab spectra and history | DTCM |
 | Doubler | 8 KB, OCRAM |
+| Mod | 16 KB, OCRAM |
 | Delay | 144 KB DTCM + 144 KB OCRAM |
 | Reverb | 148 KB, OCRAM |
 | Drum kits | flash |
+
+With everything on, the worst block now touches the 80 % budget (by subtraction it was about 78 % before the Mod block; that was not measured); no overruns were seen. The drums' busiest moments set that maximum.
 
 Latency, analog in to analog out: about **2.2 ms** (ADC filter 0.36, two blocks 1.33, FIFOs 0.04, DAC filter 0.42; datasheet figures, not measured). Nothing in the chain adds latency: no lookahead, no oversampling, no FFT larger than the block. Details and the 16-sample experiment: [design/HLD.md](design/HLD.md) §2.

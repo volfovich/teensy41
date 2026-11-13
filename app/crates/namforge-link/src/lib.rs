@@ -640,8 +640,8 @@ mod tests {
         assert_eq!(r.u16().unwrap(), 64);
         assert_eq!(r.u16().unwrap(), 128);
         assert_eq!(r.u16().unwrap(), 95);
-        assert_eq!(r.u16().unwrap(), 53);
-        assert_eq!(r.u16().unwrap(), 56);
+        assert_eq!(r.u16().unwrap(), 60);
+        assert_eq!(r.u16().unwrap(), 63);
         assert_eq!(r.u32().unwrap(), 0xDEAD_BEEF);
         r.done().unwrap();
     }
