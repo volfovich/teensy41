@@ -7,3 +7,6 @@ compile_commands.json
 .DS_Store
 .cache/
 third_party/
+lib/dsp/src/dsp/drums/DrumKitData.cpp
+lib/dsp/src/dsp/drums/DrumSongData.cpp
+__pycache__/

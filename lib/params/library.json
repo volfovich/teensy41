@@ -1,0 +1,7 @@
+{
+  "name": "params",
+  "version": "0.1.0",
+  "description": "The settings table (serial keys, ranges, defaults, units) and the preset file format. Portable, host-tested. Ported from teensy-ir-loader (lib/oledui: ParamDefs, PresetFile).",
+  "frameworks": "*",
+  "platforms": "*"
+}

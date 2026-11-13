@@ -1,0 +1,168 @@
+// Ported from teensy-ir-loader (lib/irdsp/src/PluckBass.cpp); namespace and include paths changed.
+#include <dsp/drums/PluckBass.h>
+
+#include <math.h>
+
+#include <dsp/Port.h>
+
+namespace dsp {
+
+// Sustain (time to -60 dB) of the fundamental: an open E1 rings ~3 s,
+// higher notes less, like a real bass.
+static constexpr float kSustainE1 = 3.0f, kE1Hz = 41.2034f;
+static constexpr float kMuteT60 = 0.08f, kStealT60 = 0.03f, kDeadT60 = 0.04f;
+static constexpr float kOutGain = 0.5f;   // a vel-7 E1 peaks around -12 dBFS
+static constexpr float kAttackS = 0.0015f;
+static constexpr float kIdle = 1e-5f;     // a string below this is off
+static constexpr float kEnvOff = 1e-4f;   // a faded string below this is off
+
+DSP_COLD float PluckBass::noteHz(int note) { return 440.0f * powf(2.0f, (note - 69) / 12.0f); }
+
+DSP_COLD void PluckBass::init(float sampleRate, float* buf) {
+  fs_ = sampleRate;
+  for (int i = 0; i < 2; i++) {
+    slot_[i] = Slot();
+    slot_[i].line = buf + i * kLineLen;
+    for (int k = 0; k < kLineLen; k++) slot_[i].line[k] = 0.0f;
+  }
+  cur_ = 0;
+  dcX_ = dcY_ = 0.0f;
+  dcR_ = 1.0f - 6.2831853f * 20.0f / fs_;  // 20 Hz
+  attStep_ = 1.0f / (kAttackS * fs_);
+  body_.clear();
+  setTone(tone_);
+}
+
+DSP_COLD void PluckBass::setTone(float t) {
+  tone_ = clamp01(t);
+  body_.setLowpass(1500.0f + 3500.0f * tone_, fs_, 0.8f);
+}
+
+// The envelope factor per sample that fades to -60 dB in t60 seconds.
+DSP_COLD float PluckBass::fadeMul(float t60) const { return expf(-6.9078f / (t60 * fs_)); }
+
+// The string's length for hz: the delay line, the low-pass's phase delay at
+// hz and the allpass's fractional delay add up to one period.
+DSP_COLD void PluckBass::tune(Slot& s, float hz, float t60) {
+  s.hz = hz;
+  // Loop low-pass at 6 .. 36 harmonics (Tone), so every note keeps about the
+  // same number of lasting harmonics.
+  float fc = hz * harmonics();
+  if (fc > 0.4f * fs_) fc = 0.4f * fs_;
+  s.lpA = 1.0f - expf(-6.2831853f * fc / fs_);
+  const float w = 6.2831853f * hz / fs_, b = 1.0f - s.lpA;
+  // The low-pass delays low frequencies most. A low note is heard mostly
+  // through its 2nd and higher harmonics, so the string is tuned where the
+  // 2nd harmonic lands (the fundamental is then a cent or two flat).
+  const float w2 = 2.0f * w;
+  const float lpDelay = atan2f(b * sinf(w2), 1.0f - b * cosf(w2)) / w2;
+  const float period = fs_ / hz - lpDelay;
+  // The allpass is well-behaved for a fractional delay of 0.5 .. 1.5.
+  int len = (int)(period - 0.5f);
+  if (len > kLineLen - 2) len = kLineLen - 2;
+  if (len < 2) len = 2;
+  const float frac = period - (float)len;
+  s.len = len;
+  s.ap = (1.0f - frac) / (1.0f + frac);
+  // Loop gain for a fundamental decay of t60 seconds, given what the loop
+  // low-pass already takes off at the fundamental.
+  const float lpMag = s.lpA / sqrtf(1.0f - 2.0f * b * cosf(w) + b * b);
+  const float g = powf(10.0f, -3.0f / (t60 * hz)) / lpMag;
+  s.gain = g > 0.9999f ? 0.9999f : g;
+}
+
+// Starts a pluck: process() feeds it into the string during its first
+// period, ignoring what the string held before. A triangle peaking at 1/5
+// of its length (fingered near the bridge) with a trace of noise, low-passed
+// to about as many harmonics as the string keeps (fewer for soft and dead
+// notes). Its mean (0.5) is taken off, so it adds no DC.
+DSP_COLD void PluckBass::pluck(Slot& s, int vel, bool dead) {
+  const int n = s.len;
+  const int p = n / 5 > 1 ? n / 5 : 1;
+  const float v = (vel < 1 ? 1 : (vel > 9 ? 9 : vel)) / 9.0f;
+  float fc = s.hz * harmonics() * (0.6f + 0.9f * v) * (dead ? 0.5f : 1.0f);
+  if (fc > 0.4f * fs_) fc = 0.4f * fs_;
+  s.excA = 1.0f - expf(-6.2831853f * fc / fs_);
+  s.exc = n;
+  s.excPeak = n - p;  // samples left when the triangle turns down
+  s.tri = 0.0f;
+  s.triUp = 1.0f / p;
+  s.triDown = 1.0f / (n - p);
+  s.excY = -0.5f;  // where the period ends (the triangle back at 0), so it wraps smoothly
+  s.excNoise = 0.03f;
+  // The triangle minus its mean spans +-0.5: x2 for a peak of 1 at full
+  // velocity, as before the low-pass rounds it.
+  s.excAmp = 2.0f * v * sqrtf(v) * (dead ? 0.6f : 1.0f);
+  // The loop filters start where the waveform starts, not at 0: a step
+  // there would circulate as a click per period.
+  s.apX = s.apY = s.lpY = -0.5f * s.excAmp;
+  s.env = 1.0f;
+  s.envMul = dead ? fadeMul(kDeadT60) : 1.0f;
+  s.att = 0.0f;
+  s.peak = 1.0f;
+  s.on = true;
+}
+
+DSP_COLD void PluckBass::noteOn(int note, int vel, bool dead) {
+  while (note < kMinNote) note += 12;
+  while (note > kMaxNote) note -= 12;
+  // The sounding string is muted quickly; the other one plays the note.
+  Slot& old = slot_[cur_];
+  if (old.on) old.envMul = fadeMul(kStealT60);
+  cur_ ^= 1;
+  Slot& s = slot_[cur_];
+  const float hz = noteHz(note);
+  tune(s, hz, kSustainE1 * sqrtf(kE1Hz / hz));
+  pluck(s, vel, dead);
+}
+
+DSP_COLD void PluckBass::mute() {
+  const float m = fadeMul(kMuteT60);
+  for (Slot& s : slot_)
+    if (s.on && s.envMul > m) s.envMul = m;
+}
+
+bool PluckBass::process(float* out, int n) {
+  if (!active()) return false;
+  for (int i = 0; i < n; i++) {
+    float x = 0.0f;
+    for (Slot& s : slot_) {
+      if (!s.on) continue;
+      int r = s.w - s.len;
+      if (r < 0) r += kLineLen;
+      float d = s.line[r];
+      if (s.exc > 0) {
+        // The pluck's first period: fed in, in place of the old note.
+        s.excY += s.excA * (s.tri - 0.5f + s.excNoise * noise() - s.excY);
+        s.tri += --s.exc > s.excPeak ? s.triUp : -s.triDown;
+        d = s.excAmp * s.excY;
+      }
+      // Allpass (fractional delay), loop low-pass, loop gain.
+      const float a = s.ap * (d - s.apY) + s.apX;
+      s.apX = d;
+      s.apY = a;
+      s.lpY += s.lpA * (a - s.lpY);
+      s.line[s.w] = s.gain * s.lpY;
+      if (++s.w == kLineLen) s.w = 0;
+      const float o = d * s.env * s.att;
+      s.env *= s.envMul;
+      s.att = s.att + attStep_ < 1.0f ? s.att + attStep_ : 1.0f;
+      x += o;
+      const float m = fabsf(o);
+      s.peak = m > s.peak ? m : s.peak * 0.9995f;
+    }
+    // DC blocker, body low-pass, gentle saturation (a little warmth).
+    const float hp = x - dcX_ + dcR_ * dcY_;
+    dcX_ = x;
+    dcY_ = hp;
+    float y = body_.process(hp);
+    y = y > 1.5f ? 1.5f : (y < -1.5f ? -1.5f : y);
+    y = y - 0.08f * y * y * y;
+    out[i] += kOutGain * y;
+  }
+  for (Slot& s : slot_)
+    if (s.on && (s.peak < kIdle || s.env < kEnvOff)) s.on = false;
+  return true;
+}
+
+}  // namespace dsp
