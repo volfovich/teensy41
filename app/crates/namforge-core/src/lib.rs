@@ -7,10 +7,11 @@
 //!   and takes commands from the UI.
 
 pub mod backup;
+pub mod curve;
 pub mod device;
 pub mod files;
 pub mod session;
 pub mod types;
 
 pub use device::{spawn, DeviceHandle};
-pub use types::{DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};
+pub use types::{CardSpace, DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};

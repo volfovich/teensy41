@@ -335,7 +335,14 @@ fn details(
     }
     if known.ir.as_deref() != Some(files.ir.as_str()) {
         known.ir = Some(files.ir.clone());
-        emit(Event::IrInfo { info: s.ir_info()? });
+        let mut info = s.ir_info()?;
+        if let Some(info) = info.as_mut() {
+            if let Some(samples) = s.ir_data()? {
+                info.wave = crate::curve::wave(&samples);
+                info.response = crate::curve::response(&samples, 48000.0); // the unit runs at 48 kHz only
+            }
+        }
+        emit(Event::IrInfo { info });
     }
     Ok(())
 }
@@ -357,6 +364,7 @@ fn file_lists(s: &mut Session<Box<dyn SerialPort>>, emit: &impl Fn(Event)) -> Re
             Err(e) => return Err(e),
         }
     }
+    emit(Event::Card { space: s.card_info()? });
     Ok(())
 }
 

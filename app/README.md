@@ -46,11 +46,11 @@ Amps and IRs: click one to load it. "Add files…" or dropping files on the wind
 
 Tuner: the header's Tuner button or the T key; Esc closes it. The guitar is muted while it is open, and the unit closes it by itself if the app goes away.
 
-The amp and cab editors show what the loaded file is: the model's gear, loudness and input calibration with the gains the unit applies, and the IR's format, the length in use and what the unit changed.
+The amp and cab editors show what the loaded file is: the model's gear, loudness and input calibration with the gains the unit applies, and the IR's format, the length in use and what the unit changed. The Cab editor also draws the IR as the unit uses it: its waveform and its frequency response from 20 Hz to 20 kHz.
 
 Backup and restore (the Card tab): "Back up now" copies every amp model, IR, preset and drum song from the card into a new folder under `~/Music/NAM Forge/Backups/`, named by date and time and laid out like the card (`AMP/`, `IR/`, `PRESETS/`, `DRUMS/`, IRs from the card's root at the top). "Restore…" lets you pick such a folder, says what it holds, and after a yes sends the files back: files of the same name are replaced, others on the card are left alone.
 
-Not in yet: an IR's waveform and frequency response, a drum song editor. Keys: 1 to 7 open the chain's blocks and 8 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner, L the level bars.
+The Card tab shows the card's free space. Not in yet: renaming files, a drum song editor. Keys: 1 to 7 open the chain's blocks and 8 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner, L the level bars.
 
 The icon is drawn in `src-tauri/icons/source/icon.svg`; after changing it, render it to a 1024-pixel PNG and run `npx tauri icon <png>`.
 

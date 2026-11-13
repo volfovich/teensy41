@@ -41,6 +41,7 @@ pub mod msg {
     pub const IR_LIST: u8 = 0x38;
     pub const IR_LOAD: u8 = 0x39;
     pub const IR_INFO: u8 = 0x3A;
+    pub const IR_DATA: u8 = 0x3B;
     pub const FILE_PUT_BEGIN: u8 = 0x40;
     pub const FILE_PUT_DATA: u8 = 0x41;
     pub const FILE_PUT_END: u8 = 0x42;

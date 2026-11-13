@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use namforge_link::{encode_frame, msg, ErrorCode, Fed, Frame, FrameParser, Reader, WireError, Writer};
 
-use crate::types::{DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};
+use crate::types::{CardSpace, DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};
 
 /// The app's name as sent in `HELLO`.
 pub const APP_ID: &str = concat!("NAM Forge ", env!("CARGO_PKG_VERSION"));
@@ -284,10 +284,50 @@ impl<T: Read + Write> Session<T> {
                 resampled: r.bool()?,
                 cut: r.bool()?,
                 gain: r.f32()?,
+                wave: Vec::new(),
+                response: Vec::new(),
             })
         })()
         .map(Some)
         .map_err(|problem| SessionError::Malformed { request: msg::IR_INFO, problem })
+    }
+
+    /// The loaded IR's samples as the unit uses them (at its sample rate); `None` when no IR
+    /// is loaded or the firmware has no such request.
+    pub fn ir_data(&mut self) -> Result<Option<Vec<f32>>, SessionError> {
+        let f = match self.request(msg::IR_DATA, &[]) {
+            Ok(f) => f,
+            Err(SessionError::Device { .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        (|| -> Result<Vec<f32>, WireError> {
+            let mut r = Reader::new(&f.payload);
+            let (n, peak) = (r.u16()?, r.f32()?);
+            let mut samples = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                samples.push(r.u16()? as i16 as f32 * peak / 32767.0);
+            }
+            r.done()?;
+            Ok(samples)
+        })()
+        .map(Some)
+        .map_err(|problem| SessionError::Malformed { request: msg::IR_DATA, problem })
+    }
+
+    /// The card's size and free space; `None` without a card or when the firmware has no such
+    /// request. The unit may take a few seconds to count the free space of a large card.
+    pub fn card_info(&mut self) -> Result<Option<CardSpace>, SessionError> {
+        let f = match self.request_within(msg::CARD_INFO, &[], SLOW_REPLY_TIMEOUT) {
+            Ok(f) => f,
+            Err(SessionError::Device { .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        (|| -> Result<Option<CardSpace>, WireError> {
+            let mut r = Reader::new(&f.payload);
+            let (present, total_kb, free_kb) = (r.bool()?, r.u32()?, r.u32()?);
+            Ok(present.then_some(CardSpace { total_kb, free_kb }))
+        })()
+        .map_err(|problem| SessionError::Malformed { request: msg::CARD_INFO, problem })
     }
 
     /// The files and folders in one of the card's folders ("/AMP", "/"): name, size, is a folder.

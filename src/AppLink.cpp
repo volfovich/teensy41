@@ -344,6 +344,22 @@ static void onIrInfo(const applink::FrameHeader& h) {
   reply(h, w);
 }
 
+// The loaded IR's samples as the chain uses them, as 16-bit numbers with one scale for all:
+// enough for a picture of it and its frequency response, in one frame.
+static void onIrData(const applink::FrameHeader& h) {
+  const float* ir = irSamples();
+  if (!ir) return replyError(h, Err::kNotFound, "No IR is loaded");
+  const int n = irInfo().length;
+  float peak = 0.0f;
+  for (int i = 0; i < n; i++) peak = fmaxf(peak, fabsf(ir[i]));
+  Writer w(g_txPayload, kTxPayload);
+  w.u16((uint16_t)n);
+  w.f32(peak);
+  const float k = peak > 0.0f ? 32767.0f / peak : 0.0f;
+  for (int i = 0; i < n; i++) w.u16((uint16_t)(int16_t)lroundf(ir[i] * k));
+  reply(h, w);
+}
+
 // ---- Files on the SD card (PROTOCOL.md 4.5)
 
 static const char* const kFolders[] = {"/IR/", "/AMP/", "/PRESETS/", "/DRUMS/"};
@@ -458,6 +474,18 @@ static void onFileDelete(const applink::FrameHeader& h, Reader& r) {
   Serial.printf("Deleted %s\n", path);
   rescanCard();
   replyEmpty(h);
+}
+
+// CARD_INFO: the card's size and free space. Counting the free space reads the card's whole
+// allocation table, which takes a moment on a large card (the audio keeps running).
+static void onCardInfo(const applink::FrameHeader& h) {
+  Writer w(g_txPayload, kTxPayload);
+  const bool card = irSdOk();
+  const uint64_t total = card ? SD.totalSize() : 0, used = card ? SD.usedSize() : 0;
+  w.u8(card);
+  w.u32((uint32_t)(total / 1024));
+  w.u32((uint32_t)((total > used ? total - used : 0) / 1024));
+  reply(h, w);
 }
 
 // DIR_LIST: the files of one of the folders the app may see (no hidden names, no subfolders'
@@ -642,6 +670,8 @@ static void handleFrame() {
     case Msg::kIrLoad: onFileLoad(h, r, false); break;
     case Msg::kModelInfo: onModelInfo(h); break;
     case Msg::kIrInfo: onIrInfo(h); break;
+    case Msg::kIrData: onIrData(h); break;
+    case Msg::kCardInfo: onCardInfo(h); break;
     case Msg::kFilePutBegin: onPutBegin(h, r); break;
     case Msg::kFilePutData: onPutData(h); break;
     case Msg::kFilePutEnd: onPutEnd(h); break;

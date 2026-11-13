@@ -128,6 +128,16 @@ export interface IrInfo {
   resampled: boolean;
   cut: boolean;
   gain: number;
+  /** The IR in use as columns of [lowest, highest] sample, the largest being 1; may be empty. */
+  wave: [number, number][];
+  /** Its gain in dB at points spread logarithmically from 20 Hz to 20 kHz; may be empty. */
+  response: number[];
+}
+
+/** The SD card's size and free space, in KB. */
+export interface CardSpace {
+  totalKb: number;
+  freeKb: number;
 }
 
 export interface Snapshot {
@@ -142,6 +152,7 @@ export interface Snapshot {
   irs: FileEntry[];
   modelInfo: ModelInfo | null;
   irInfo: IrInfo | null;
+  card: CardSpace | null;
 }
 
 export type DeviceEvent =
@@ -160,6 +171,7 @@ export type DeviceEvent =
   | { kind: "irs"; files: FileEntry[] }
   | { kind: "modelInfo"; info: ModelInfo | null }
   | { kind: "irInfo"; info: IrInfo | null }
+  | { kind: "card"; space: CardSpace | null }
   | ({ kind: "transfer" } & Transfer)
   | { kind: "refused"; message: string }
   | { kind: "disconnected"; reason: string };

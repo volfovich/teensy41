@@ -36,11 +36,14 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 | Master volume | Working | Against the unit |
 | Tuner | Working | Real window with the unit's test tone |
 | Confirmations (recall with edits, replace a file, delete, restore) | Working | Browser preview and the unit |
+| IR waveform and frequency response in the Cab editor | Working | The unit's IR fetched and computed through the app's core (4,049 samples, 120 points); the drawing seen in the browser preview with made-up data only |
+| Card free space in the Card tab | Working | Against the unit: 14.8 GB free of 14.9 GB, answered in 0.8 s |
 | Backup of the card | Working | Full backup through the app's core: 24 files, 4.4 MB, a model byte-identical to the original |
 | Restore | Working for one file | A one-file backup restored and removed again; **a full restore over the card has not been run** |
 
 ## Not checked by a person
 - The Card tab's buttons and the folder dialog in the real window (seen only in the browser preview).
+- The Cab editor's two graphs with a real IR in the real window (the numbers behind them were checked, the drawing only with preview data).
 - Drag and drop of files onto the real window; the file dialog.
 - A preset saved in the app, then recalled by a MIDI program change.
 - USB MIDI with a real controller.
@@ -50,6 +53,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - The worst-case CPU (long IR, busy drums at 240 BPM, IR switching) at 32-sample blocks.
 
 ## Known issues and observations
+- Asking the card for its free space stops the unit's `loop()` for about 0.8 s (16 GB card): the audio keeps running, the app's meters pause for that moment. It happens when the app connects and after each file sent or deleted.
 - **With every block and the drums on, the worst block reaches the 80 % CPU budget** (80.4 % measured; by subtraction about 78 % before the Mod block). No overruns, and the overload protection covers a spike, but there is no margin left for another effect without making room.
 - **The Mod block's level is compensated for loudness** (within 0.3 dB on guitar-band noise in the host test), not for peaks: a steady sine on a comb peak still reads up to +3 dB (chorus) or +7 dB (flanger with strong feedback) higher.
 - The Mod block's voicing (centre delays, depth scaling, feedback tone) is a first version, to be tuned by ear.
@@ -65,8 +69,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 ## Open work
 
 ### App (from [design/APP_PLAN.md](design/APP_PLAN.md))
-- An IR's waveform and frequency response in the Cab editor.
-- Renaming files on the card (`FILE_RENAME`), the card's free space (`CARD_INFO`).
+- Renaming files on the card (`FILE_RENAME`). Open question first: a renamed model or IR is no longer found by the presets that name it, so either the unit rewrites those presets or the app warns.
 - Later: a local library on the Mac, preset packs, A/B compare, undo, a set list view, a drum song editor.
 - If it is ever shared: signing, notarisation, an installer, update check.
 

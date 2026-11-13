@@ -133,6 +133,19 @@ pub struct IrInfo {
     pub resampled: bool,
     pub cut: bool,
     pub gain: f32,
+    /// The IR in use as a picture: columns of `[lowest, highest]` sample, the largest being 1.
+    /// Empty when the firmware cannot send the IR.
+    pub wave: Vec<[f32; 2]>,
+    /// Its gain in dB at points spread logarithmically from 20 Hz to 20 kHz (see `curve`).
+    pub response: Vec<f32>,
+}
+
+/// The SD card's size and free space, in KB (`CARD_INFO`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardSpace {
+    pub total_kb: u32,
+    pub free_kb: u32,
 }
 
 /// Everything the device side reports to the UI.
@@ -156,6 +169,8 @@ pub enum Event {
     ModelInfo { info: Option<ModelInfo> },
     IrInfo { info: Option<IrInfo> },
     Irs { files: Vec<FileEntry> },
+    /// The card's size and free space; `None` without a card (or with older firmware).
+    Card { space: Option<CardSpace> },
     /// A file on its way to the unit: `sent` of `total` bytes. `done` with an empty `error` means it
     /// arrived and is in the lists; with an `error`, why it was not sent.
     Transfer { name: String, sent: u32, total: u32, done: bool, error: String },

@@ -17,6 +17,7 @@ const empty: Snapshot = {
   irs: [],
   modelInfo: null,
   irInfo: null,
+  card: null,
 };
 
 const noMeters: Meters = {
@@ -104,6 +105,9 @@ function apply(e: DeviceEvent) {
       break;
     case "irInfo":
       device.irInfo = e.info;
+      break;
+    case "card":
+      device.card = e.space;
       break;
     case "transfer":
       Object.assign(transfer, { name: e.name, sent: e.sent, total: e.total, done: e.done, error: e.error, at: performance.now() });
@@ -315,7 +319,21 @@ async function startPreview(): Promise<() => void> {
   device.models = [device.files.model, "/AMP/Recto Modern Red.nam", "/AMP/Deluxe Reverb clean.nam", "/AMP/5150 Block Letter.nam"].filter(Boolean).sort().map((path) => ({ path, size: 665758 }));
   device.irs = [device.files.ir, "/IR/Mesa OS 4x12 V30.wav", "/IR/Greenback 2x12.wav"].filter(Boolean).sort().map((path) => ({ path, size: 96044 }));
   device.modelInfo = { name: "", gearMake: "Marshall", gearModel: "JCM 800 2203", gearType: "amp", toneType: "hi_gain", sampleRate: 48000, loudness: -20.6, inputLevelDbu: 12, outputLevelDbu: null, calibrationDb: -9.3, levelDb: 8.6 };
-  device.irInfo = { sampleRate: 96000, channels: 2, bits: 24, frames: 19968, length: 3992, resampled: true, cut: true, gain: 0.44 };
+  // A made-up cab: a few decaying resonances for the picture, a speaker-like curve for the response.
+  const wave: [number, number][] = Array.from({ length: 400 }, (_, c) => {
+    const t = c / 400;
+    const v = Math.exp(-9 * t) * (Math.sin(260 * t) + 0.5 * Math.sin(95 * t + 1) + 0.25 * Math.sin(700 * t));
+    const a = Math.min(1, Math.abs(v) / 1.2 + 0.02 * Math.exp(-4 * t));
+    return [-a * (0.7 + 0.3 * Math.sin(40 * t)), a];
+  });
+  const response = Array.from({ length: 120 }, (_, i) => {
+    const oct = Math.log2((20 * 1000 ** (i / 119)) / 1000); // octaves from 1 kHz
+    const low = -18 * Math.max(0, -3.2 - oct) ** 1.3;
+    const high = -30 * Math.max(0, oct - 2.2) ** 1.2;
+    return low + high + 5 * Math.exp(-((oct + 3) ** 2) * 2) + 4 * Math.exp(-((oct - 1.5) ** 2) * 3) - 3 * Math.exp(-((oct - 0.2) ** 2) * 6) + Math.sin(i * 1.7);
+  });
+  device.irInfo = { sampleRate: 96000, channels: 2, bits: 24, frames: 19968, length: 3992, resampled: true, cut: true, gain: 0.44, wave, response };
+  device.card = { totalKb: 31154688, freeKb: 31020032 };
   device.presets = ["01 Recto", device.files.preset || "02 Crunch", "03 Vintage clean"].map((name) => ({ name, number: Number(name.slice(0, 2)) }));
   preview.on = true;
   const t0 = performance.now();

@@ -36,8 +36,10 @@ static int g_numFiles = 0;
 static int g_current = -1;
 static bool g_sdOk = false;
 static dsp::IRPrepResult g_info;  // of the IR that is loaded
+static bool g_irKept = false;     // g_ir still holds the loaded IR (a failed load overwrites it)
 
 const dsp::IRPrepResult& irInfo() { return g_info; }
+const float* irSamples() { return g_current >= 0 && g_irKept ? g_ir : nullptr; }
 
 bool irSdOk() { return g_sdOk; }
 int irCount() { return g_numFiles; }
@@ -130,6 +132,7 @@ bool loadIRIndex(int idx, bool save) {
   const char* err = "";
   SdSource src(f);
   uint32_t t0 = millis();
+  g_irKept = false;
   bool ok = dsp::prepareIR(src, opt, g_scratch, kLoadScratch, g_ir, IR_MAX_LENGTH, res, &err);
   f.close();
   if (!ok) {
@@ -141,6 +144,7 @@ bool loadIRIndex(int idx, bool save) {
 
   g_current = idx;
   g_info = res;
+  g_irKept = true;
   if (save) saveCurrentIR();
 
   Serial.printf("[%d/%d] %s\n", idx + 1, g_numFiles, path);

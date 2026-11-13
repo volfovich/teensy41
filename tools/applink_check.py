@@ -331,6 +331,30 @@ def main():
         link.poll(0.1)
     check(b"CPU:" in link.text and b"Driver:" in link.text, "the typed shell still answers in text while the app is connected")
 
+    # The loaded IR's samples (for the app's pictures of it) and the card's space.
+    f, _ = link.request(0x3A)
+    if f and f[1] == 1:
+        r = Reader(f[3])
+        r.u32(), r.u16(), r.u16(), r.u32()
+        length = r.u32()
+        f, _ = link.request(0x3B, wait=2.0)
+        r = Reader(f[3]) if f and f[1] == 1 else None
+        n = r.u16() if r else -1
+        peak = r.take("f") if r else 0.0
+        samples = [r.i16() for _ in range(n)] if r else []
+        check(r is not None and n == length and r.done() and peak > 0 and max(abs(v) for v in samples) == 32767,
+              "IR_DATA: %d samples (IR_INFO says %d in use), peak %.3f" % (n, length, peak))
+    else:
+        f, _ = link.request(0x3B)
+        check(f and f[1] == 3 and Reader(f[3]).u16() == 3, "IR_DATA with no IR loaded: error NOT_FOUND")
+    t0 = time.time()
+    f, _ = link.request(0x48, wait=8.0)
+    took = time.time() - t0
+    r = Reader(f[3]) if f and f[1] == 1 else None
+    present, total, free = (r.u8(), r.u32(), r.u32()) if r else (0, 0, 0)
+    check(r is not None and r.done() and (not present or 0 < free <= total),
+          "CARD_INFO: card %s, %.1f GB, %.1f GB free, answered in %.2f s" % ("in" if present else "out", total / 1048576, free / 1048576, took))
+
     # The tuner: opening it shows in the METERS activity bits; a tuner the app opened is closed
     # when the session ends (or the guitar would stay muted).
     def tuner_bit():

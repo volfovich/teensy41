@@ -9,6 +9,7 @@
   import Meter from "$lib/controls/Meter.svelte";
   import { answerRestore, backupCard, cancelOffer, cardFile, chooseBackup, job, restoreOffer, connectDevice, device, dropping, meters, notice, offered, pickFiles, presetAction, preview, sendFiles, setParam, setTuner, transfer } from "$lib/device.svelte";
   import Tuner from "$lib/Tuner.svelte";
+  import IrGraph from "$lib/IrGraph.svelte";
   import { baseName, formatValue } from "$lib/format";
   import type { Setting } from "$lib/types";
 
@@ -85,6 +86,8 @@
     out.push(["Level", signed(20 * Math.log10(Math.max(r.gain, 1e-6))), "The gain the unit applies so that all IRs are about as loud"]);
     return out;
   });
+  // A size in KB as "29.7 GB" or "412 MB".
+  const gb = (kb: number) => (kb >= 1048576 ? `${(kb / 1048576).toFixed(1)} GB` : `${Math.round(kb / 1024)} MB`);
   const factsOf = (b: Block) => (b.def.file === "model" ? modelFacts : b.def.file === "ir" ? irFacts : []);
 
   // The level at a block's output.
@@ -329,6 +332,12 @@
     {#if tab === "card"}
       <div class="card">
         <p class="none">{device.files.card ? `On the card: ${device.models.length} amp models, ${device.irs.length} IRs, ${device.presets.length} presets.` : "No SD card in the unit."}</p>
+        {#if device.files.card && device.card}
+          <div class="space" title="Free space on the unit's SD card">
+            <div class="progress"><div style:width="{device.card.totalKb ? (100 * (device.card.totalKb - device.card.freeKb)) / device.card.totalKb : 0}%"></div></div>
+            <span>{gb(device.card.freeKb)} free of {gb(device.card.totalKb)}</span>
+          </div>
+        {/if}
         <div class="row">
           <button disabled={!device.files.card || !job.finished} onclick={backupCard}>Back up now</button>
           <button disabled={!device.files.card || !job.finished} onclick={chooseBackup}>Restore…</button>
@@ -491,6 +500,11 @@
           <div title={hint}><dt>{label}</dt><dd>{text}</dd></div>
         {/each}
       </dl>
+    {/if}
+    {#if selected.def.file === "ir" && fileOf(selected) && device.irInfo?.response.length}
+      <div class="irgraph">
+        <IrGraph wave={device.irInfo.wave} response={device.irInfo.response} ms={(1000 * device.irInfo.length) / (device.info?.sampleRate ?? 48000)} colour={selected.def.colour} />
+      </div>
     {/if}
     {#each selected.sections as sec (sec.title)}
       <div class="section">
@@ -776,6 +790,17 @@
     margin: 2px 0 10px;
     padding: 0 4px;
   }
+  .space {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin: 0 4px 12px;
+    font-size: 11.5px;
+    color: #aab2bf;
+  }
+  .space .progress div {
+    background: #6f7786;
+  }
   .jobbox {
     display: flex;
     flex-direction: column;
@@ -1017,7 +1042,7 @@
     color: #aab2bf;
   }
   /* A narrow window: seven tiles get tight, so the names shrink to stay clear of the switch. */
-  @media (max-width: 1180px) {
+  @media (max-width: 1120px) {
     .short {
       font-size: 11px;
       letter-spacing: 0.05em;
@@ -1201,6 +1226,9 @@
     border-color: var(--c);
     background: color-mix(in srgb, var(--c) 26%, #22262e);
     color: #fff;
+  }
+  .irgraph {
+    margin: 2px 0 16px;
   }
   .facts {
     display: flex;

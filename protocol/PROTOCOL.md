@@ -2,7 +2,7 @@
 
 Version 1 · The single reference for both sides: the firmware (`lib/applink`, `src/AppLink.cpp`) and the app (`app/crates/namforge-link`).
 
-The plan this belongs to is [`docs/design/APP_PLAN.md`](../docs/design/APP_PLAN.md); the app as built is in [`docs/APP.md`](../docs/APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO`, `IR_INFO`, `FILE_GET` and `DIR_LIST` too. Not implemented yet, on either side: `FILE_RENAME`, `CARD_INFO`, the `LOG` event, and the `BUSY` error (the numbers are reserved). Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
+The plan this belongs to is [`docs/design/APP_PLAN.md`](../docs/design/APP_PLAN.md); the app as built is in [`docs/APP.md`](../docs/APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO`, `IR_INFO`, `IR_DATA`, `FILE_GET`, `DIR_LIST` and `CARD_INFO` too. Not implemented yet, on either side: `FILE_RENAME`, the `LOG` event, and the `BUSY` error (the numbers are reserved). Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
 
 ---
 
@@ -153,6 +153,7 @@ Names are exact ("03 Lead"). A recall loads the model and the IR before it repli
 | `38 IR_LIST` | (empty) | as `MODEL_LIST` |
 | `39 IR_LOAD` | `string` path | (empty); `STATE_CHANGED` follows |
 | `3A IR_INFO` | (empty): the loaded IR | `u32` source sample rate · `u16` channels · `u16` bits per sample · `u32` frames in the file · `u32` length in use, in samples · `bool` resampled · `bool` cut at the maximum length · `f32` normalisation gain |
+| `3B IR_DATA` | (empty): the loaded IR | `u16` number of samples (the length in use) · `f32` scale · that many `i16`: the IR as the unit convolves with it, at the unit's sample rate; a sample is value ÷ 32767 × scale. `NOT_FOUND` when no IR is loaded. For pictures of the IR, not for copying it. |
 
 ### 4.5 Files on the SD card (since A4)
 
@@ -183,7 +184,7 @@ A `FILE_PUT_BEGIN` while an upload is open abandons the earlier one. An upload w
 | `45 FILE_DELETE` | `string` path | (empty) |
 | `46 FILE_RENAME` | `string` from · `string` to | (empty) |
 | `47 DIR_LIST` | `string` folder | list of: `string` name · `u32` size · `u32` modified time · `bool` is a folder |
-| `48 CARD_INFO` | (empty) | `bool` card present · `u32` total space in KB · `u32` free space in KB |
+| `48 CARD_INFO` | (empty) | `bool` card present · `u32` total space in KB · `u32` free space in KB (both 0 without a card). The device counts the free space on each request, which takes a moment (0.8 s measured on a 16 GB card, longer on larger ones): allow 6 s. |
 | `49 RESCAN` | (empty) | `u16` IRs found · `u16` models found · `u16` presets found · `u16` drum songs found |
 
 ### 4.6 Live data (meters since A2, tuner since A5)

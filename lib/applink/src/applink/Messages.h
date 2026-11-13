@@ -32,6 +32,7 @@ enum class Msg : uint8_t {
     kIrList = 0x38,
     kIrLoad = 0x39,
     kIrInfo = 0x3A,
+    kIrData = 0x3B,
     // Files on the SD card
     kFilePutBegin = 0x40,
     kFilePutData = 0x41,

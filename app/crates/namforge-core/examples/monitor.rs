@@ -134,7 +134,16 @@ fn main() {
                 }
             }
             Event::ModelInfo { info } => println!("model info: {info:?}"),
-            Event::IrInfo { info } => println!("IR info: {info:?}"),
+            Event::IrInfo { info } => match info {
+                Some(i) => {
+                    let (lo, hi) = i.response.iter().fold((f32::MAX, f32::MIN), |(lo, hi), &d| (lo.min(d), hi.max(d)));
+                    println!(
+                        "IR info: {} Hz, {} ch, {}-bit, {} frames; {} samples in use, gain {:.2}; picture {} columns, response {} points from {lo:.1} to {hi:.1} dB",
+                        i.sample_rate, i.channels, i.bits, i.frames, i.length, i.gain, i.wave.len(), i.response.len()
+                    )
+                }
+                None => println!("IR info: none"),
+            },
             Event::Tuner { valid, hz, note, octave, cents } => {
                 if valid {
                     println!("tuner: {}{octave} {cents:+.1} cents, {hz:.2} Hz", ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"][note as usize % 12])
@@ -144,6 +153,10 @@ fn main() {
             }
             Event::Models { files } => println!("models: {} on the card", files.len()),
             Event::Irs { files } => println!("IRs: {} on the card", files.len()),
+            Event::Card { space } => match space {
+                Some(c) => println!("card: {:.1} GB free of {:.1} GB", c.free_kb as f64 / 1048576.0, c.total_kb as f64 / 1048576.0),
+                None => println!("card: none"),
+            },
             Event::Transfer { name, sent, total, done, error } => {
                 if done || sent == 0 {
                     println!("transfer {name}: {sent} of {total} bytes{}{}", if done { ", done" } else { "" }, if error.is_empty() { String::new() } else { format!(", {error}") })

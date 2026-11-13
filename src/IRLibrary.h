@@ -26,6 +26,9 @@ void loadStartupIR();
 // What the loader did with the IR that is loaded (irCurrent() >= 0): the file's format, the
 // length in use, whether it was resampled or cut.
 const dsp::IRPrepResult& irInfo();
+// The loaded IR as the chain uses it: irInfo().length samples at 48 kHz. nullptr when none
+// is loaded, or when a later load that failed has overwritten the buffer.
+const float* irSamples();
 
 bool irSdOk();
 int irCount();

@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use namforge_core::{DeviceHandle, DeviceInfo, Event, FileEntry, Files, IrInfo, ModelInfo, Preset, Setting};
+use namforge_core::{CardSpace, DeviceHandle, DeviceInfo, Event, FileEntry, Files, IrInfo, ModelInfo, Preset, Setting};
 use tauri_plugin_dialog::DialogExt;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
@@ -24,6 +24,7 @@ struct Snapshot {
     irs: Vec<FileEntry>,
     model_info: Option<ModelInfo>,
     ir_info: Option<IrInfo>,
+    card: Option<CardSpace>,
 }
 
 impl Snapshot {
@@ -54,6 +55,7 @@ impl Snapshot {
             Event::Irs { files } => self.irs = files.clone(),
             Event::ModelInfo { info } => self.model_info = info.clone(),
             Event::IrInfo { info } => self.ir_info = info.clone(),
+            Event::Card { space } => self.card = *space,
             Event::Meters { .. } | Event::Tuner { .. } | Event::Job { .. } | Event::PresetsChanged | Event::Refused { .. } | Event::Transfer { .. } => {}
             Event::Disconnected { reason } => {
                 self.connected = false;
