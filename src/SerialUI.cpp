@@ -79,6 +79,7 @@ void printHelp() {
                "  pre del <n>           delete preset n\n"
                "  pre show              what differs from the recalled preset\n"
                "  tuner                 the tuner for 5 s (the guitar is muted meanwhile)\n"
+               "  tuner test <Hz>       the tuner hears a sine instead of the guitar (0 = off)\n"
                "  midi                  the USB MIDI mapping (program change = preset, controllers)\n"
                "  cap                   debug: 3 s of the raw input as floats over USB\n"
                "  overload              debug: test the overload protection (mutes for 1 s)\n"
@@ -491,6 +492,11 @@ static void handleCommand(char* line) {
     scanCard();
     loadStartupIR();
     loadStartupAmp();
+  } else if (!strcmp(line, "tuner") && arg && !strncmp(arg, "test", 4)) {
+    const float hz = atof(arg + 4);
+    chain.setTunerTestHz(hz);
+    if (hz > 0.0f) Serial.printf("Tuner test: the tuner hears a %.2f Hz sine instead of the guitar ('tuner test 0' ends it).\n", hz);
+    else Serial.println("Tuner test off: the tuner hears the guitar.");
   } else if (!strcmp(line, "tuner")) {
     runTuner();
   } else if (!strcmp(line, "?") || !strcmp(line, "help")) {

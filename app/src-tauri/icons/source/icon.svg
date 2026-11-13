@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- NAM Forge: a knob whose pointer is a spark of amber, on the app's dark panel. -->
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262b34"/>
+      <stop offset="1" stop-color="#101216"/>
+    </linearGradient>
+    <linearGradient id="cap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a404c"/>
+      <stop offset="1" stop-color="#1c2027"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#panel)" stroke="#3a404c" stroke-width="6"/>
+  <!-- The knob's range: 270 degrees, the first 70% lit. -->
+  <path d="M 314.0 710.0 A 280 280 0 1 1 710.0 710.0" fill="none" stroke="#2f343e" stroke-width="56" stroke-linecap="round"/>
+  <path d="M 314.0 710.0 A 280 280 0 1 1 774.9 416.2" fill="none" stroke="#ffb347" stroke-width="56" stroke-linecap="round"/>
+  <circle cx="512" cy="512" r="186" fill="url(#cap)" stroke="#4a505c" stroke-width="6"/>
+  <line x1="512" y1="512" x2="512" y2="366" stroke="#ffb347" stroke-width="40" stroke-linecap="round" transform="rotate(54 512 512)"/>
+</svg>

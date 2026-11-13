@@ -6,7 +6,7 @@
   import { blockActive, blockOn, blockOnValue, buildBlocks, type Block } from "$lib/blocks";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
-  import { cardFile, connectDevice, device, dropping, meters, notice, pickFiles, presetAction, preview, setParam, setTuner, transfer } from "$lib/device.svelte";
+  import { cancelOffer, cardFile, connectDevice, device, dropping, meters, notice, offered, pickFiles, presetAction, preview, sendFiles, setParam, setTuner, transfer } from "$lib/device.svelte";
   import Tuner from "$lib/Tuner.svelte";
   import { baseName, formatValue } from "$lib/format";
 
@@ -15,6 +15,8 @@
     connectDevice().then((s) => {
       stop = s;
       if (preview.on && hashTuner === "tuner") setTuner(true);
+      if (preview.on && hashAsk === "recall") recall(device.presets[0].name);
+      if (preview.on && hashAsk === "files") pickFiles();
     });
     return () => stop();
   });
@@ -22,9 +24,9 @@
   const blocks = $derived(buildBlocks(device.settings));
   const lane = $derived(blocks.lane);
   const all = $derived([...blocks.chain, blocks.lane, ...(blocks.other ? [blocks.other] : [])]);
-  // The address can name the block and the library tab to open ("#reverb", "#amp/models", and in the preview "#amp//tuner"):
+  // The address can name the block and the library tab to open ("#reverb", "#amp/models", and in the preview "#amp//tuner", "#amp///recall", "#amp///files"):
   // handy when working on the UI.
-  const [hashBlock, hashTab, hashTuner] = (typeof location !== "undefined" ? location.hash.slice(1) : "").split("/");
+  const [hashBlock, hashTab, hashTuner, hashAsk] = (typeof location !== "undefined" ? location.hash.slice(1) : "").split("/");
   let selectedId = $state(hashBlock || "amp");
   const selected = $derived(all.find((b) => b.def.id === selectedId) ?? all[0]);
 
@@ -43,13 +45,18 @@
     ({ amp: meters.cpuAmp, doubler: meters.cpuDoubler, delay: meters.cpuDelay, reverb: meters.cpuReverb, drums: meters.cpuDrums })[b.def.id] ?? null;
 
   // The clip count only grows: "clipped" lights for 2 s after it last went up.
-  let clipSeen = 0;
+  // `now` is a clock that ticks, so that things shown "for 2 s" also go away again.
+  let clipSeen = -1; // -1: no frame yet (the count at connection is old news)
   let clipAt = $state(-1e9);
   let now = $state(0);
+  onMount(() => {
+    const tick = setInterval(() => (now = performance.now()), 250);
+    return () => clearInterval(tick);
+  });
   $effect(() => {
-    now = performance.now();
-    if (meters.clipped > clipSeen) clipAt = now;
-    clipSeen = meters.clipped;
+    const count = meters.clipped;
+    if (clipSeen >= 0 && count > clipSeen) clipAt = performance.now();
+    clipSeen = device.connected ? count : -1;
   });
   const clipping = $derived(now - clipAt < 2000);
 
@@ -71,8 +78,21 @@
     if (!list.length) return;
     const i = list.findIndex((p) => p.name === current);
     const next = list[i < 0 ? 0 : (i + d + list.length) % list.length];
-    if (next.name !== current) presetAction("recall", next.name);
+    if (next.name !== current) recall(next.name);
   }
+  // Recalling a preset throws away unsaved edits: ask first.
+  let pendingRecall = $state("");
+  function recall(name: string) {
+    if (name === current && !device.files.edited) return;
+    if (device.files.edited) pendingRecall = name;
+    else presetAction("recall", name);
+  }
+  function answerRecall(yes: boolean) {
+    if (yes) presetAction("recall", pendingRecall);
+    pendingRecall = "";
+  }
+  const asking = $derived(!!pendingRecall || offered.replacing.length > 0);
+  const focusEl = (el: HTMLElement) => el.focus();
   // The name field under the list: for "save as" or for renaming the recalled preset.
   let naming = $state<"" | "new" | "rename">("");
   let nameText = $state("");
@@ -104,6 +124,10 @@
       else if (!current) startNaming("new");
       return;
     }
+    if (asking) {
+      if (e.key === "Escape") (answerRecall(false), cancelOffer());
+      return; // a question is open: it has the keyboard
+    }
     if (t.closest("input, select, button, [role=slider]")) return;
     if (e.key === "t" || e.key === "T") {
       if (device.connected) setTuner(!meters.tunerOpen);
@@ -111,6 +135,11 @@
       return; // the tuner has the keyboard
     } else if (e.key === " ") {
       if (selected) toggle(selected);
+    } else if (e.key >= "1" && e.key <= "9" && !e.metaKey && !e.ctrlKey) {
+      // 1 .. 7 open the chain's blocks, the next number the drums.
+      const b = [...blocks.chain, blocks.lane][Number(e.key) - 1];
+      if (!b) return;
+      selectedId = b.def.id;
     } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") stepPreset(-1);
     else if (e.key === "ArrowRight" || e.key === "ArrowDown") stepPreset(1);
     else return;
@@ -124,6 +153,41 @@
 <svelte:window onkeydown={key} />
 
 <Tuner />
+
+{#if pendingRecall}
+  <div class="veil">
+    <div class="ask-box" role="alertdialog" aria-label="Discard the changes?">
+      <h2>Discard the changes?</h2>
+      <p>
+        {#if pendingRecall === current}
+          "{bare(current)}" has changes that are not saved. Recalling it again goes back to the saved sound.
+        {:else}
+          "{bare(current)}" has changes that are not saved. Recalling "{bare(pendingRecall)}" discards them.
+        {/if}
+      </p>
+      <div class="row">
+        <button class="danger" onclick={() => answerRecall(true)}>Discard and recall</button>
+        <button onclick={() => (presetAction("save"), answerRecall(true))}>Save, then recall</button>
+        <button use:focusEl onclick={() => answerRecall(false)}>Cancel</button>
+      </div>
+    </div>
+  </div>
+{:else if offered.replacing.length}
+  <div class="veil">
+    <div class="ask-box" role="alertdialog" aria-label="Replace files on the unit?">
+      <h2>Replace {offered.replacing.length === 1 ? "this file" : "these files"} on the unit?</h2>
+      <p>The card already has {offered.replacing.length === 1 ? "a file" : "files"} with the same name:</p>
+      <ul>{#each offered.replacing as name}<li>{name}</li>{/each}</ul>
+      <div class="row">
+        <button class="danger" onclick={() => sendFiles(offered.paths)}>Replace</button>
+        {#if offered.paths.length > offered.replacing.length}
+          <button onclick={() => sendFiles(offered.paths.filter((p) => !offered.replacing.includes(p.split("/").pop() ?? "")))}>Send only the new ones</button>
+        {/if}
+        <button use:focusEl onclick={cancelOffer}>Cancel</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <header>
   <div class="brand">VOLFOVICH <b>NAM FORGE</b></div>
@@ -210,7 +274,7 @@
     <ul>
       {#each device.presets as p (p.name)}
         <li>
-          <button class:current={p.name === current} aria-current={p.name === current} onclick={() => p.name !== current && presetAction("recall", p.name)}>
+          <button class:current={p.name === current} aria-current={p.name === current} onclick={() => recall(p.name)}>
             <span class="num">{p.number ? String(p.number).padStart(2, "0") : "–"}</span>
             <span class="pname">{bare(p.name)}</span>
             {#if p.name === current && device.files.edited}<span class="mark" title="Edited">●</span>{/if}
@@ -330,7 +394,16 @@
     <span class:bad={!device.files.card}>SD card {device.files.card ? "in" : "missing"}</span>
   </footer>
 {:else}
-  <div class="waiting"><p>{device.detail}</p></div>
+  <div class="waiting">
+    <div class="pulse"></div>
+    <h2>Looking for the unit</h2>
+    <p>{device.detail}</p>
+    <ul>
+      <li>Connect the unit to this Mac with a USB cable that carries data.</li>
+      <li>Only one program can talk to it: close the serial monitor, and wait for a firmware upload to finish.</li>
+      <li>The app connects by itself as soon as the unit answers.</li>
+    </ul>
+  </div>
 {/if}
 
 <style>
@@ -430,6 +503,47 @@
   button:disabled {
     opacity: 0.35;
     cursor: default;
+  }
+  .veil {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    background: rgba(13, 15, 18, 0.7);
+  }
+  .ask-box {
+    width: min(440px, 86vw);
+    padding: 20px 22px 18px;
+    border-radius: 12px;
+    background: #1c2027;
+    border: 1px solid #353b47;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  }
+  .ask-box h2 {
+    color: #e6e8ec;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: normal;
+    margin-bottom: 8px;
+  }
+  .ask-box p {
+    margin: 0 0 10px;
+    color: #c3c8d1;
+  }
+  .ask-box ul {
+    margin: 0 0 14px;
+    padding-left: 18px;
+    color: #e6e8ec;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+  .ask-box .row {
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .ask-box .row button {
+    padding: 6px 12px;
   }
   .alert.soft {
     background: #3a2f17;
@@ -951,11 +1065,49 @@
   }
   .waiting {
     flex: 1;
-    display: grid;
-    place-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
     color: #8a92a0;
-    font-size: 15px;
-    text-align: center;
     padding: 0 40px;
+  }
+  .waiting h2 {
+    color: #e6e8ec;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 19px;
+  }
+  .waiting p {
+    margin: 0;
+    font-size: 14px;
+    color: #ffb347;
+    text-align: center;
+  }
+  .waiting ul {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    max-width: 480px;
+    line-height: 1.7;
+  }
+  .pulse {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffb347;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.25;
+      transform: scale(0.7);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse,
+    .tile.ringing {
+      animation: none;
+    }
   }
 </style>

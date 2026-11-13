@@ -101,6 +101,9 @@ class AudioChain {
   // guitar is muted.
   void setTuner(bool on) { tunerOn_ = on; }
   bool tunerOn() const { return tunerOn_; }
+  // A test of the tuner without a guitar (serial "tuner test"): while hz is not 0 the tuner
+  // hears a sine of that frequency at -20 dBFS instead of the input.
+  void setTunerTestHz(float hz) { tunerTestStep_ = hz / kSampleRate; }
   // The newest n (<= kTunerRing / 2) samples at kTunerRate; false until
   // that many have come in since the tuner was switched on.
   bool tunerSnapshot(float* dst, int n) {
@@ -146,7 +149,13 @@ class AudioChain {
     if (tunerOn_ && tunerRing_) {
       uint32_t w = tunerWritten_;
       for (int i = 0; i < B; i++) {
-        const float v = tunerLp_.process(x[i]);
+        float t = x[i];
+        if (tunerTestStep_ > 0.0f) {
+          tunerTestPhase_ += tunerTestStep_;
+          if (tunerTestPhase_ >= 1.0f) tunerTestPhase_ -= 1.0f;
+          t = 0.1f * sinf(6.2831853f * tunerTestPhase_);
+        }
+        const float v = tunerLp_.process(t);
         if (i & 1) tunerRing_[w++ & (kTunerRing - 1)] = v;
       }
       tunerWritten_ = w;
@@ -262,6 +271,8 @@ class AudioChain {
   volatile float drumCyclesAvg_ = 0.0f, doublerCyclesAvg_ = 0.0f;
   volatile bool tunerOn_ = false;
   float* tunerRing_ = nullptr;
+  volatile float tunerTestStep_ = 0.0f;  // cycles per sample; 0 = the input
+  float tunerTestPhase_ = 0.0f;
   volatile uint32_t tunerWritten_ = 0;  // samples since the tuner went on
   dsp::Biquad tunerLp_;
   float playCur_ = 1.0f;  // 0 while the tuner mutes

@@ -103,6 +103,15 @@ fn card_file(app: State<'_, App>, action: String, path: String) -> Result<(), St
     Ok(())
 }
 
+/// A line from the window for the terminal (with NAMFORGE_LOG=1): script errors, and what the
+/// window shows at moments worth checking.
+#[tauri::command]
+fn ui_log(text: String) {
+    if std::env::var_os("NAMFORGE_LOG").is_some() {
+        eprintln!("ui: {text}");
+    }
+}
+
 /// Opens or closes the tuner; the guitar is muted while it is open.
 #[tauri::command]
 fn tuner(app: State<'_, App>, open: bool) {
@@ -118,17 +127,17 @@ fn send_files(app: State<'_, App>, paths: Vec<String>) {
     }
 }
 
-/// Opens the file dialog and sends what the user picks.
+/// Opens the file dialog and returns what the user picked. The window then sends the files
+/// with `send_files`, after asking about any that would replace a file on the card.
 #[tauri::command]
-async fn pick_files(handle: tauri::AppHandle) -> Result<(), String> {
+async fn pick_files(handle: tauri::AppHandle) -> Vec<String> {
     let picked = handle.dialog().file().add_filter("Amp models and IRs", &["nam", "wav"]).blocking_pick_files();
-    let app = handle.state::<App>();
-    for file in picked.unwrap_or_default() {
-        if let Ok(path) = file.into_path() {
-            app.device.send_file(path);
-        }
-    }
-    Ok(())
+    picked
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|file| file.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -157,9 +166,18 @@ pub fn run() {
                 let _ = handle.emit("device", &event);
             });
             app.manage(App { device, snapshot });
+            // For checking the tuner from a terminal: NAMFORGE_TUNER=1 opens it after 3 s.
+            if std::env::var_os("NAMFORGE_TUNER").is_some() {
+                std::thread::sleep(std::time::Duration::from_millis(0));
+                let h = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    h.state::<App>().device.tuner(true);
+                });
+            }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files, tuner])
+        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files, tuner, ui_log])
         .run(tauri::generate_context!())
         .expect("error while running NAM Forge");
 }

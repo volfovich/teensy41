@@ -97,6 +97,8 @@ function apply(e: DeviceEvent) {
     case "presetsChanged":
       break;
     case "meters":
+      // The tuner's state just asked for stands until the unit has had time to follow.
+      if (performance.now() - tunerAskedAt < 600) e.meters.tunerOpen = meters.tunerOpen;
       Object.assign(meters, e.meters);
       break;
     case "disconnected":
@@ -107,19 +109,26 @@ function apply(e: DeviceEvent) {
   }
 }
 
+/** A line for the terminal the app was started from (shown with NAMFORGE_LOG=1). */
+export function uiLog(text: string) {
+  if (inTauri) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("ui_log", { text }));
+}
+
 /** Call once when the window opens. Returns a function that stops listening. */
 export async function connectDevice(): Promise<() => void> {
   if (!inTauri) return startPreview();
   const { listen } = await import("@tauri-apps/api/event");
   const { invoke } = await import("@tauri-apps/api/core");
   // Listen first, then take the snapshot, so nothing falls between the two.
+  window.addEventListener("error", (e) => uiLog(`script error: ${e.message} (${e.filename}:${e.lineno})`));
+  window.addEventListener("unhandledrejection", (e) => uiLog(`unhandled rejection: ${e.reason}`));
   const unlisten = await listen<DeviceEvent>("device", (msg) => apply(msg.payload));
   Object.assign(device, await invoke<Snapshot>("snapshot"));
   // Files dropped on the window from Finder go to the unit.
   const { getCurrentWebview } = await import("@tauri-apps/api/webview");
   const undrop = await getCurrentWebview().onDragDropEvent((e) => {
     dropping.on = e.payload.type === "enter" || e.payload.type === "over";
-    if (e.payload.type === "drop" && e.payload.paths.length) void invoke("send_files", { paths: e.payload.paths });
+    if (e.payload.type === "drop" && e.payload.paths.length) offerFiles(e.payload.paths);
   });
   return () => {
     unlisten();
@@ -172,12 +181,45 @@ export function cardFile(action: "model" | "ir" | "delete", path: string) {
 
 /** Opens the file dialog; what is picked (.nam, .wav) is sent to the unit. */
 export function pickFiles() {
-  if (inTauri) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("pick_files"));
+  if (inTauri) void import("@tauri-apps/api/core").then(({ invoke }) => invoke<string[]>("pick_files")).then(offerFiles);
+  else offerFiles(["/Users/me/Downloads/New amp.nam", "/Users/me/Downloads/Greenback 2x12.wav"]);
+}
+
+/** Files on the Mac waiting for the user's yes, because some would replace files on the card. */
+export const offered = $state<{ paths: string[]; replacing: string[] }>({ paths: [], replacing: [] });
+
+// Where a file would go on the card, as the Rust side decides it (files.rs): by its extension.
+function cardPath(local: string): string {
+  const name = local.split("/").pop() ?? "";
+  return /\.nam$/i.test(name) ? `/AMP/${name}` : /\.wav$/i.test(name) ? `/IR/${name}` : "";
+}
+
+/** Sends files to the unit; asks first if any would replace a file that is on the card. */
+export function offerFiles(paths: string[]) {
+  if (!paths.length) return;
+  // The card's file names do not tell capitals from small letters.
+  const onCard = new Set([...device.models, ...device.irs].map((f) => f.path.toLowerCase()));
+  const replacing = paths.filter((p) => onCard.has(cardPath(p).toLowerCase())).map((p) => p.split("/").pop() ?? p);
+  if (replacing.length) Object.assign(offered, { paths, replacing });
+  else sendFiles(paths);
+}
+
+/** Sends files without asking (the answer to `offered`). */
+export function sendFiles(paths: string[]) {
+  Object.assign(offered, { paths: [], replacing: [] });
+  if (inTauri) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("send_files", { paths }));
   else say("Sending files needs the unit: this is the preview.");
 }
 
+export function cancelOffer() {
+  Object.assign(offered, { paths: [], replacing: [] });
+}
+
 /** Opens or closes the tuner. The guitar is muted while it is open. */
+let tunerAskedAt = -1e9;
+
 export function setTuner(open: boolean) {
+  tunerAskedAt = performance.now();
   meters.tunerOpen = open; // at once; the unit's meter frames confirm it
   tuner.valid = false;
   if (inTauri) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("tuner", { open }));

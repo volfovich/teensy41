@@ -1,6 +1,6 @@
 <script lang="ts">
   // The tuner, over the whole window: the note, how far off it is, and the frequency.
-  import { meters, setTuner, tuner } from "$lib/device.svelte";
+  import { meters, setTuner, tuner, uiLog } from "$lib/device.svelte";
 
   const NAMES = ["C", "C♯", "D", "E♭", "E", "F", "F♯", "G", "A♭", "A", "B♭", "B"];
   const IN_TUNE = 3; // cents either side that count as in tune
@@ -8,7 +8,18 @@
   const inTune = $derived(tuner.valid && Math.abs(tuner.cents) <= IN_TUNE);
   // The needle: -50 .. +50 cents across the scale.
   const pos = $derived(50 + Math.max(-50, Math.min(50, tuner.cents)));
-  const focusNow = (el: HTMLElement) => el.focus();
+  const focusNow = (el: HTMLElement) => {
+    el.focus();
+    uiLog(`tuner shown, ${el.offsetWidth}x${el.offsetHeight}`);
+  };
+  let logged = false;
+  $effect(() => {
+    if (meters.tunerOpen && tuner.valid && !logged) {
+      logged = true;
+      uiLog(`tuner reading shown: note ${NAMES[tuner.note % 12]}${tuner.octave}, ${tuner.cents.toFixed(1)} cents, ${tuner.hz.toFixed(2)} Hz`);
+    }
+    if (!meters.tunerOpen) logged = false;
+  });
 </script>
 
 {#if meters.tunerOpen}

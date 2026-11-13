@@ -115,10 +115,10 @@ fn main() {
                 let n = METER_FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if n % 30 == 0 {
                     println!(
-                        "meters: in {:.1} dBFS, out {:.1} dBFS, gate {:.2}, cpu {:.1}% (max {:.1}%), amp {:.1}%",
+                        "meters: in {:.1} dBFS, out {:.1} dBFS, gate {:.2}, cpu {:.1}% (max {:.1}%), amp {:.1}%, clipped {}{}",
                         20.0 * m.input_peak.max(1e-6).log10(),
                         20.0 * m.output_peak.max(1e-6).log10(),
-                        m.gate_gain, m.cpu, m.cpu_max, m.cpu_amp
+                        m.gate_gain, m.cpu, m.cpu_max, m.cpu_amp, m.clipped, if m.tuner_open { ", tuner open" } else { "" }
                     );
                 }
             }
