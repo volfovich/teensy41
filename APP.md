@@ -1,6 +1,6 @@
 # Volfovich NAM Forge: Desktop Control App Plan
 
-Nov 13, 2026 · Status: plan, nothing built yet
+Nov 13, 2026 · Status: milestone A0 half done. The protocol is written (`protocol/PROTOCOL.md`) and its firmware side passes its tests. The app side's Rust code is written but has never been compiled or run: Rust is not installed on the development Mac yet.
 
 **Volfovich NAM Forge** (short name in the window title and the Dock: **NAM Forge**) is a macOS app that controls the guitar DSP unit over USB: edit the sound on a Quad Cortex style screen, manage presets, and send NAM models and IRs straight to the device.
 
@@ -268,7 +268,7 @@ protocol/
 
 | M | Deliverable | Done when |
 | --- | --- | --- |
-| A0 | `protocol/PROTOCOL.md` and the frame code on both sides, with tests | Host tests pass for the firmware parser; Rust tests pass for the codec; both agree on the same test frames |
+| A0 | `protocol/PROTOCOL.md` and the frame code on both sides, with tests | Host tests pass for the firmware parser (**done**, 15 tests); Rust tests pass for the codec (**written, not yet run**); both agree on the same test frames (`protocol/test_frames.txt`) |
 | A1 | Firmware: `HELLO`, table, state, set a setting, change reports. App skeleton that connects and shows raw values. | Turning a setting from MIDI changes the number in the app; the typed shell still works |
 | A2 | Main screen: chain, editor panel with knobs, block on and off, meters | Every setting can be edited from the app with no audible stepping |
 | A3 | Presets: list, recall, save, save as, rename, delete, edited mark | A preset saved in the app is recalled correctly by MIDI program change |

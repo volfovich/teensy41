@@ -1,0 +1,7 @@
+{
+  "name": "applink",
+  "version": "0.1.0",
+  "description": "The desktop app's link protocol (protocol/PROTOCOL.md): frames, payload fields and message numbers. Portable, host-tested.",
+  "frameworks": "*",
+  "platforms": "*"
+}

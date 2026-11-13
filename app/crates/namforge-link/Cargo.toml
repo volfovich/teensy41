@@ -1,0 +1,9 @@
+[package]
+name = "namforge-link"
+version = "0.1.0"
+edition = "2021"
+description = "The NAM Forge link protocol (protocol/PROTOCOL.md): frames, payload fields and message numbers. No I/O: the app core feeds it bytes from the serial port."
+license = "MIT"
+publish = false
+
+[dependencies]

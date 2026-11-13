@@ -10,3 +10,5 @@ third_party/
 lib/dsp/src/dsp/drums/DrumKitData.cpp
 lib/dsp/src/dsp/drums/DrumSongData.cpp
 __pycache__/
+app/**/target/
+app/**/node_modules/
