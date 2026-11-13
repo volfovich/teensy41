@@ -1,14 +1,15 @@
 // Teensy 4.1 guitar DSP platform: main firmware.
 //
 // Signal flow today (driver bring-up stage, see HLD.md):
-//   PCM1808 ADC left ─► float ─► [DSP chain goes here] ─► float ─► PCM5102A DAC left + right
+//   PCM1808 ADC right ─► float ─► [DSP chain goes here] ─► float ─► PCM5102A DAC left + right
 //
 // Audio runs in the I2S DMA interrupt, one block of DSP_BLOCK frames (48 kHz, 24-bit) at a
 // time. loop() only handles the serial shell and USB MIDI.
 //
 // Serial commands (pio device monitor), one per line:
 //   s    print audio statistics (CPU load, overruns)
-//   b    toggle bypass (bypass = input copied to output bit-for-bit)
+//   b    toggle bypass (bypass = stereo input copied to output bit-for-bit, so the
+//        guitar is heard on the right output only)
 //   m    toggle output mute
 
 #include <Arduino.h>
@@ -17,6 +18,9 @@
 
 // GPIO wired to the PCM5102A XSMT pad (HLD.md section 1, item 1b). -1 = not wired.
 static constexpr int kDacMutePin = -1;
+
+// Which ADC input the guitar is wired to. The other input is unused.
+static constexpr bool kGuitarOnRightChannel = true;
 
 static volatile bool g_bypass = false;
 static volatile bool g_muted = false;
@@ -31,10 +35,11 @@ FASTRUN static void audioCallback(const int32_t* rx, int32_t* tx, size_t frames)
     float right[i2s32::kBlock];
     dsp::int24InToFloat(rx, left, right, frames);
 
-    // Guitar is mono on the ADC's left channel. The DSP chain will process `left` here.
+    // Guitar is mono on one ADC channel. The DSP chain will process `guitar` here.
+    float* const guitar = kGuitarOnRightChannel ? right : left;
 
-    if (g_muted) memset(left, 0, sizeof(left));
-    dsp::floatToInt24Out(left, left, tx, frames);
+    if (g_muted) memset(guitar, 0, frames * sizeof(float));
+    dsp::floatToInt24Out(guitar, guitar, tx, frames);   // mono to both DAC channels
 }
 
 static void printStats() {

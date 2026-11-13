@@ -37,7 +37,7 @@ Extra connections on the ADC board itself:
 
 Analog connections:
 
-- **Input:** left and right line-in plus ground go to the three pads at the top edge of the PCM1808 board.
+- **Input:** left and right line-in plus ground go to the three pads at the top edge of the PCM1808 board. The guitar is wired to the **right** input; the left input is unused.
 - **Output:** the 3.5 mm jack on the PCM5102A board, or its L / G / R / G pads.
 
 Notes:

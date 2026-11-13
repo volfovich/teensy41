@@ -110,7 +110,7 @@ Rule: the sum of worst-case stage costs per block, measured with the DWT cycle c
 
 ### 4.1 Audio driver: `lib/i2s32` (Teensy only)
 
-- **Status: implemented in `lib/i2s32`, builds, not yet run on hardware.** `hw_tests/i2s_loopback.cpp` verifies it on the bare board with one jumper (pin 7 → pin 8); see §10.
+- **Status: implemented in `lib/i2s32` and confirmed on the wired boards (13 Nov 2026):** clean guitar passthrough, exactly 1,500 blocks/s (48 kHz), 0.7 % load, no overruns or FIFO errors. Not yet measured: round-trip latency and 24-bit bit activity. `hw_tests/i2s_loopback.cpp` is a bare-board self-test (jumper pin 7 → pin 8); it was not run, and must not be run with the converter boards attached.
 - Same SAI1 pins as the hardware doc. The Teensy is I2S master. MCLK = 256·fs, BCLK = 64·fs, 2 × 32-bit slots per frame. PLL4 is programmed for exactly 48 kHz.
 - One eDMA channel each for RX and TX. Each uses a circular buffer of 2 halves × B frames × 2 channels × 32 bits. The buffers sit in `DMAMEM` (OCRAM), are 32-byte aligned, and get `arm_dcache_delete`/`arm_dcache_flush` around each access. At B=32 this is 1 KB in total.
 - The RX half/complete interrupt runs the whole chain. It writes the TX half with the same index as the RX half it just read; that TX half has just finished playing, so the in→out delay is 2·B plus the FIFO depth. RX and TX are started together and TX is synchronous to RX, so this relationship stays deterministic.
@@ -121,7 +121,7 @@ Rule: the sum of worst-case stage costs per block, measured with the DWT cycle c
   - Implemented in the portable `dsp/Convert.h` and called from the block callback, so it is host-tested.
   - In: `(raw >> 8) * 2⁻²³` (the low byte is dropped).
   - Out: `x * 2²³`, saturated to [−2²³, 2²³−1], rounded, `<< 8`. NaN becomes 0.
-  - The guitar input is mono (ADC left channel). The ADC right channel is reserved: second input, re-amp, or expression input. **(Decide.)**
+  - The guitar input is mono, wired to the ADC **right** channel (`kGuitarOnRightChannel` in `src/main.cpp`). The ADC left channel is spare: second input, re-amp, or expression input. **(Decide.)**
 - Instrumentation: DWT `CYCCNT` per stage, plus max/avg per block.
 - Overrun detection: an interrupt cannot pre-empt itself, so the handler checks at exit. It counts an overrun if its elapsed cycles exceed the block period, or if the next DMA half-interrupt is already pending.
 - Mute line: the driver supports an optional GPIO wired to the DAC's XSMT (`Config::mutePin`), held low during boot until the chain runs. It is currently not wired (`-1`), because the XSMT rework is deferred (§1 item 1b).
@@ -150,7 +150,7 @@ Rule: the sum of worst-case stage costs per block, measured with the DWT cycle c
 ## 5. Signal chain
 
 ```
-ADC L ─► [1] input cal + DC block ─► [2] noise gate ─► [3] comp ─► [4] boost/drive
+ADC R ─► [1] input cal + DC block ─► [2] noise gate ─► [3] comp ─► [4] boost/drive
       ─► [5] NAM A2-Lite ─► [6] IR cab ─► [7] EQ ─► [8] mod (chorus)
       ─► [9] delay ─► [10] reverb ─► [11] stereo out: level + safety clip ─► DAC L/R
                       └── mono → stereo split at [9] (ping-pong delay, stereo reverb)
@@ -377,7 +377,7 @@ The FFT used in the convolver must also run on the host, where CMSIS is unavaila
 | M5 | Gate, comp, EQ, chorus, delay (PSRAM), reverb, tuner; presets plus MIDI | All host tests pass; worst-case CPU ≤ 80 % |
 | M6 | Switchable-gain preamp (hardware) plus physical controls | Calibrated input; footswitch and encoder UI |
 
-**Progress (Nov 2026):** the converter boards were not wired yet, so the driver part of M2 was built first: `lib/i2s32`, `dsp/Convert.h` with host tests, the loopback self-test, and a passthrough `src/main.cpp` on `USB_MIDI_SERIAL`. The Audio Library and `lib/audio_fx` are gone. Still open in M2: running the loopback test on the board, the latency measurement with converters, the fault path, and `tools/render`. M1 is next.
+**Progress (Nov 2026):** the converter boards were not wired yet, so the driver part of M2 was built first: `lib/i2s32`, `dsp/Convert.h` with host tests, the loopback self-test, and a passthrough `src/main.cpp` on `USB_MIDI_SERIAL`. The Audio Library and `lib/audio_fx` are gone. Passthrough was then confirmed on the wired boards. Still open in M2: the latency measurement with converters, the fault path, and `tools/render`. M1 is next.
 
 The order puts the largest risk first: M1 needs only the bare Teensy, so it can run in parallel with M0. A unity-gain Hi-Z input buffer (§1 item 1) should be built alongside M2, since everything judged by ear after that depends on it.
 
@@ -395,7 +395,7 @@ The order puts the largest risk first: M1 needs only the bare Teensy, so it can 
 | Audio interrupt priority above USB | Possible USB jitter | Keep the interrupt under 80 % of the block period. Test the serial shell under load. |
 | PSRAM access from the interrupt | Cache-miss stalls | Block-wise memcpy only; delay is the only PSRAM user. |
 | USB 5 V feeds the ADC analog supply | Higher noise floor | Clean 5 V or LDO from an external supply later (already in the hardware doc). |
-| ADC right channel use | – | Decide: second input, re-amp, or expression pedal. |
+| ADC left channel use (guitar is on the right) | – | Decide: second input, re-amp, or expression pedal. |
 
 ---
 

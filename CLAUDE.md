@@ -32,7 +32,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Watch `i2s32::stats()` (serial `s` command): load, max load, overruns, FIFO errors. Budget: worst case at or below 80% of the block period.
 - Flush-to-zero and default-NaN float modes are enabled by `i2s32::begin()` (FPSCR and FPDSCR).
 - USB type is `USB_MIDI_SERIAL` (set in `platformio.ini`). USB audio is not available: the core's implementation is 16-bit / 44.1 kHz.
-- Guitar input is mono on the ADC left channel.
+- Guitar input is mono on the ADC **right** channel (`kGuitarOnRightChannel` in `src/main.cpp`); the left input is unused.
 
 ## DSP conventions
 - Process in `float` internally, samples normalized to [-1, 1). CMSIS-DSP (`<arm_math.h>`) is available on the target only; `lib/dsp` must also build on the host.
