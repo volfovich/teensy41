@@ -2,7 +2,7 @@
 
 Version 1 · The single reference for both sides: the firmware (`lib/applink`, `src/AppLink.cpp`) and the app (`app/crates/namforge-link`).
 
-The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. Not implemented yet: `MODEL_INFO`, `IR_INFO`, `FILE_GET`, `FILE_RENAME`, `DIR_LIST`, `CARD_INFO`. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
+The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. Not implemented yet: `MODEL_INFO`, `IR_INFO`, `FILE_GET`, `FILE_RENAME`, `DIR_LIST`, `CARD_INFO`. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
 
 ---
 
@@ -102,7 +102,7 @@ Later protocol versions may append fields to the reply; a receiver ignores what 
 | → | (empty) |
 | ← | list of: `string` key ("dmix") · `string` name ("Delay mix") · `string` label ("Mix") · `i16` minimum · `i16` maximum · `i16` default · `u8` step · `u8` unit (§6) · `u8` flags (bit 0: stored in presets) · list of `string` choices (empty if none) |
 
-The minimum and maximum are the device's current limits (the table's, narrowed to what this firmware has: the longest delay, the number of drum styles, kits and songs).
+The minimum and maximum are the device's current limits (the table's, narrowed to what this firmware has: the longest delay, the number of drum styles, kits and songs). The drum style, kit and song settings carry the firmware's names as their choices (the song's first choice is "off").
 
 **`03 GET_STATE`** returns everything the app shows.
 
@@ -199,11 +199,11 @@ A `FILE_PUT_BEGIN` while an upload is open abandons the earlier one. An upload w
 
 | Dir | Fields |
 | --- | --- |
-| ← | `f32` input peak, linear, since the last frame · `f32` output peak · `f32` gate gain, 0 to 1 · `u32` clipped samples since start · `f32` CPU percent, whole chain, average · `f32` the same, maximum since the last frame · `f32` amp CPU percent · `f32` doubler · `f32` delay · `f32` reverb · `f32` drums · `u32` overruns since start · `u32` overload mutes since start · `u8` activity bits (0 amp running, 1 delay ringing, 2 reverb ringing, 3 drums playing, 4 output muted by overload) |
+| ← | `f32` input peak, linear, since the last frame · `f32` output peak · `f32` gate gain, 0 to 1 · `u32` clipped samples since start · `f32` CPU percent, whole chain, average · `f32` the same, maximum since the last frame · `f32` amp CPU percent · `f32` doubler · `f32` delay · `f32` reverb · `f32` drums · `u32` overruns since start · `u32` overload mutes since start · `u8` activity bits (0 amp running, 1 delay ringing, 2 reverb ringing, 3 drums playing, 4 output muted by overload, 5 tuner open) |
 
-**`52 TUNER_OPEN`**: → `bool` open. ← (empty). The guitar is muted while the tuner is open.
+**`52 TUNER_OPEN`**: → `bool` open. ← (empty). The guitar is muted while the tuner is open. A tuner the app opened is closed when its session ends.
 
-**`53 TUNER`** (event, about 10 per second while open): `bool` a pitch was found · `f32` frequency in Hz · `u8` note (0 = C … 11 = B) · `i16` octave · `f32` cents off, −50 to +50.
+**`53 TUNER`** (event, when the reading changes, at most 10 per second while open): `bool` a pitch was found · `f32` frequency in Hz · `u8` note (0 = C … 11 = B) · `i16` octave · `f32` cents off, −50 to +50.
 
 ### 4.7 Other (since A1)
 

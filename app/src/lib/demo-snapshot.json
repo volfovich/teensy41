@@ -11,7 +11,7 @@
   "maxPath": 95,
   "savedSettings": 52,
   "settings": 55,
-  "schemaHash": 3514701694,
+  "schemaHash": 1417543145,
   "port": "preview"
  },
  "settings": [
@@ -289,7 +289,16 @@
    "step": 1,
    "unit": 8,
    "inPreset": false,
-   "choices": []
+   "choices": [
+    "metronome",
+    "rock",
+    "offbeat 8ths",
+    "offbeat 16ths",
+    "triplets",
+    "pop",
+    "blues shuffle",
+    "6/8 ballad"
+   ]
   },
   {
    "id": 21,
@@ -302,7 +311,10 @@
    "step": 1,
    "unit": 8,
    "inPreset": false,
-   "choices": []
+   "choices": [
+    "synth",
+    "rock"
+   ]
   },
   {
    "id": 22,
@@ -315,7 +327,14 @@
    "step": 1,
    "unit": 8,
    "inPreset": false,
-   "choices": []
+   "choices": [
+    "off",
+    "Back in Black-ish",
+    "Sweet Child-ish",
+    "Livin on a Prayer-ish",
+    "Enter Sandman-ish",
+    "Smoke on Water-ish"
+   ]
   },
   {
    "id": 23,

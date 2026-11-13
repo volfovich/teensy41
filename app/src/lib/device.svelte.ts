@@ -3,7 +3,7 @@
 //
 // In a plain browser (npm run dev, without Tauri) there is no device: the window then shows a
 // saved copy of the unit's state with moving meters, for working on the UI.
-import type { DeviceEvent, Meters, Snapshot, Transfer } from "./types";
+import type { DeviceEvent, Meters, Snapshot, Transfer, TunerReading } from "./types";
 
 const empty: Snapshot = {
   connected: false,
@@ -21,7 +21,7 @@ const noMeters: Meters = {
   inputPeak: 0, outputPeak: 0, gateGain: 1, clipped: 0,
   cpu: 0, cpuMax: 0, cpuAmp: 0, cpuDoubler: 0, cpuDelay: 0, cpuReverb: 0, cpuDrums: 0,
   overruns: 0, overloadMutes: 0,
-  ampRunning: false, delayRinging: false, reverbRinging: false, drumsPlaying: false, muted: false,
+  ampRunning: false, delayRinging: false, reverbRinging: false, drumsPlaying: false, muted: false, tunerOpen: false,
 };
 
 export const device = $state<Snapshot>({ ...empty });
@@ -32,6 +32,8 @@ export const preview = $state({ on: false });
 export const notice = $state({ text: "", at: 0 });
 /** The file being sent to the unit, or the last one sent (`at`: when it last changed). */
 export const transfer = $state<Transfer & { at: number }>({ name: "", sent: 0, total: 0, done: true, error: "", at: 0 });
+/** The tuner's last reading. Whether it is open is in `meters.tunerOpen`. */
+export const tuner = $state<TunerReading>({ valid: false, hz: 0, note: 0, octave: 0, cents: 0 });
 /** True while files are dragged over the window. */
 export const dropping = $state({ on: false });
 
@@ -78,6 +80,9 @@ function apply(e: DeviceEvent) {
       break;
     case "refused":
       say(e.message);
+      break;
+    case "tuner":
+      Object.assign(tuner, { valid: e.valid, hz: e.hz, note: e.note, octave: e.octave, cents: e.cents });
       break;
     case "models":
       device.models = e.files;
@@ -171,6 +176,13 @@ export function pickFiles() {
   else say("Sending files needs the unit: this is the preview.");
 }
 
+/** Opens or closes the tuner. The guitar is muted while it is open. */
+export function setTuner(open: boolean) {
+  meters.tunerOpen = open; // at once; the unit's meter frames confirm it
+  tuner.valid = false;
+  if (inTauri) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("tuner", { open }));
+}
+
 export type PresetAction = "recall" | "save" | "new" | "rename" | "delete";
 
 /** Recalls, saves, adds, renames or deletes a preset. What happened comes back as events. */
@@ -213,6 +225,8 @@ async function startPreview(): Promise<() => void> {
     // A note every 1.6 s that dies away.
     const env = Math.exp(-3 * (t % 1.6));
     const find = (key: string) => device.values[device.settings.find((s) => s.key === key)?.id ?? -1] ?? 0;
+    // A low E that drifts from flat to in tune.
+    if (meters.tunerOpen) Object.assign(tuner, { valid: env > 0.05, hz: 82.41 * 2 ** ((-18 * env) / 1200), note: 4, octave: 2, cents: -18 * env });
     Object.assign(meters, {
       inputPeak: 0.25 * env + 0.0001,
       outputPeak: 0.5 * Math.sqrt(env) + 0.0001,

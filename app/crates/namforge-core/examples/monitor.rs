@@ -45,9 +45,10 @@ fn main() {
                     "load-model" => device.load_model(arg),
                     "load-ir" => device.load_ir(arg),
                     "delete" => device.delete_file(arg),
+                    "tuner" => device.tuner(arg == "on"),
                     _ => {}
                 }
-                if ["send", "load-model", "load-ir", "delete"].contains(&action.as_str()) {
+                if ["send", "load-model", "load-ir", "delete", "tuner"].contains(&action.as_str()) {
                     preset_at = None;
                 }
             }
@@ -125,6 +126,13 @@ fn main() {
                 println!("presets: {}", presets.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", "))
             }
             Event::PresetsChanged => {}
+            Event::Tuner { valid, hz, note, octave, cents } => {
+                if valid {
+                    println!("tuner: {}{octave} {cents:+.1} cents, {hz:.2} Hz", ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"][note as usize % 12])
+                } else {
+                    println!("tuner: -")
+                }
+            }
             Event::Models { files } => println!("models: {} on the card", files.len()),
             Event::Irs { files } => println!("IRs: {} on the card", files.len()),
             Event::Transfer { name, sent, total, done, error } => {

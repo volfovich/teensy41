@@ -309,10 +309,29 @@ def main():
         link.poll(0.1)
     check(b"CPU:" in link.text and b"Driver:" in link.text, "the typed shell still answers in text while the app is connected")
 
+    # The tuner: opening it shows in the METERS activity bits; a tuner the app opened is closed
+    # when the session ends (or the guitar would stay muted).
+    def tuner_bit():
+        link.request(0x50, struct.pack("<H", 20))
+        m = [e for e in link.poll(0.4) if e[0] == 0x51]
+        link.request(0x50, struct.pack("<H", 0))
+        link.poll(0.2)
+        return bool(m and m[-1][3][-1] & 32)
+
+    names = {e["key"]: e["choices"] for e in schema}
+    check(len(names["drum style"]) == schema[[e["key"] for e in schema].index("drum style")]["hi"] + 1
+          and names["drum song"][0] == "off" and all(names["drum kit"]),
+          "the schema names the drum styles %s..., kits %s and songs" % (names["drum style"][:3], names["drum kit"]))
+    was_open = tuner_bit()
+    f, _ = link.request(0x52, b"\x01")
+    check(f[1] == 1 and not was_open and tuner_bit(), "TUNER_OPEN: the tuner shows as open in METERS")
+
     time.sleep(5.5)
     link.poll(0.3)
     f, _ = link.request(0x03)
     check(f is not None and f[1] == 3, "after 5 s of silence the session has ended")
+    link.request(0x01, struct.pack("<H", 1) + string("applink_check"))
+    check(not tuner_bit(), "the tuner the app left open was closed when the session ended")
 
     print("%d failed" % failures if failures else "all passed")
     sys.exit(1 if failures else 0)

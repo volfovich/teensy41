@@ -50,7 +50,7 @@ impl Snapshot {
             Event::Presets { presets } => self.presets = presets.clone(),
             Event::Models { files } => self.models = files.clone(),
             Event::Irs { files } => self.irs = files.clone(),
-            Event::Meters { .. } | Event::PresetsChanged | Event::Refused { .. } | Event::Transfer { .. } => {}
+            Event::Meters { .. } | Event::Tuner { .. } | Event::PresetsChanged | Event::Refused { .. } | Event::Transfer { .. } => {}
             Event::Disconnected { reason } => {
                 self.connected = false;
                 self.detail = reason.clone();
@@ -103,6 +103,12 @@ fn card_file(app: State<'_, App>, action: String, path: String) -> Result<(), St
     Ok(())
 }
 
+/// Opens or closes the tuner; the guitar is muted while it is open.
+#[tauri::command]
+fn tuner(app: State<'_, App>, open: bool) {
+    app.device.tuner(open);
+}
+
 /// Sends .nam and .wav files from the Mac to the card, one after the other. Progress arrives
 /// as `transfer` events.
 #[tauri::command]
@@ -142,7 +148,7 @@ pub fn run() {
                             eprintln!("event: state ({} values, preset {:?})", values.len(), files.preset)
                         }
                         Event::Schema { settings } => eprintln!("event: schema ({} settings)", settings.len()),
-                        Event::Meters { .. } => {}
+                        Event::Meters { .. } | Event::Tuner { .. } => {}
                         Event::Models { files } => eprintln!("event: models ({})", files.len()),
                         Event::Irs { files } => eprintln!("event: irs ({})", files.len()),
                         other => eprintln!("event: {other:?}"),
@@ -153,7 +159,7 @@ pub fn run() {
             app.manage(App { device, snapshot });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files])
+        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files, tuner])
         .run(tauri::generate_context!())
         .expect("error while running NAM Forge");
 }

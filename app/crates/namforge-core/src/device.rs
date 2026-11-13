@@ -36,6 +36,7 @@ enum Command {
     Path { msg_type: u8, path: String },
     /// Send this file from the Mac to the card.
     Send { local: PathBuf },
+    Tuner { open: bool },
 }
 
 /// The UI's handle on the device thread. Dropping it stops the thread.
@@ -86,6 +87,10 @@ impl DeviceHandle {
     /// as [`Event::Transfer`].
     pub fn send_file(&self, local: impl Into<PathBuf>) {
         let _ = self.commands.send(Command::Send { local: local.into() });
+    }
+    /// Opens or closes the tuner. Readings arrive as [`Event::Tuner`].
+    pub fn tuner(&self, open: bool) {
+        let _ = self.commands.send(Command::Tuner { open });
     }
     fn preset(&self, msg_type: u8, name: Option<&str>) {
         let _ = self.commands.send(Command::Preset { msg_type, name: name.map(str::to_string) });
@@ -243,6 +248,7 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
             let (result, lists) = match command {
                 Command::Path { msg_type, path } => (s.with_path(msg_type, &path), msg_type == msg::FILE_DELETE),
                 Command::Send { local } => (send_file(&mut s, &local, max_path, emit), true),
+                Command::Tuner { open } => (s.tuner_open(open), false),
                 _ => continue,
             };
             match result {

@@ -1,6 +1,6 @@
 // AppLink.cpp - see AppLink.h. Milestones A1 to A4 of APP.md: the session, the settings table,
 // the state, setting a value, change events, the meter frames, presets, the model and IR
-// lists, and sending files to the SD card.
+// lists, sending files to the SD card, and (A5) the tuner and the drums' names.
 #include "AppLink.h"
 
 #include <Arduino.h>
@@ -15,6 +15,9 @@
 #include "IRLibrary.h"
 #include "Params.h"
 #include "PresetLibrary.h"
+#include "Tuner.h"
+#include <dsp/drums/DrumKit.h>
+#include <dsp/drums/DrumMachine.h>
 #include "config.h"
 
 using applink::Err;
@@ -49,6 +52,7 @@ static uint32_t g_sentPresets = 0;  // presetListHash() of the list the app know
 // Meter frames per second the app asked for (SUBSCRIBE; 0 = none), and when the last one went.
 static uint16_t g_meterRate = 0;
 static uint32_t g_lastMeterMs = 0;
+static bool g_tunerByApp = false;  // the app opened the tuner: closed again when the session ends
 
 static void sendFrame(Msg type, uint8_t flags, uint16_t sequence, const Writer& w) {
   if (!w.ok()) return;  // a reply that did not fit its buffer: a firmware bug, send nothing
@@ -114,7 +118,14 @@ static void writeSchema(Writer& w) {
     w.u8(d.step);
     w.u8((uint8_t)d.unit);
     w.u8(d.flags);
-    // A setting's choices are named for 0 .. its table maximum.
+    // A setting's choices are named for 0 .. its table maximum. The drum styles, kits and
+    // songs have no names in the table: the firmware's lists supply them, 0 .. the limit.
+    if (id == kDrumStyle || id == kDrumKit || id == kDrumSong) {
+      w.u16((uint16_t)(hi + 1));
+      for (int c = 0; c <= hi; c++)
+        w.str(id == kDrumStyle ? dsp::drumStyle(c).title : id == kDrumKit ? dsp::drumKit(c).name : c ? drumSongTitle(c) : "off");
+      continue;
+    }
     const int choices = d.choices ? d.max + 1 : 0;
     w.u16((uint16_t)choices);
     for (int c = 0; c < choices; c++) w.str(d.choices[c]);
@@ -425,6 +436,27 @@ static void onRescan(const applink::FrameHeader& h) {
   reply(h, w);
 }
 
+// ---- The tuner (PROTOCOL.md 4.6)
+
+static void onTunerOpen(const applink::FrameHeader& h, Reader& r) {
+  const bool open = r.u8();
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad TUNER_OPEN");
+  tunerOpen(open);
+  g_tunerByApp = open;
+  replyEmpty(h);
+}
+
+static void sendTuner() {
+  const TunerReading& t = tunerReading();
+  Writer w(g_txPayload, kTxPayload);
+  w.u8(t.valid);
+  w.f32(t.valid ? t.hz : 0.0f);
+  w.u8(t.valid ? (uint8_t)t.note.index : 0);
+  w.i16(t.valid ? (int16_t)t.note.octave : 0);
+  w.f32(t.valid ? t.note.cents : 0.0f);
+  sendFrame(Msg::kTuner, applink::kFlagEvent, 0, w);
+}
+
 static void onSubscribe(const applink::FrameHeader& h, Reader& r) {
   const uint16_t rate = r.u16();
   if (!r.done()) return replyError(h, Err::kBadPayload, "Bad SUBSCRIBE");
@@ -458,7 +490,7 @@ static void sendMeters() {
   w.u32(drv.overruns);
   w.u32(drv.faults);
   w.u8((chain.amp().active() ? 1 : 0) | (chain.delayActive() ? 2 : 0) | (chain.reverbActive() ? 4 : 0) |
-       (chain.drums().playing() ? 8 : 0) | (i2s32::faulted() ? 16 : 0));
+       (chain.drums().playing() ? 8 : 0) | (i2s32::faulted() ? 16 : 0) | (chain.tunerOn() ? 32 : 0));
   chain.resetCpuMax();
   sendFrame(Msg::kMeters, applink::kFlagEvent, 0, w);
 }
@@ -486,6 +518,7 @@ static void handleFrame() {
     case Msg::kFilePutEnd: onPutEnd(h); break;
     case Msg::kFileDelete: onFileDelete(h, r); break;
     case Msg::kRescan: onRescan(h); break;
+    case Msg::kTunerOpen: onTunerOpen(h, r); break;
     case Msg::kPresetRecall:
     case Msg::kPresetSave:
     case Msg::kPresetNew:
@@ -538,6 +571,8 @@ void serviceAppLink() {
   if (!g_session) return;
   if (now - g_lastFrameMs >= kSessionTimeoutMs) {
     g_session = false;
+    if (g_tunerByApp && chain.tunerOn()) tunerOpen(false);  // or the guitar would stay muted
+    g_tunerByApp = false;
     Serial.println("App disconnected.");
     return;
   }
@@ -545,6 +580,7 @@ void serviceAppLink() {
     g_lastPollMs = now;
     reportChanges();
   }
+  if (chain.tunerOn() && serviceTuner(now)) sendTuner();
   if (g_meterRate && now - g_lastMeterMs >= 1000u / g_meterRate) {
     g_lastMeterMs = now;
     sendMeters();

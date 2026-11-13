@@ -75,6 +75,7 @@ pub struct Meters {
     pub reverb_ringing: bool,
     pub drums_playing: bool,
     pub muted: bool,
+    pub tuner_open: bool,
 }
 
 /// A preset on the unit's SD card.
@@ -110,6 +111,8 @@ pub enum Event {
     Files { files: Files },
     Meters { meters: Meters },
     Presets { presets: Vec<Preset> },
+    /// A tuner reading. `note` is 0 (C) to 11 (B); `cents` is -50 to +50 from that note.
+    Tuner { valid: bool, hz: f32, note: u8, octave: i16, cents: f32 },
     Models { files: Vec<FileEntry> },
     Irs { files: Vec<FileEntry> },
     /// A file on its way to the unit: `sent` of `total` bytes. `done` with an empty `error` means it

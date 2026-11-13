@@ -56,6 +56,16 @@ export interface Meters {
   reverbRinging: boolean;
   drumsPlaying: boolean;
   muted: boolean;
+  tunerOpen: boolean;
+}
+
+/** A tuner reading: `note` 0 (C) to 11 (B), `cents` -50 to +50 from that note. */
+export interface TunerReading {
+  valid: boolean;
+  hz: number;
+  note: number;
+  octave: number;
+  cents: number;
 }
 
 /** A preset on the unit's SD card: "03 Lead" and its number (0 if the name has none). */
@@ -101,6 +111,7 @@ export type DeviceEvent =
   | { kind: "meters"; meters: Meters }
   | { kind: "presets"; presets: Preset[] }
   | { kind: "presetsChanged" }
+  | ({ kind: "tuner" } & TunerReading)
   | { kind: "models"; files: FileEntry[] }
   | { kind: "irs"; files: FileEntry[] }
   | ({ kind: "transfer" } & Transfer)

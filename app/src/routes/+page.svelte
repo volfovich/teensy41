@@ -6,21 +6,25 @@
   import { blockActive, blockOn, blockOnValue, buildBlocks, type Block } from "$lib/blocks";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
-  import { cardFile, connectDevice, device, dropping, meters, notice, pickFiles, presetAction, preview, setParam, transfer } from "$lib/device.svelte";
+  import { cardFile, connectDevice, device, dropping, meters, notice, pickFiles, presetAction, preview, setParam, setTuner, transfer } from "$lib/device.svelte";
+  import Tuner from "$lib/Tuner.svelte";
   import { baseName, formatValue } from "$lib/format";
 
   onMount(() => {
     let stop = () => {};
-    connectDevice().then((s) => (stop = s));
+    connectDevice().then((s) => {
+      stop = s;
+      if (preview.on && hashTuner === "tuner") setTuner(true);
+    });
     return () => stop();
   });
 
   const blocks = $derived(buildBlocks(device.settings));
   const lane = $derived(blocks.lane);
   const all = $derived([...blocks.chain, blocks.lane, ...(blocks.other ? [blocks.other] : [])]);
-  // The address can name the block and the library tab to open ("#reverb", "#amp/models"):
+  // The address can name the block and the library tab to open ("#reverb", "#amp/models", and in the preview "#amp//tuner"):
   // handy when working on the UI.
-  const [hashBlock, hashTab] = (typeof location !== "undefined" ? location.hash.slice(1) : "").split("/");
+  const [hashBlock, hashTab, hashTuner] = (typeof location !== "undefined" ? location.hash.slice(1) : "").split("/");
   let selectedId = $state(hashBlock || "amp");
   const selected = $derived(all.find((b) => b.def.id === selectedId) ?? all[0]);
 
@@ -101,7 +105,11 @@
       return;
     }
     if (t.closest("input, select, button, [role=slider]")) return;
-    if (e.key === " ") {
+    if (e.key === "t" || e.key === "T") {
+      if (device.connected) setTuner(!meters.tunerOpen);
+    } else if (meters.tunerOpen) {
+      return; // the tuner has the keyboard
+    } else if (e.key === " ") {
       if (selected) toggle(selected);
     } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") stepPreset(-1);
     else if (e.key === "ArrowRight" || e.key === "ArrowDown") stepPreset(1);
@@ -115,11 +123,13 @@
 
 <svelte:window onkeydown={key} />
 
+<Tuner />
+
 <header>
   <div class="brand">VOLFOVICH <b>NAM FORGE</b></div>
-  <div class="status" class:on={device.connected}>
+  <div class="status" class:on={device.connected} title={device.connected ? (preview.on ? "Preview with saved data, no unit" : `Connected on ${device.info?.port}`) : "Not connected"}>
     <span class="dot"></span>
-    {device.connected ? (preview.on ? "Preview, no unit" : "Connected") : "Not connected"}
+    {device.connected ? (preview.on ? "Preview" : "") : "Not connected"}
   </div>
   {#if device.connected}
     <div class="preset">
@@ -129,6 +139,7 @@
       <button class="step" aria-label="Next preset" title="Next preset (right arrow)" disabled={device.presets.length < 2} onclick={() => stepPreset(1)}>›</button>
       <button class="save" disabled={!current || !device.files.edited} title="Write the sound over this preset (Cmd-S)" onclick={() => presetAction("save")}>Save</button>
       <button class="save" disabled={!device.files.card} title="Save the sound as a new preset" onclick={() => startNaming("new")}>Save as…</button>
+      <button class="save" title="Tuner (T): mutes the guitar while it is open" onclick={() => setTuner(true)}>Tuner</button>
     </div>
     <div class="meters">
       <Meter label="IN" peak={meters.inputPeak} />

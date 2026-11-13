@@ -28,7 +28,7 @@ Only one program can hold the unit's serial port: close `pio device monitor` bef
 
 `NAMFORGE_LOG=1` makes the app print one line per device event to the terminal.
 
-## State (milestone A4 of APP.md)
+## State (milestone A5 of APP.md)
 The app connects by itself and shows the main screen: the library on the unit's card (presets, amp models, IRs), the signal chain as blocks (click to edit, power button or Space to switch), the drums and bass lane, the selected block's controls, input and output meters, CPU and the driver's counters. Every control is built from the unit's own settings table; a setting no block names appears under "Other settings".
 
 Knobs: drag up and down, Shift for fine steps, scroll or arrow keys, double-click to type a value, right-click for the default.
@@ -37,7 +37,11 @@ Presets: click one in the list to recall it, or step with the header's arrows or
 
 Amps and IRs: click one to load it. "Add files…" or dropping files on the window sends `.nam` and `.wav` files to the card (`/AMP` and `/IR`); a model is checked first (NAM A2 with a Lite network, 48 kHz). A file with the same name is replaced. The × beside a file deletes it from the card after a confirmation.
 
-Not in yet: model and IR details, the tuner, names for drum styles, kits and songs (A5, shown as numbers for now). The icon is still Tauri's placeholder.
+Tuner: the header's Tuner button or the T key; Esc closes it. The guitar is muted while it is open, and the unit closes it by itself if the app goes away.
+
+Not in yet: model and IR details, a drum song editor. The icon is still Tauri's placeholder.
+
+The drum styles', kits' and songs' names come with the settings table, read once when the app connects: after adding a song to the card, reconnect to see it.
 
 The browser preview's data is `src/lib/demo-snapshot.json`, a copy of the unit's table and state. Refresh it after the firmware's settings change:
 `~/.platformio/penv/bin/python ../tools/applink_snapshot.py > src/lib/demo-snapshot.json`

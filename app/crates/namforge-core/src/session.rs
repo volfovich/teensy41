@@ -266,6 +266,13 @@ impl<T: Read + Write> Session<T> {
         self.request_within(msg::FILE_PUT_END, &[], Duration::from_secs(15)).map(|_| ())
     }
 
+    /// Opens or closes the tuner (the guitar is muted while it is open).
+    pub fn tuner_open(&mut self, open: bool) -> Result<(), SessionError> {
+        let mut w = Writer::new();
+        w.u8(open as u8);
+        self.request(msg::TUNER_OPEN, &w.finish()).map(|_| ())
+    }
+
     /// Asks for meter frames at `rate` per second (0 = none); returns the rate in force.
     pub fn subscribe(&mut self, rate: u16) -> Result<u16, SessionError> {
         let mut w = Writer::new();
@@ -313,6 +320,7 @@ fn read_meters(r: &mut Reader<'_>) -> Result<Meters, WireError> {
     m.reverb_ringing = bits & 4 != 0;
     m.drums_playing = bits & 8 != 0;
     m.muted = bits & 16 != 0;
+    m.tuner_open = bits & 32 != 0;
     Ok(m)
 }
 
@@ -326,6 +334,7 @@ fn decode_event(f: &Frame) -> Option<Event> {
     match f.msg_type {
         msg::PARAM_CHANGED => Some(Event::Param { id: r.u16().ok()?, value: r.i32().ok()? }),
         msg::STATE_CHANGED => Some(Event::Files { files: read_files(&mut r).ok()? }),
+        msg::TUNER => Some(Event::Tuner { valid: r.bool().ok()?, hz: r.f32().ok()?, note: r.u8().ok()?, octave: r.i16().ok()?, cents: r.f32().ok()? }),
         msg::PRESETS_CHANGED => Some(Event::PresetsChanged),
         msg::METERS => Some(Event::Meters { meters: read_meters(&mut r).ok()? }),
         _ => None,
