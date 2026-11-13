@@ -20,6 +20,7 @@
 //   AmpLibrary  the NAM amp models in /AMP and loading them
 //   DrumSongs   the drum songs, built-in and from the SD card
 //   SerialUI    serial commands and level meter
+//   AppLink     the desktop app's binary protocol on the same serial port (APP.md)
 //   Tuner       the tuner (pitch from the input while it is open)
 #include <Arduino.h>
 #include <I2s32.h>
@@ -27,6 +28,7 @@
 #include <dsp/Convert.h>
 
 #include "AmpLibrary.h"
+#include "AppLink.h"
 #include "AudioChain.h"
 #include "DrumSongs.h"
 #include "IRLibrary.h"
@@ -138,5 +140,6 @@ void loop() {
   serviceMeter();
   serviceSave();
   serviceMidi();
+  serviceAppLink();
   serviceFault();
 }

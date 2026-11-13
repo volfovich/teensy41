@@ -10,6 +10,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Build firmware: `pio run`
 - Flash: `pio run -t upload` (Teensy Loader GUI; press the board's button if it doesn't auto-reboot)
 - Serial monitor / command shell: `pio device monitor` (type `?` for commands, `s` for status)
+- Check the desktop app's link protocol on the device (close the serial monitor first): `~/.platformio/penv/bin/python tools/applink_check.py`
 - Check that no audio code was linked into flash: `tools/check_hot_code.sh` (after `pio run`)
 - Host unit tests for portable DSP: `pio test -e native`
 - I2S driver self-test (bare board, jumper pin 7 -> pin 8; replaces app firmware until you re-upload):
@@ -25,7 +26,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 ## Layout
 - `src/main.cpp` – setup and the audio block callback (ADC words -> float -> `AudioChain` -> DAC words)
 - `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> doubler -> delay -> reverb, + drums and bass
-- `src/` (rest) – IR / amp / preset libraries on the SD card, `Params`, `Settings` (EEPROM), `SerialUI`, `MidiControl` (USB MIDI: program change = preset, controllers), `Tuner`, `DrumSongs`
+- `src/` (rest) – IR / amp / preset libraries on the SD card, `Params`, `Settings` (EEPROM), `SerialUI`, `AppLink` (the desktop app's binary protocol, on the same serial port as the shell), `MidiControl` (USB MIDI: program change = preset, controllers), `Tuner`, `DrumSongs`
 - `include/config.h` – compile-time settings and hardware constants (guitar channel, ADC full scale, mute pin)
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
 - `lib/dsp/` – **portable float DSP** (namespace `dsp`, no Arduino/Teensy includes), unit-tested on the host: `nam/`, `conv/`, `fx/`, `drums/`

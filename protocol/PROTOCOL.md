@@ -86,7 +86,7 @@ Type numbers are in hex. "→" is a request from the app, "←" a reply or event
 
 ### 4.1 Session (since A1)
 
-**`01 HELLO`** opens a session. Until the first `HELLO` the device prints its usual text; after it, the device stops printing unprompted text and sends events instead. The session ends after 5 s without any frame from the app.
+**`01 HELLO`** opens a session: from then on the device sends events. The session ends after 5 s without any frame from the app, so an idle app sends a `GET_STATE` or a `SUBSCRIBE` every second or two. Before a `HELLO` every other request is refused. The device keeps printing its usual text on the port throughout (load messages, the shell's answers); the app skips text.
 
 | Dir | Fields |
 | --- | --- |
@@ -120,7 +120,7 @@ The minimum and maximum are the device's current limits (the table's, narrowed t
 | → | `u16` setting number · `i32` value |
 | ← | `u16` setting number · `i32` the value now in force (after clamping to the setting's range) |
 
-**`11 PARAM_CHANGED`** (event) is sent for every change of a setting's value, whoever made it: the app, MIDI, the typed shell or a preset recall. A `SET_PARAM` from the app gets its reply and no event of its own.
+**`11 PARAM_CHANGED`** (event) is sent for every change of a setting's value, whoever made it: MIDI, the typed shell or a preset recall. A `SET_PARAM` from the app gets its reply and no event of its own. The device finds changes by comparing every setting with what it last reported, about 30 times a second, so a value that changes and changes back within that time is not reported.
 
 | Dir | Fields |
 | --- | --- |

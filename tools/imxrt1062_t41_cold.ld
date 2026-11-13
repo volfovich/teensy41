@@ -65,6 +65,7 @@ SECTIONS
 		*src/PresetLibrary.cpp.o(.text._Z[0-9]* .text._ZL*)
 		*src/Tuner.cpp.o(.text._Z[0-9]* .text._ZL*)
 		*src/MidiControl.cpp.o(.text*)
+		*src/AppLink.cpp.o(.text*)
 		. = ALIGN(4);
 		KEEP(*(.init))
 		__preinit_array_start = .;
@@ -95,6 +96,7 @@ SECTIONS
 		*src/PresetLibrary.cpp.o(.rodata*)
 		*src/Tuner.cpp.o(.rodata*)
 		*src/MidiControl.cpp.o(.rodata*)
+		*src/AppLink.cpp.o(.rodata*)
 		. = ALIGN(4);
 	} > FLASH
 

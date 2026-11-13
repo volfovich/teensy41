@@ -11,6 +11,7 @@
 #include <dsp/drums/DrumKit.h>
 #include <dsp/drums/DrumMachine.h>
 #include "DrumSongs.h"
+#include "AppLink.h"
 #include "IRLibrary.h"
 #include "MidiControl.h"
 #include "Params.h"
@@ -533,6 +534,7 @@ void serviceSerial() {
   static int len = 0;
   while (Serial.available()) {
     char c = Serial.read();
+    if (appLinkFeed((uint8_t)c)) continue;  // part of one of the desktop app's frames
     if (c == '\r' || c == '\n') {
       buf[len] = 0;
       if (len) handleCommand(buf);

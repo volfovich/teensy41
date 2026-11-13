@@ -15,7 +15,7 @@
 
 using namespace ui;
 
-static const int kMaxAmps = 64;
+static const int kMaxAmps = AMP_MAX_FILES;
 // The file list and the weights being handed to the audio side, in OCRAM:
 // only the background touches them (the weights once, when swapped in).
 DMAMEM static char g_files[kMaxAmps][IR_PATH_MAX];

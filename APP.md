@@ -1,6 +1,6 @@
 # Volfovich NAM Forge: Desktop Control App Plan
 
-Nov 13, 2026 · Status: milestone A0 half done. The protocol is written (`protocol/PROTOCOL.md`) and its firmware side passes its tests. The app side's Rust code is written but has never been compiled or run: Rust is not installed on the development Mac yet.
+Nov 13, 2026 · Status: A0 done (protocol, both codecs, shared tests). A1 firmware side done and checked on the device (`tools/applink_check.py`, 14 checks pass). Next: the Tauri app skeleton.
 
 **Volfovich NAM Forge** (short name in the window title and the Dock: **NAM Forge**) is a macOS app that controls the guitar DSP unit over USB: edit the sound on a Quad Cortex style screen, manage presets, and send NAM models and IRs straight to the device.
 
@@ -147,8 +147,9 @@ The serial port keeps its typed shell. The app's frames share the port and are t
 
 - A frame starts with two bytes that never occur in typed text: `0xF1 0xD5`.
 - The shell's line reader hands the port to `AppLink` when it sees them, and takes it back when the frame ends.
-- When the app connects it sends `HELLO`. From then on the firmware stops printing unprompted text (status every few seconds, load messages) and reports the same things as frames. Typed commands still work and still answer in text; the app ignores text.
-- When the app disconnects, or after 5 s without a frame, the firmware goes back to normal printing.
+- When the app connects it sends `HELLO`. From then on the firmware also sends events. It keeps printing its usual text (load messages, the shell's answers); the app skips text. Typed commands still work.
+- The session ends after 5 s without a frame from the app.
+- The firmware does not hook every place a setting can change. About 30 times a second it compares every setting and the loaded files with what it last told the app, and sends an event for each difference. So changes from MIDI, the shell and preset recalls all reach the app the same way.
 
 ### 5.2 Frame
 
@@ -268,8 +269,8 @@ protocol/
 
 | M | Deliverable | Done when |
 | --- | --- | --- |
-| A0 | `protocol/PROTOCOL.md` and the frame code on both sides, with tests | Host tests pass for the firmware parser (**done**, 15 tests); Rust tests pass for the codec (**written, not yet run**); both agree on the same test frames (`protocol/test_frames.txt`) |
-| A1 | Firmware: `HELLO`, table, state, set a setting, change reports. App skeleton that connects and shows raw values. | Turning a setting from MIDI changes the number in the app; the typed shell still works |
+| A0 ✔ | `protocol/PROTOCOL.md` and the frame code on both sides, with tests | Done: 15 firmware host tests and 12 Rust tests pass against the same example frames (`protocol/test_frames.txt`) |
+| A1 (firmware ✔) | Firmware: `HELLO`, table, state, set a setting, change reports (**done**, `src/AppLink.*`, verified on the device with `tools/applink_check.py`). App skeleton that connects and shows raw values (**not started**). | Turning a setting from MIDI changes the number in the app; the typed shell still works |
 | A2 | Main screen: chain, editor panel with knobs, block on and off, meters | Every setting can be edited from the app with no audible stepping |
 | A3 | Presets: list, recall, save, save as, rename, delete, edited mark | A preset saved in the app is recalled correctly by MIDI program change |
 | A4 | File transfer: add, delete, rename models and IRs; load them; checks and previews | A model dragged from Finder is playing within about 3 s; a bad file is refused with a clear message |

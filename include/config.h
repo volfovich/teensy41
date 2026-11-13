@@ -4,6 +4,9 @@
 // defaults a blank EEPROM starts with, are in lib/params/src/params/ParamDefs.cpp.
 #pragma once
 
+// Reported to the desktop app (HELLO, protocol/PROTOCOL.md).
+#define FIRMWARE_VERSION "0.1.0"
+
 #include <I2s32.h>
 
 // The audio format, fixed by the I2S driver (lib/i2s32): 48 kHz, DSP_BLOCK
@@ -34,6 +37,8 @@ constexpr float kSampleRate = (float)i2s32::kSampleRate;
 // Folders scanned for .wav files (FAT is case-insensitive: "/IR" == "/ir").
 #define IR_SCAN_DIRS {"/", "/IR"}
 #define IR_MAX_FILES 128
+// The most amp models listed from /AMP.
+#define AMP_MAX_FILES 64
 #define IR_PATH_MAX 96
 
 // Crossfade time when switching IRs (no clicks, no dropouts).
