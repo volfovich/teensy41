@@ -33,7 +33,7 @@ The app connects by itself and shows the main screen: the library on the unit's 
 
 The master volume is the slider beside the meters, from silent (its lowest step) to 0 dB, the DAC's full level; there is no gain above that, because the converter has no analog volume and more digital gain would only clip. It is one setting for all presets, kept in the unit's own settings (EEPROM), not in presets, so moving it never marks a preset as edited. The Output block's Level is the preset's own level and is saved with it.
 
-Levels: each block's tile has a thin bar with the peak level at that block's output (the Levels button or the L key switches the bars off), and the open block's editor shows the held peak as a number. The chain is float, so a level above 0 dBFS between blocks does not clip; it shows red because it would clip at the output, and because the level into the amp and the delay changes how they sound. The Output tile shows the unit's output after the master volume.
+Levels: each block's tile has a thin bar with the peak level at that block's output (the Levels button or the L key switches the bars off), and the open block's editor shows the held peak as a number. The chain is float, so a level above 0 dBFS between blocks does not clip; it shows red because it would clip at the output, and because the level into the amp and the delay changes how they sound. The master volume and the preset's level act after the cab (the Cab tile shows the level after them); the Output tile shows what goes to the DAC.
 
 Knobs: drag up and down, Shift for fine steps, scroll or arrow keys, double-click to type a value, right-click for the default.
 
