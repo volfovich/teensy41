@@ -52,6 +52,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Each effect's header states its threading model: setters from `loop()`, `process()` in the interrupt.
 - Watch the serial `s` command: per-stage CPU, driver overruns, FIFO errors, levels. Budget: worst case at or below 80% of the block period. Measured: amp + doubler + delay + reverb 52%, with drums 68% max.
 - Levels: the preset's level (`pvol`) is applied after the cab, before the doubler, delay and reverb. The master volume (`g`, silent to 0 dB, global, not in presets) is applied last, to everything that goes to the DAC, drums and bass included. `AudioChain` keeps the peak at each block's output (`takeStagePeak`) for the app's block meters.
+- Checking levels without a guitar: serial `sig 220 -20` replaces the guitar with a sine at a known level (`sig 0` ends it); read the levels with `s` or the app's block meters. Turn the master down first (`g -40`): a high-gain model makes any input loud.
 - Overload protection: 16 overruns in a row make the driver go silent and stop calling the callback (`i2s32::faulted()`); `serviceFault()` in `main.cpp` sheds load and resumes after 1 s. Serial `overload` tests it.
 - The guitar input passes a 30 Hz high-pass first (`INPUT_HIGHPASS_HZ`): the SD card puts a sub-20 Hz thump on the ADC about every 1.4 s.
 - Flush-to-zero and default-NaN float modes are enabled by `i2s32::begin()` (FPSCR and FPDSCR).

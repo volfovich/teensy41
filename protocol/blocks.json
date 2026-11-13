@@ -39,5 +39,5 @@
     ]
   },
   "master": "g",
-  "meters": { "floorDb": -60, "warnDb": -12, "hotDb": -3, "ok": "#3ddc84", "warn": "#ffc247", "hot": "#ff4d4d" }
+  "meters": { "floorDb": -60, "warnDb": -6, "hotDb": -1, "ok": "#3ddc84", "warn": "#ffc247", "hot": "#ff4d4d" }
 }

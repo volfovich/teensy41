@@ -80,6 +80,7 @@ void printHelp() {
                "  pre show              what differs from the recalled preset\n"
                "  tuner                 the tuner for 5 s (the guitar is muted meanwhile)\n"
                "  tuner test <Hz>       the tuner hears a sine instead of the guitar (0 = off)\n"
+               "  sig <Hz> <dBFS>       a sine replaces the guitar, for checking levels (sig 0 = off)\n"
                "  midi                  the USB MIDI mapping (program change = preset, controllers)\n"
                "  cap                   debug: 3 s of the raw input as floats over USB\n"
                "  overload              debug: test the overload protection (mutes for 1 s)\n"
@@ -462,6 +463,7 @@ static int findParam(const char* cmd, const char* arg, const char** value) {
 
 void captureInput();  // main.cpp
 void testOverload();  // main.cpp
+void testSignal(float hz, float dbfs);  // main.cpp
 
 static void handleCommand(char* line) {
   while (*line == ' ') line++;
@@ -497,6 +499,13 @@ static void handleCommand(char* line) {
     chain.setTunerTestHz(hz);
     if (hz > 0.0f) Serial.printf("Tuner test: the tuner hears a %.2f Hz sine instead of the guitar ('tuner test 0' ends it).\n", hz);
     else Serial.println("Tuner test off: the tuner hears the guitar.");
+  } else if (!strcmp(line, "sig")) {
+    float hz = 0.0f, db = -20.0f;
+    if (arg) sscanf(arg, "%f %f", &hz, &db);
+    if (db > 0.0f) db = 0.0f;
+    testSignal(hz, db);
+    if (hz > 0.0f) Serial.printf("Test signal: a %.1f Hz sine at %.1f dBFS replaces the guitar ('sig 0' ends it).\n", hz, db);
+    else Serial.println("Test signal off.");
   } else if (!strcmp(line, "tuner")) {
     runTuner();
   } else if (!strcmp(line, "?") || !strcmp(line, "help")) {

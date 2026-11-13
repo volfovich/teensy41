@@ -74,10 +74,13 @@ constexpr float kSampleRate = (float)i2s32::kSampleRate;
 // Amp (before the IR): NAM A2-Lite models from /AMP (see HLD.md and teensy-ir-loader's NAM.md).
 // ---------------------------------------------------------------------------
 // The loudness every model is levelled to, in dB (the model's gain is this
-// minus its "loudness"; the amp's output setting comes on top). NAM players
-// use -18; the amp here stands in for a tube amp's line out, which is hotter,
-// so -12 makes output 0 dB about as loud.
-#define AMP_LEVEL_DB -12.0f
+// minus its "loudness"; the amp's output setting comes on top). -18 is what NAM
+// players use. It was -12 while the master volume sat right after the cab with a
+// default of -6 dB; the master is now the last gain and tops out at 0 dB, so the
+// 6 dB of headroom are taken here instead. Measured with a high-gain model, amp
+// output 0 dB and a cab IR that peaks +10 dB at its resonance: about -5 dBFS
+// after the cab (with -12 it was +1 dBFS, which clipped at master 0 dB).
+#define AMP_LEVEL_DB -18.0f
 // The loss of the buffer in front of the ADC, in dB (0 without one, as now).
 // teensy-ir-loader's JFET TL072 buffer (1 MOhm in, 100 Ohm out) has -6 dB;
 // with it a guitar's 0 dBFS is 6 dB hotter than the ADC's, and the

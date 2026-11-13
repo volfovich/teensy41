@@ -57,6 +57,15 @@ void captureInput() {
 static volatile uint32_t g_overloadBlocks = 0;
 void testOverload() { g_overloadBlocks = 400; }
 
+// A test signal in place of the guitar (serial command "sig <Hz> <dBFS>", "sig 0" ends it): a
+// sine at a known level, for checking the levels through the chain without a guitar.
+static volatile float g_sigStep = 0.0f, g_sigAmp = 0.0f;
+static float g_sigPhase = 0.0f;
+void testSignal(float hz, float dbfs) {
+  g_sigAmp = powf(10.0f, dbfs / 20.0f);
+  g_sigStep = hz / kSampleRate;
+}
+
 // The overload protection (lib/i2s32, Config::faultAfterOverruns): when the chain cannot keep
 // up for 16 blocks in a row the driver goes silent and stops calling it, which gives loop()
 // the CPU back. Here the load is reduced, then the audio resumes after a second: first the
@@ -103,6 +112,13 @@ FASTRUN static void audioCallback(const int32_t* rx, int32_t* tx, size_t frames)
     g_captureLeft = 0;
   }
   for (size_t i = 0; i < frames; i++) guitar[i] = g_inputHp.process(guitar[i]);
+  if (g_sigStep > 0.0f) {
+    for (size_t i = 0; i < frames; i++) {
+      g_sigPhase += g_sigStep;
+      if (g_sigPhase >= 1.0f) g_sigPhase -= 1.0f;
+      guitar[i] = g_sigAmp * sinf(6.2831853f * g_sigPhase);
+    }
+  }
   chain.process(guitar, outL, outR);
   dsp::floatToInt24Out(outL, outR, tx, frames);
   if (g_overloadBlocks) {
