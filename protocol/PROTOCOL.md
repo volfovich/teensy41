@@ -2,7 +2,7 @@
 
 Version 1 · The single reference for both sides: the firmware (`lib/applink`, `src/AppLink.cpp`) and the app (`app/crates/namforge-link`).
 
-The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1) and `SUBSCRIBE` / `METERS` (A2) are implemented on both sides. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
+The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2) and presets (A3) are implemented on both sides. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
 
 ---
 
@@ -138,6 +138,10 @@ The minimum and maximum are the device's current limits (the table's, narrowed t
 | `23 PRESET_NEW` | `string` name | `string` the name it was saved under (with its number) |
 | `24 PRESET_RENAME` | `string` new name, for the recalled preset | `string` the new name |
 | `25 PRESET_DELETE` | `string` name | (empty) |
+
+Names are exact ("03 Lead"). A recall loads the model and the IR before it replies, which can take a second or two. Errors: `NO_CARD`, `NOT_FOUND` (no such preset, or none recalled for save and rename), `FULL` (99 presets), `BAD_PAYLOAD` (a new name that is empty or taken), `IO`.
+
+**`26 PRESETS_CHANGED`** (event, empty) is sent when a preset was added, deleted or renamed, whoever did it. The app then asks for the list again.
 
 ### 4.4 Amp models and IRs (since A4)
 

@@ -42,7 +42,7 @@
   .meter {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 5px;
   }
   .label {
     font-size: 10.5px;
@@ -52,7 +52,7 @@
   }
   .bar {
     position: relative;
-    width: 110px;
+    width: 70px;
     height: 8px;
     background: #23272f;
     border-radius: 4px;

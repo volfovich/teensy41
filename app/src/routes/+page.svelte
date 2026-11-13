@@ -6,7 +6,7 @@
   import { blockActive, blockOn, blockOnValue, buildBlocks, type Block } from "$lib/blocks";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
-  import { connectDevice, device, meters, preview, setParam } from "$lib/device.svelte";
+  import { connectDevice, device, meters, notice, presetAction, preview, setParam } from "$lib/device.svelte";
   import { baseName, formatValue } from "$lib/format";
 
   onMount(() => {
@@ -16,6 +16,7 @@
   });
 
   const blocks = $derived(buildBlocks(device.settings));
+  const lane = $derived(blocks.lane);
   const all = $derived([...blocks.chain, blocks.lane, ...(blocks.other ? [blocks.other] : [])]);
   // The address can name the block to open ("#reverb"): handy when working on the UI.
   let selectedId = $state((typeof location !== "undefined" && location.hash.slice(1)) || "amp");
@@ -46,12 +47,55 @@
   });
   const clipping = $derived(now - clipAt < 2000);
 
-  // Space switches the selected block, unless a control has the keyboard.
+  // ---- Presets
+  const current = $derived(device.files.preset);
+  // The name after the number: "03 Lead" -> "Lead".
+  const bare = (name: string) => name.replace(/^\d\d /, "");
+  function stepPreset(d: number) {
+    const list = device.presets;
+    if (!list.length) return;
+    const i = list.findIndex((p) => p.name === current);
+    const next = list[i < 0 ? 0 : (i + d + list.length) % list.length];
+    if (next.name !== current) presetAction("recall", next.name);
+  }
+  // The name field under the list: for "save as" or for renaming the recalled preset.
+  let naming = $state<"" | "new" | "rename">("");
+  let nameText = $state("");
+  let confirmDelete = $state(false);
+  function startNaming(mode: "new" | "rename") {
+    naming = mode;
+    nameText = mode === "rename" ? bare(current) : "";
+    confirmDelete = false;
+  }
+  function commitName() {
+    const text = nameText.trim();
+    if (naming === "new") presetAction("new", text);
+    else if (naming === "rename" && text && text !== bare(current)) presetAction("rename", text);
+    naming = "";
+  }
+  const focusNow = (el: HTMLInputElement) => {
+    el.focus();
+    el.select();
+  };
+  const noticeShown = $derived(notice.text && now - notice.at < 5000);
+
+  // Space switches the selected block, the arrows step through the presets, Cmd-S saves:
+  // unless a control has the keyboard.
   function key(e: KeyboardEvent) {
     const t = e.target as HTMLElement;
-    if (e.key !== " " || t.closest("input, select, button, [role=slider]")) return;
+    if (e.key === "s" && e.metaKey) {
+      e.preventDefault();
+      if (current && device.files.edited) presetAction("save");
+      else if (!current) startNaming("new");
+      return;
+    }
+    if (t.closest("input, select, button, [role=slider]")) return;
+    if (e.key === " ") {
+      if (selected) toggle(selected);
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") stepPreset(-1);
+    else if (e.key === "ArrowRight" || e.key === "ArrowDown") stepPreset(1);
+    else return;
     e.preventDefault();
-    if (selected) toggle(selected);
   }
 
   const laneChips = ["bpm", "drum style", "drum kit", "drum song", "bass key"];
@@ -67,10 +111,13 @@
     {device.connected ? (preview.on ? "Preview, no unit" : "Connected") : "Not connected"}
   </div>
   {#if device.connected}
-    <div class="preset" title="The preset recalled last">
-      <span>PRESET</span>
-      <b>{device.files.preset || "None"}</b>
+    <div class="preset">
+      <button class="step" aria-label="Previous preset" title="Previous preset (left arrow)" disabled={device.presets.length < 2} onclick={() => stepPreset(-1)}>‹</button>
+      <b title="The preset recalled last">{current || "No preset"}</b>
       {#if device.files.edited}<i title="Changed since it was recalled">edited</i>{/if}
+      <button class="step" aria-label="Next preset" title="Next preset (right arrow)" disabled={device.presets.length < 2} onclick={() => stepPreset(1)}>›</button>
+      <button class="save" disabled={!current || !device.files.edited} title="Write the sound over this preset (Cmd-S)" onclick={() => presetAction("save")}>Save</button>
+      <button class="save" disabled={!device.files.card} title="Save the sound as a new preset" onclick={() => startNaming("new")}>Save as…</button>
     </div>
     <div class="meters">
       <Meter label="IN" peak={meters.inputPeak} />
@@ -86,6 +133,53 @@
   {#if meters.muted}
     <div class="alert">Overload: the chain could not keep up, so the unit muted its output and is switching effects off.</div>
   {/if}
+
+  {#if noticeShown}
+    <div class="alert soft">{notice.text}</div>
+  {/if}
+
+  <div class="columns">
+  <aside aria-label="Presets">
+    <h3>Presets</h3>
+    {#if !device.files.card}
+      <p class="none">No SD card in the unit.</p>
+    {:else if !device.presets.length}
+      <p class="none">None yet. "Save as…" stores the current sound as the first.</p>
+    {/if}
+    <ul>
+      {#each device.presets as p (p.name)}
+        <li>
+          <button class:current={p.name === current} aria-current={p.name === current} onclick={() => p.name !== current && presetAction("recall", p.name)}>
+            <span class="num">{p.number ? String(p.number).padStart(2, "0") : "–"}</span>
+            <span class="pname">{bare(p.name)}</span>
+            {#if p.name === current && device.files.edited}<span class="mark" title="Edited">●</span>{/if}
+          </button>
+        </li>
+      {/each}
+    </ul>
+    {#if naming}
+      <form class="naming" onsubmit={(e) => (e.preventDefault(), commitName())}>
+        <label for="pname">{naming === "new" ? "Save as a new preset" : "Rename the preset"}</label>
+        <input id="pname" maxlength="24" placeholder="Name" bind:value={nameText} use:focusNow onkeydown={(e) => e.key === "Escape" && (naming = "")} />
+        <div class="row">
+          <button type="submit" class="primary">{naming === "new" ? "Save" : "Rename"}</button>
+          <button type="button" onclick={() => (naming = "")}>Cancel</button>
+        </div>
+      </form>
+    {:else if current}
+      <div class="row tools">
+        {#if confirmDelete}
+          <span class="ask">Delete "{bare(current)}"?</span>
+          <button class="danger" onclick={() => (presetAction("delete", current), (confirmDelete = false))}>Delete</button>
+          <button onclick={() => (confirmDelete = false)}>Keep</button>
+        {:else}
+          <button onclick={() => startNaming("rename")}>Rename</button>
+          <button onclick={() => (confirmDelete = true)}>Delete</button>
+        {/if}
+      </div>
+    {/if}
+  </aside>
+  <div class="main">
 
   <section class="chain" aria-label="Signal chain">
     <div class="jack">IN</div>
@@ -110,7 +204,6 @@
     <div class="jack">OUT</div>
   </section>
 
-  {@const lane = blocks.lane}
   <section class="lane" class:selected={selected.def.id === lane.def.id} class:playing={isOn(lane)} style:--c={lane.def.colour}>
     <button class="play" aria-label={isOn(lane) ? "Stop the drums" : "Start the drums"} onclick={() => toggle(lane)}>
       {#if isOn(lane)}
@@ -159,6 +252,9 @@
     {/each}
   </section>
 
+  </div>
+  </div>
+
   <footer>
     <span>Firmware {device.info?.firmware}</span>
     <span>{device.info?.blockSize}-sample blocks at {(device.info?.sampleRate ?? 0) / 1000} kHz</span>
@@ -202,7 +298,7 @@
   header {
     display: flex;
     align-items: center;
-    gap: 22px;
+    gap: 16px;
     padding: 10px 18px;
     background: #181b21;
     border-bottom: 1px solid #2a2e37;
@@ -241,10 +337,152 @@
     gap: 9px;
     min-width: 0;
   }
-  .preset span {
-    font-size: 10.5px;
-    letter-spacing: 0.1em;
+  .preset {
+    align-items: center;
+  }
+  .step {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid #353b47;
+    background: #22262e;
+    font-size: 17px;
+    line-height: 1;
+    padding: 0 0 2px;
+  }
+  .save {
+    border: 1px solid #353b47;
+    background: #22262e;
+    border-radius: 7px;
+    padding: 4px 11px;
+    white-space: nowrap;
+  }
+  .save:not(:disabled):first-of-type,
+  .primary {
+    border-color: #ffb347;
+    color: #ffb347;
+  }
+  button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .alert.soft {
+    background: #3a2f17;
+    color: #ffe2b0;
+    border-color: #6b4d1f;
+  }
+  .columns {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  aside {
+    width: 208px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 12px 12px;
+    background: #14171c;
+    border-right: 1px solid #2a2e37;
+    overflow-y: auto;
+  }
+  aside h3 {
+    padding: 0 8px;
+  }
+  aside ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+  }
+  aside li button {
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 7px 8px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    text-align: left;
+  }
+  aside li button:hover {
+    background: #1c2027;
+  }
+  aside li button.current {
+    background: #2a2416;
+    color: #ffb347;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
     color: #8a92a0;
+    font-size: 11.5px;
+  }
+  .pname {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .mark {
+    font-size: 8px;
+  }
+  aside .none {
+    padding: 0 8px;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .tools,
+  .naming {
+    margin-top: 10px;
+    padding: 10px 6px 0;
+    border-top: 1px solid #2a2e37;
+  }
+  .row button {
+    border: 1px solid #353b47;
+    background: #22262e;
+    border-radius: 7px;
+    padding: 4px 10px;
+  }
+  .row .danger {
+    border-color: #ff4d4d;
+    color: #ff8d8d;
+  }
+  .ask {
+    width: 100%;
+    color: #c3c8d1;
+  }
+  .naming label {
+    display: block;
+    font-size: 11.5px;
+    color: #8a92a0;
+    margin-bottom: 5px;
+  }
+  .naming input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+    padding: 6px 8px;
+    font: inherit;
+    color: inherit;
+    background: #101216;
+    border: 1px solid #353b47;
+    border-radius: 7px;
+    outline: none;
+  }
+  .naming input:focus {
+    border-color: #ffb347;
   }
   .preset b {
     font-size: 17px;
@@ -265,7 +503,7 @@
   .meters {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
   }
   .cpu {
     display: flex;

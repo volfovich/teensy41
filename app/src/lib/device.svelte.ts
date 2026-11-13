@@ -12,6 +12,7 @@ const empty: Snapshot = {
   settings: [],
   values: [],
   files: { model: "", ir: "", preset: "", edited: false, card: false },
+  presets: [],
 };
 
 const noMeters: Meters = {
@@ -25,6 +26,8 @@ export const device = $state<Snapshot>({ ...empty });
 export const meters = $state<Meters>({ ...noMeters });
 /** True when the window runs without Tauri and shows saved data. */
 export const preview = $state({ on: false });
+/** The last thing the unit refused ("No such preset"), for the screen to show briefly. */
+export const notice = $state({ text: "", at: 0 });
 
 const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -58,6 +61,15 @@ function apply(e: DeviceEvent) {
       break;
     case "files":
       device.files = e.files;
+      break;
+    case "presets":
+      device.presets = e.presets;
+      break;
+    case "refused":
+      notice.text = e.message;
+      notice.at = performance.now();
+      break;
+    case "presetsChanged":
       break;
     case "meters":
       Object.assign(meters, e.meters);
@@ -100,6 +112,7 @@ function flush() {
 export function setParam(id: number, value: number) {
   if (device.values[id] === value) return;
   device.values[id] = value; // show it at once
+  if (!inTauri && device.files.preset && device.settings[id]?.inPreset) device.files.edited = true;
   touched.set(id, performance.now());
   pending.set(id, value);
   if (!flushQueued) {
@@ -108,9 +121,39 @@ export function setParam(id: number, value: number) {
   }
 }
 
+export type PresetAction = "recall" | "save" | "new" | "rename" | "delete";
+
+/** Recalls, saves, adds, renames or deletes a preset. What happened comes back as events. */
+export function presetAction(action: PresetAction, name?: string) {
+  if (inTauri) {
+    void import("@tauri-apps/api/core").then(({ invoke }) => invoke("preset", { action, name: name ?? null }));
+    return;
+  }
+  // The preview has no unit: act on the saved list, enough to work on the screen.
+  const f = device.files;
+  const num = (n: string) => n.slice(0, 2);
+  if (action === "recall" && name) Object.assign(f, { preset: name, edited: false });
+  else if (action === "save") f.edited = false;
+  else if (action === "new") {
+    let n = 1;
+    while (device.presets.some((p) => p.number === n)) n++;
+    const full = `${String(n).padStart(2, "0")} ${name || "Preset"}`;
+    device.presets = [...device.presets, { name: full, number: n }].sort((a, b) => a.name.localeCompare(b.name));
+    Object.assign(f, { preset: full, edited: false });
+  } else if (action === "rename" && name) {
+    const full = `${num(f.preset)} ${name}`;
+    device.presets = device.presets.map((p) => (p.name === f.preset ? { ...p, name: full } : p));
+    f.preset = full;
+  } else if (action === "delete" && name) {
+    device.presets = device.presets.filter((p) => p.name !== name);
+    if (f.preset === name) Object.assign(f, { preset: "", edited: false });
+  }
+}
+
 async function startPreview(): Promise<() => void> {
   const snapshot = (await import("./demo-snapshot.json")).default as Snapshot;
   Object.assign(device, structuredClone(snapshot));
+  device.presets = ["01 Recto", device.files.preset || "02 Crunch", "03 Vintage clean"].map((name) => ({ name, number: Number(name.slice(0, 2)) }));
   preview.on = true;
   const t0 = performance.now();
   const timer = setInterval(() => {

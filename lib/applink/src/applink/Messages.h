@@ -24,6 +24,7 @@ enum class Msg : uint8_t {
     kPresetNew = 0x23,
     kPresetRename = 0x24,
     kPresetDelete = 0x25,
+    kPresetsChanged = 0x26, // event: the list of presets changed (ask for it again)
     // Amp models and IRs
     kModelList = 0x30,
     kModelLoad = 0x31,

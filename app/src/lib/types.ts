@@ -58,6 +58,12 @@ export interface Meters {
   muted: boolean;
 }
 
+/** A preset on the unit's SD card: "03 Lead" and its number (0 if the name has none). */
+export interface Preset {
+  name: string;
+  number: number;
+}
+
 export interface Snapshot {
   connected: boolean;
   detail: string;
@@ -65,6 +71,7 @@ export interface Snapshot {
   settings: Setting[];
   values: number[];
   files: Files;
+  presets: Preset[];
 }
 
 export type DeviceEvent =
@@ -75,6 +82,9 @@ export type DeviceEvent =
   | { kind: "param"; id: number; value: number }
   | { kind: "files"; files: Files }
   | { kind: "meters"; meters: Meters }
+  | { kind: "presets"; presets: Preset[] }
+  | { kind: "presetsChanged" }
+  | { kind: "refused"; message: string }
   | { kind: "disconnected"; reason: string };
 
 // A setting's unit (protocol/PROTOCOL.md section 6).

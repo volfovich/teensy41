@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 
 use serialport::{SerialPort, SerialPortType};
 
+use namforge_link::msg;
+
 use crate::session::{Session, SessionError};
 use crate::types::Event;
 
@@ -26,6 +28,8 @@ const RETRY: Duration = Duration::from_millis(1000);
 
 enum Command {
     SetParam { id: u16, value: i32 },
+    /// A preset request (its message type) with its name, if it takes one.
+    Preset { msg_type: u8, name: Option<String> },
 }
 
 /// The UI's handle on the device thread. Dropping it stops the thread.
@@ -39,6 +43,29 @@ impl DeviceHandle {
     /// per setting is sent.
     pub fn set_param(&self, id: u16, value: i32) {
         let _ = self.commands.send(Command::SetParam { id, value });
+    }
+
+    /// Recalls the preset with this name ("03 Lead").
+    pub fn recall_preset(&self, name: &str) {
+        self.preset(msg::PRESET_RECALL, Some(name));
+    }
+    /// Writes the current sound over the recalled preset.
+    pub fn save_preset(&self) {
+        self.preset(msg::PRESET_SAVE, None);
+    }
+    /// Saves the current sound as a new preset; the unit gives it the lowest free number.
+    pub fn new_preset(&self, name: &str) {
+        self.preset(msg::PRESET_NEW, Some(name));
+    }
+    /// Renames the recalled preset (its number stays).
+    pub fn rename_preset(&self, name: &str) {
+        self.preset(msg::PRESET_RENAME, Some(name));
+    }
+    pub fn delete_preset(&self, name: &str) {
+        self.preset(msg::PRESET_DELETE, Some(name));
+    }
+    fn preset(&self, msg_type: u8, name: Option<&str>) {
+        let _ = self.commands.send(Command::Preset { msg_type, name: name.map(str::to_string) });
     }
 }
 
@@ -130,6 +157,13 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
         Err(e) => return lost(e),
     }
 
+    // Firmware before presets refuses this; the list then stays empty.
+    match s.presets() {
+        Ok(presets) => emit(Event::Presets { presets }),
+        Err(SessionError::Device { .. }) => {}
+        Err(e) => return lost(e),
+    }
+
     let mut last_state = Instant::now() - KEEPALIVE;
     loop {
         if last_state.elapsed() >= KEEPALIVE {
@@ -144,6 +178,7 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
         // touched.
         let mut order: Vec<u16> = Vec::new();
         let mut newest: HashMap<u16, i32> = HashMap::new();
+        let mut presets: Vec<(u8, Option<String>)> = Vec::new();
         loop {
             match commands.try_recv() {
                 Ok(Command::SetParam { id, value }) => {
@@ -151,6 +186,7 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
                         order.push(id);
                     }
                 }
+                Ok(Command::Preset { msg_type, name }) => presets.push((msg_type, name)),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return End::Quit,
             }
@@ -164,9 +200,29 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
             }
         }
 
+        for (msg_type, name) in presets {
+            match s.preset(msg_type, name.as_deref()) {
+                Ok(()) => last_state = Instant::now() - KEEPALIVE, // the full state, right away
+                Err(SessionError::Device { message, .. }) => emit(Event::Refused { message }),
+                Err(e) => return lost(e),
+            }
+        }
+
         // Waits up to the port's read timeout, so this loop does not spin.
         match s.events() {
-            Ok(events) => events.into_iter().for_each(emit),
+            Ok(events) => {
+                for event in events {
+                    if event == Event::PresetsChanged {
+                        match s.presets() {
+                            Ok(presets) => emit(Event::Presets { presets }),
+                            Err(SessionError::Device { .. }) => {}
+                            Err(e) => return lost(e),
+                        }
+                    } else {
+                        emit(event);
+                    }
+                }
+            }
             Err(e) => return lost(e),
         }
     }

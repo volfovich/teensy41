@@ -1,5 +1,5 @@
-// AppLink.cpp - see AppLink.h. Milestones A1 and A2 of APP.md: the session, the settings table,
-// the state, setting a value, change events, and the meter frames.
+// AppLink.cpp - see AppLink.h. Milestones A1 to A3 of APP.md: the session, the settings table,
+// the state, setting a value, change events, the meter frames, and presets.
 #include "AppLink.h"
 
 #include <Arduino.h>
@@ -41,6 +41,7 @@ static int16_t g_sentValue[kValueCount];
 static char g_sentModel[IR_PATH_MAX], g_sentIr[IR_PATH_MAX], g_sentPreset[IR_PATH_MAX];
 static bool g_sentEdited = false, g_sentCard = false;
 static uint32_t g_lastPollMs = 0;
+static uint32_t g_sentPresets = 0;  // presetListHash() of the list the app knows
 
 // Meter frames per second the app asked for (SUBSCRIBE; 0 = none), and when the last one went.
 static uint16_t g_meterRate = 0;
@@ -67,6 +68,16 @@ static void replyError(const applink::FrameHeader& h, Err code, const char* mess
 static const char* modelPath() { return ampCurrent() >= 0 ? ampPath(ampCurrent()) : ""; }
 static const char* loadedIrPath() { return irCurrent() >= 0 ? irPath(irCurrent()) : ""; }
 static const char* recalledPreset() { return presetCurrent() >= 0 ? presetName(presetCurrent()) : ""; }
+
+// Changes when a preset is added, deleted or renamed.
+static uint32_t presetListHash() {
+  uint32_t h = (uint32_t)presetCount();
+  for (int i = 0; i < presetCount(); i++) {
+    const char* n = presetName(i);
+    h = applink::crc32((const uint8_t*)n, strlen(n)) ^ (h * 31u);
+  }
+  return h;
+}
 
 // The fields of the GET_STATE reply from the model path on, also the STATE_CHANGED event.
 static void writeFiles(Writer& w) {
@@ -139,6 +150,7 @@ static void onHello(const applink::FrameHeader& h, Reader& r) {
   g_meterRate = 0;
   for (int id = 0; id < kValueCount; id++) g_sentValue[id] = (int16_t)getParam(id);
   rememberFiles();
+  g_sentPresets = presetListHash();
   Serial.printf("App connected: %s\n", appName);
 }
 
@@ -178,6 +190,71 @@ static void onSetParam(const applink::FrameHeader& h, Reader& r) {
   w.u16(id);
   w.i32(now);
   reply(h, w);
+}
+
+// ---- Presets (PROTOCOL.md 4.3). The library prints what it did, or why not, to the shell.
+
+static void onPresetList(const applink::FrameHeader& h) {
+  Writer w(g_txPayload, kTxPayload);
+  w.u16((uint16_t)presetCount());
+  for (int i = 0; i < presetCount(); i++) {
+    w.str(presetName(i));
+    w.u16((uint16_t)presetNumber(i));
+  }
+  g_sentPresets = presetListHash();
+  reply(h, w);
+}
+
+// The preset with exactly this name, or -1.
+static int presetByName(const char* name) {
+  for (int i = 0; i < presetCount(); i++)
+    if (!strcmp(presetName(i), name)) return i;
+  return -1;
+}
+
+static void replyEmpty(const applink::FrameHeader& h) {
+  Writer w(g_txPayload, kTxPayload);
+  reply(h, w);
+}
+
+static void replyCurrentName(const applink::FrameHeader& h) {
+  Writer w(g_txPayload, kTxPayload);
+  w.str(recalledPreset());
+  reply(h, w);
+}
+
+static void onPreset(const applink::FrameHeader& h, Reader& r) {
+  const Msg type = (Msg)h.type;
+  char name[IR_PATH_MAX] = "";
+  if (type != Msg::kPresetSave) r.str(name, sizeof(name));
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad preset request");
+  if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
+  switch (type) {
+    case Msg::kPresetRecall: {
+      const int i = presetByName(name);
+      if (i < 0) return replyError(h, Err::kNotFound, "No such preset");
+      if (!recallPreset(i)) return replyError(h, Err::kIo, "The preset could not be read");
+      return replyEmpty(h);
+    }
+    case Msg::kPresetSave:
+      if (presetCurrent() < 0) return replyError(h, Err::kNotFound, "No preset is recalled; save as a new one");
+      if (!savePreset()) return replyError(h, Err::kIo, "The preset could not be written");
+      return replyEmpty(h);
+    case Msg::kPresetNew:
+      if (presetCount() >= 99) return replyError(h, Err::kFull, "All 99 preset numbers are taken");
+      if (!newPreset(name)) return replyError(h, Err::kIo, "The preset could not be written");
+      return replyCurrentName(h);
+    case Msg::kPresetRename:
+      if (presetCurrent() < 0) return replyError(h, Err::kNotFound, "No preset is recalled");
+      if (!renamePreset(name)) return replyError(h, Err::kBadPayload, "The name is empty or already in use");
+      return replyCurrentName(h);
+    default: {  // kPresetDelete
+      const int i = presetByName(name);
+      if (i < 0) return replyError(h, Err::kNotFound, "No such preset");
+      if (!deletePreset(i)) return replyError(h, Err::kIo, "The preset could not be deleted");
+      return replyEmpty(h);
+    }
+  }
 }
 
 static void onSubscribe(const applink::FrameHeader& h, Reader& r) {
@@ -231,6 +308,12 @@ static void handleFrame() {
     case Msg::kGetState: onGetState(h); break;
     case Msg::kSetParam: onSetParam(h, r); break;
     case Msg::kSubscribe: onSubscribe(h, r); break;
+    case Msg::kPresetList: onPresetList(h); break;
+    case Msg::kPresetRecall:
+    case Msg::kPresetSave:
+    case Msg::kPresetNew:
+    case Msg::kPresetRename:
+    case Msg::kPresetDelete: onPreset(h, r); break;
     default: replyError(h, Err::kUnknownMessage, "Not supported by this firmware"); break;
   }
 }
@@ -261,6 +344,12 @@ static void reportChanges() {
     writeFiles(w);
     rememberFiles();
     sendFrame(Msg::kStateChanged, applink::kFlagEvent, 0, w);
+  }
+  const uint32_t presets = presetListHash();
+  if (presets != g_sentPresets) {
+    g_sentPresets = presets;
+    Writer w(g_txPayload, kTxPayload);
+    sendFrame(Msg::kPresetsChanged, applink::kFlagEvent, 0, w);
   }
 }
 

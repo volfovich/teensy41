@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use namforge_link::{encode_frame, flags, msg, ErrorCode, Fed, Frame, FrameParser, Reader, WireError, Writer};
 
-use crate::types::{DeviceInfo, Event, Files, Meters, Setting};
+use crate::types::{DeviceInfo, Event, Files, Meters, Preset, Setting};
 
 /// The app's name as sent in `HELLO`.
 pub const APP_ID: &str = concat!("NAM Forge ", env!("CARGO_PKG_VERSION"));
@@ -50,6 +50,8 @@ impl From<io::Error> for SessionError {
 }
 
 const REPLY_TIMEOUT: Duration = Duration::from_millis(1000);
+/// For requests that load or write files on the SD card (a preset recall loads a model and an IR).
+const SLOW_REPLY_TIMEOUT: Duration = Duration::from_millis(6000);
 /// A frame that stops arriving for this long is abandoned (PROTOCOL.md 2.3). Longer than the
 /// stream's read timeout, so a frame split across several reads is put together.
 const LINE_IDLE: Duration = Duration::from_millis(100);
@@ -96,11 +98,15 @@ impl<T: Read + Write> Session<T> {
     /// Sends a request and waits for its reply. Events that arrive meanwhile are kept for
     /// [`Session::events`].
     pub fn request(&mut self, msg_type: u8, payload: &[u8]) -> Result<Frame, SessionError> {
+        self.request_within(msg_type, payload, REPLY_TIMEOUT)
+    }
+
+    fn request_within(&mut self, msg_type: u8, payload: &[u8], timeout: Duration) -> Result<Frame, SessionError> {
         self.sequence = if self.sequence == u16::MAX { 1 } else { self.sequence + 1 };
         let frame = encode_frame(msg_type, 0, self.sequence, payload).expect("request payloads are small");
         self.io.write_all(&frame)?;
         self.io.flush()?;
-        let deadline = Instant::now() + REPLY_TIMEOUT;
+        let deadline = Instant::now() + timeout;
         loop {
             for f in self.read_frames()? {
                 if f.is_reply() && f.sequence == self.sequence && f.msg_type == msg_type {
@@ -190,6 +196,31 @@ impl<T: Read + Write> Session<T> {
         .map_err(|problem| SessionError::Malformed { request: msg::GET_STATE, problem })
     }
 
+    pub fn presets(&mut self) -> Result<Vec<Preset>, SessionError> {
+        let f = self.request(msg::PRESET_LIST, &[])?;
+        (|| -> Result<Vec<Preset>, WireError> {
+            let mut r = Reader::new(&f.payload);
+            let n = r.u16()?;
+            let list = (0..n).map(|_| Ok(Preset { name: r.str()?, number: r.u16()? })).collect::<Result<_, WireError>>()?;
+            r.done()?;
+            Ok(list)
+        })()
+        .map_err(|problem| SessionError::Malformed { request: msg::PRESET_LIST, problem })
+    }
+
+    /// One of the preset requests that take a name (`PRESET_RECALL`, `_NEW`, `_RENAME`,
+    /// `_DELETE`) or none (`PRESET_SAVE`). The changes arrive as events.
+    pub fn preset(&mut self, msg_type: u8, name: Option<&str>) -> Result<(), SessionError> {
+        let mut w = Writer::new();
+        if let Some(name) = name {
+            if w.str(name).is_err() {
+                let (code, message) = (ErrorCode::from_u16(2), "The name is too long".to_string());
+                return Err(SessionError::Device { request: msg_type, code, message });
+            }
+        }
+        self.request_within(msg_type, &w.finish(), SLOW_REPLY_TIMEOUT).map(|_| ())
+    }
+
     /// Asks for meter frames at `rate` per second (0 = none); returns the rate in force.
     pub fn subscribe(&mut self, rate: u16) -> Result<u16, SessionError> {
         let mut w = Writer::new();
@@ -250,6 +281,7 @@ fn decode_event(f: &Frame) -> Option<Event> {
     match f.msg_type {
         msg::PARAM_CHANGED => Some(Event::Param { id: r.u16().ok()?, value: r.i32().ok()? }),
         msg::STATE_CHANGED => Some(Event::Files { files: read_files(&mut r).ok()? }),
+        msg::PRESETS_CHANGED => Some(Event::PresetsChanged),
         msg::METERS => Some(Event::Meters { meters: read_meters(&mut r).ok()? }),
         _ => None,
     }

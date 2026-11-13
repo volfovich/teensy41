@@ -40,6 +40,7 @@ pub mod msg {
     pub const PRESET_NEW: u8 = 0x23;
     pub const PRESET_RENAME: u8 = 0x24;
     pub const PRESET_DELETE: u8 = 0x25;
+    pub const PRESETS_CHANGED: u8 = 0x26;
     pub const MODEL_LIST: u8 = 0x30;
     pub const MODEL_LOAD: u8 = 0x31;
     pub const MODEL_INFO: u8 = 0x32;

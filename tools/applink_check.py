@@ -59,11 +59,12 @@ class Reader:
 class Link:
     def __init__(self, port):
         self.s = serial.Serial(port, 115200, timeout=0.05)
-        self.buf, self.text, self.seq = b"", b"", 0
+        self.buf, self.text, self.seq, self.late = b"", b"", 0, []
 
     def poll(self, wait):
         """Frames (type, flags, sequence, payload) received within `wait` seconds; text is kept apart."""
-        out, t0 = [], time.time()
+        out, t0 = self.late, time.time()
+        self.late = []
         while time.time() - t0 < wait:
             self.buf += self.s.read(65536)
             while True:
@@ -92,8 +93,10 @@ class Link:
         self.s.write(frame(t, 0, self.seq, payload))
         t0, events = time.time(), []
         while time.time() - t0 < wait:
-            for f in self.poll(0.05):
+            batch = self.poll(0.05)
+            for i, f in enumerate(batch):
                 if f[1] & 1 and f[2] == self.seq:
+                    self.late = batch[i + 1:]  # frames right behind the reply: for the next poll
                     return f, events
                 events.append(f)
         return None, events
@@ -176,6 +179,51 @@ def main():
     f, _ = link.request(0x50, struct.pack("<H", 0))
     link.poll(0.2)
     check(f[1] == 1 and not [e for e in link.poll(0.5) if e[0] == 0x51], "SUBSCRIBE 0: the frames stop")
+
+    # Presets: list; save the sound as a new one; change it and recall; rename; delete.
+    def presets():
+        f, _ = link.request(0x20)
+        r = Reader(f[3])
+        return [(r.str(), r.u16()) for _ in range(r.u16())]
+
+    if files["card"]:
+        before, was = presets(), state()[1]["preset"]
+        check(True, "PRESET_LIST: %d presets, recalled %r" % (len(before), was))
+        f, ev = link.request(0x23, string("applink test"), wait=6)
+        made = Reader(f[3]).str() if f and f[1] == 1 else ""
+        ev += link.poll(0.3)
+        listed = made in [p[0] for p in presets()]
+        check(made.endswith("applink test") and listed and any(e[0] == 0x26 for e in ev)
+              and state()[1]["preset"] == made, "PRESET_NEW saves it as %r, with a PRESETS_CHANGED event" % made)
+        link.request(0x10, struct.pack("<Hi", mix, new))
+        link.poll(0.2)
+        edited = state()[1]["edited"]
+        f, _ = link.request(0x21, string(made), wait=6)
+        link.poll(0.3)
+        vals2, files2 = state()
+        check(edited and f[1] == 1 and vals2[mix] == old and not files2["edited"],
+              "an edit sets the edited mark; PRESET_RECALL brings the saved value back")
+        f, _ = link.request(0x24, string("applink renamed"), wait=6)
+        renamed = Reader(f[3]).str() if f and f[1] == 1 else ""
+        check(renamed.endswith("applink renamed") and renamed[:2] == made[:2], "PRESET_RENAME: %r, same number" % renamed)
+        f, _ = link.request(0x21, string("no such preset"))
+        check(f[1] == 3 and Reader(f[3]).u16() == 3, "PRESET_RECALL of an unknown name: error NOT_FOUND")
+        f, _ = link.request(0x25, string(renamed), wait=6)
+        link.poll(0.3)
+        check(f[1] == 1 and presets() == before, "PRESET_DELETE: the list is as before")
+        # Back to the sound from before, unsaved edits included: the preset, then every value.
+        if was:
+            link.request(0x21, string(was), wait=6)
+            link.poll(0.3)
+        for i, v in enumerate(state()[0][:hello["saved"]]):
+            if v != vals[i]:
+                link.request(0x10, struct.pack("<Hi", i, vals[i]))
+        link.poll(0.3)
+        vals3, files3 = state()
+        check(vals3[:hello["saved"]] == vals[:hello["saved"]] and files3 == files,
+              "the sound from before is back (preset %r, edited mark %d)" % (was, files3["edited"]))
+    else:
+        print("SKIP  presets: no SD card")
 
     f, _ = link.request(0x7E)
     check(f[1] == 3 and Reader(f[3]).u16() == 1, "unknown message: error UNKNOWN_MESSAGE")

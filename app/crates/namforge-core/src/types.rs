@@ -77,6 +77,16 @@ pub struct Meters {
     pub muted: bool,
 }
 
+/// A preset on the unit's SD card.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Preset {
+    /// The file's name without ".txt": "03 Lead".
+    pub name: String,
+    /// The number in the name (MIDI program change n recalls preset n + 1); 0 if it has none.
+    pub number: u16,
+}
+
 /// Everything the device side reports to the UI.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -90,6 +100,11 @@ pub enum Event {
     Param { id: u16, value: i32 },
     Files { files: Files },
     Meters { meters: Meters },
+    Presets { presets: Vec<Preset> },
+    /// The list of presets changed on the unit; the device thread fetches it again.
+    PresetsChanged,
+    /// Something the user asked for was refused ("No such preset").
+    Refused { message: String },
     /// The session ended; the device side starts searching again.
     Disconnected { reason: String },
 }

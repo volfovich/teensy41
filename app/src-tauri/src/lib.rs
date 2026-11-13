@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use namforge_core::{DeviceHandle, DeviceInfo, Event, Files, Setting};
+use namforge_core::{DeviceHandle, DeviceInfo, Event, Files, Preset, Setting};
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 
@@ -18,6 +18,7 @@ struct Snapshot {
     settings: Vec<Setting>,
     values: Vec<i16>,
     files: Files,
+    presets: Vec<Preset>,
 }
 
 impl Snapshot {
@@ -43,7 +44,8 @@ impl Snapshot {
                 }
             }
             Event::Files { files } => self.files = files.clone(),
-            Event::Meters { .. } => {}
+            Event::Presets { presets } => self.presets = presets.clone(),
+            Event::Meters { .. } | Event::PresetsChanged | Event::Refused { .. } => {}
             Event::Disconnected { reason } => {
                 self.connected = false;
                 self.detail = reason.clone();
@@ -66,6 +68,22 @@ fn snapshot(app: State<'_, App>) -> Snapshot {
 #[tauri::command]
 fn set_param(app: State<'_, App>, id: u16, value: i32) {
     app.device.set_param(id, value);
+}
+
+/// One of "recall", "save", "new", "rename", "delete"; `name` for all but "save". The result
+/// arrives as events (`files`, `presets`, or `refused` with the unit's reason).
+#[tauri::command]
+fn preset(app: State<'_, App>, action: String, name: Option<String>) -> Result<(), String> {
+    let name = name.unwrap_or_default();
+    match action.as_str() {
+        "recall" => app.device.recall_preset(&name),
+        "save" => app.device.save_preset(),
+        "new" => app.device.new_preset(&name),
+        "rename" => app.device.rename_preset(&name),
+        "delete" => app.device.delete_preset(&name),
+        other => return Err(format!("unknown preset action {other}")),
+    }
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -93,7 +111,7 @@ pub fn run() {
             app.manage(App { device, snapshot });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_param])
+        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset])
         .run(tauri::generate_context!())
         .expect("error while running NAM Forge");
 }

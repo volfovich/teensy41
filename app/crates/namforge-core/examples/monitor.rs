@@ -26,11 +26,30 @@ fn main() {
         let _ = tx.send(e);
     });
 
+    // "preset new <name>", "preset recall <name>", "preset save", "preset rename <name>",
+    // "preset delete <name>": sent one second after the start.
+    let preset: Option<(String, String)> =
+        (args.get(1).map(String::as_str) == Some("preset")).then(|| (args.get(2).cloned().unwrap_or_default(), args.get(3).cloned().unwrap_or_default()));
+    let mut preset_at = Some(Instant::now() + Duration::from_secs(1));
+
     let mut schema: Vec<Setting> = Vec::new();
     let mut values: Vec<i16> = Vec::new();
     let mut set_at: Option<Instant> = None;
     let end = Instant::now() + Duration::from_secs(seconds);
     while Instant::now() < end {
+        if let (Some((action, name)), Some(at)) = (&preset, preset_at) {
+            if Instant::now() >= at {
+                preset_at = None;
+                match action.as_str() {
+                    "new" => device.new_preset(name),
+                    "recall" => device.recall_preset(name),
+                    "save" => device.save_preset(),
+                    "rename" => device.rename_preset(name),
+                    "delete" => device.delete_preset(name),
+                    other => println!("unknown preset action {other}"),
+                }
+            }
+        }
         if let (Some((key, value)), Some(at)) = (&set, set_at) {
             if at.elapsed() >= Duration::from_secs(1) {
                 match schema.iter().find(|s| &s.key == key) {
@@ -87,6 +106,11 @@ fn main() {
                     );
                 }
             }
+            Event::Presets { presets } => {
+                println!("presets: {}", presets.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", "))
+            }
+            Event::PresetsChanged => {}
+            Event::Refused { message } => println!("refused: {message}"),
             Event::Disconnected { reason } => println!("disconnected: {reason}"),
         }
     }
