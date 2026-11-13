@@ -13,6 +13,8 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Host unit tests for portable DSP: `pio test -e native`
 - I2S driver self-test (bare board, jumper pin 7 -> pin 8; replaces app firmware until you re-upload):
   `pio run -e i2s_loopback -t upload && pio device monitor -e i2s_loopback`
+- NAM A2-Lite CPU benchmark (bare board, no audio; fetches the reference engine into `third_party/` on first build):
+  `pio run -e nam_bench -t upload && pio device monitor -e nam_bench`
 - PSRAM hardware test: `pio run -e psram_test -t upload && pio device monitor -e psram_test`
 - Deep PSRAM inspection (~3 min + endless soak): `pio run -e psram_deep -t upload && pio device monitor -e psram_deep`
 - Refresh editor IntelliSense after adding libs/flags: `pio run -t compiledb`
