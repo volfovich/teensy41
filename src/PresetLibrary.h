@@ -1,5 +1,5 @@
 // PresetLibrary.h - presets: whole sounds as text files in /PRESETS on the SD
-// card (PRESETS.md; the file format in lib/oledui/src/PresetFile.h). Named
+// card (PRESETS.md; the file format in lib/params PresetFile.h). Named
 // "NN Name.txt", NN being the preset's number (01-99).
 //
 // Background only (loop()): a recall loads the amp model and the IR the
@@ -26,7 +26,7 @@ bool presetEdited();
 // (nothing changes then). Keeps a preset being tried (previewPreset).
 bool recallPreset(int idx);
 
-// Trying presets from the panel's list: previewPreset() plays preset idx,
+// Trying presets from a UI's list (unused until there is one): previewPreset() plays preset idx,
 // keeping the sound from before the first try (edits and all);
 // cancelPreview() goes back to it, keepPreview() keeps what plays. Every
 // other change to presets keeps.

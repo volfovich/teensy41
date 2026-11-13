@@ -29,6 +29,10 @@ volatile uint32_t g_maxCycles = 0;
 volatile uint32_t g_overruns = 0;
 volatile uint32_t g_fifoErrors = 0;
 volatile int32_t g_txLeadFrames = 0;
+uint32_t g_faultAfter = 0;
+uint32_t g_overrunStreak = 0;
+volatile bool g_faulted = false;
+volatile uint32_t g_faults = 0;
 
 // PLL4 (audio PLL) = 24 MHz * (div + num/denom). Same sequence as the Audio Library's
 // set_audioClock() (utility/imxrt_hw.cpp), copied so we do not link that library.
@@ -169,7 +173,7 @@ FASTRUN void isr() {
 
     arm_dcache_delete(rx, kHalfBytes);            // drop stale cached copy before reading
     const Callback cb = g_callback;
-    if (cb) cb(rx, tx, kBlock);
+    if (cb && !g_faulted) cb(rx, tx, kBlock);
     else memset(tx, 0, kHalfBytes);
     arm_dcache_flush_delete(tx, kHalfBytes);      // push to RAM where the DMA reads it
 
@@ -186,7 +190,18 @@ FASTRUN void isr() {
     if (cycles > g_maxCycles) g_maxCycles = cycles;
     // An interrupt cannot pre-empt itself, so an overrun shows up as either too many
     // cycles, or the next half-buffer interrupt already waiting when we leave.
-    if (cycles > g_periodCycles || (DMA_INT & (1u << rxDma.channel))) g_overruns = g_overruns + 1;
+    if (cycles > g_periodCycles || (DMA_INT & (1u << rxDma.channel))) {
+        g_overruns = g_overruns + 1;
+        // Overload protection: a run of overruns means the callback cannot keep up, and it
+        // leaves loop() no time to do anything about it. Stop calling it and go silent.
+        if (g_faultAfter && ++g_overrunStreak >= g_faultAfter && !g_faulted) {
+            g_faulted = true;
+            g_faults = g_faults + 1;
+            if (g_mutePin >= 0) digitalWriteFast(g_mutePin, LOW);
+        }
+    } else {
+        g_overrunStreak = 0;
+    }
 
     asm("dsb");
 }
@@ -205,6 +220,10 @@ void begin(const Config& config) {
     g_periodCycles = static_cast<uint32_t>(static_cast<uint64_t>(F_CPU_ACTUAL) * kBlock / kSampleRate);
     g_blocks = 0;
     g_lastCycles = g_maxCycles = g_overruns = g_fifoErrors = 0;
+    g_faultAfter = config.faultAfterOverruns;
+    g_overrunStreak = 0;
+    g_faulted = false;
+    g_faults = 0;
 
     configFloatMode();
 
@@ -244,6 +263,7 @@ Stats stats() {
     s.overruns = g_overruns;
     s.fifoErrors = g_fifoErrors;
     s.txLeadFrames = g_txLeadFrames;
+    s.faults = g_faults;
     __enable_irq();
     return s;
 }
@@ -254,6 +274,16 @@ void resetStats() {
     g_overruns = 0;
     g_fifoErrors = 0;
     __enable_irq();
+}
+
+bool faulted() { return g_faulted; }
+
+void clearFault() {
+    __disable_irq();
+    g_overrunStreak = 0;
+    g_faulted = false;
+    __enable_irq();
+    if (g_mutePin >= 0 && !g_userMuted) digitalWriteFast(g_mutePin, HIGH);
 }
 
 uint32_t blockPeriodCycles() { return g_periodCycles; }

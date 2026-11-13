@@ -12,6 +12,7 @@
 #include <dsp/drums/DrumMachine.h>
 #include "DrumSongs.h"
 #include "IRLibrary.h"
+#include "MidiControl.h"
 #include "Params.h"
 #include "PresetLibrary.h"
 #include "Tuner.h"
@@ -77,6 +78,9 @@ void printHelp() {
                "  pre del <n>           delete preset n\n"
                "  pre show              what differs from the recalled preset\n"
                "  tuner                 the tuner for 5 s (the guitar is muted meanwhile)\n"
+               "  midi                  the USB MIDI mapping (program change = preset, controllers)\n"
+               "  cap                   debug: 3 s of the raw input as floats over USB\n"
+               "  overload              debug: test the overload protection (mutes for 1 s)\n"
                "  drum loop <a> <b>|off  loop bars a..b of the song\n"
                "  drum train <step> <every> <target>  set the speed trainer and switch it on\n"
                "  m                     toggle the live level meter\n"
@@ -254,7 +258,8 @@ static void printStatus() {
                 chain.cpuPercent(), chain.cpuPercentMax(), chain.ampCpuPercent(),
                 chain.doublerCpuPercent(), chain.delayCpuPercent(),
                 chain.reverbCpuPercent(), chain.drumCpuPercent(), 100.0f * i2s32::load(drv.maxCycles));
-  Serial.printf("Driver:    overruns %lu, FIFO errors %lu\n", (unsigned long)drv.overruns, (unsigned long)drv.fifoErrors);
+  Serial.printf("Driver:    overruns %lu, FIFO errors %lu, overload mutes %lu\n", (unsigned long)drv.overruns,
+                (unsigned long)drv.fifoErrors, (unsigned long)drv.faults);
   Serial.printf("Levels:    in %.1f dBFS, out %.1f dBFS peak, clipped samples %lu\n",
                 toDb(chain.takeInputPeak()), toDb(chain.takeOutputPeak()),
                 (unsigned long)chain.clipCount());
@@ -454,6 +459,7 @@ static int findParam(const char* cmd, const char* arg, const char** value) {
 }
 
 void captureInput();  // main.cpp
+void testOverload();  // main.cpp
 
 static void handleCommand(char* line) {
   while (*line == ' ') line++;
@@ -465,6 +471,11 @@ static void handleCommand(char* line) {
     if (!loadIRIndex(atoi(line) - 1)) Serial.println("No such IR number (type 'l').");
   } else if (!strcmp(line, "cap")) {
     captureInput();
+  } else if (!strcmp(line, "overload")) {
+    Serial.println("Overload test: the audio callback wastes 1.2 block periods for 400 blocks.");
+    testOverload();
+  } else if (!strcmp(line, "midi")) {
+    printMidiMap();
   } else if (!strcmp(line, "l")) {
     printList();
   } else if (!strcmp(line, "n")) {

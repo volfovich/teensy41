@@ -260,7 +260,7 @@ static bool recallFile(int idx) {
   return true;
 }
 
-// ---- Trying presets from the panel's list --------------------------------------------
+// ---- Trying presets from a UI's list ---- --------------------------------------------
 // The first preview keeps the sound as it was (edits and all) and which
 // preset was recalled; cancelPreview() puts them back, keepPreview() drops
 // them. Anything else that changes presets keeps.

@@ -1,5 +1,5 @@
 // ParamDefs.h - every setting in one table: its serial command, its names, its
-// range, step, default and how it is shown. The menu, the serial commands,
+// range, step, default and how it is shown. The serial commands, MIDI, a UI's menu,
 // the help text, the EEPROM record and its validation all read it, so a
 // setting is added in one place (plus what it does, in the firmware's
 // applyParam()).
@@ -62,9 +62,9 @@ constexpr uint8_t kInPreset = 1;  // part of a preset's sound (PRESETS.md)
 struct ParamDef {
   const char* key;    // serial command ("dmix"); nullptr: none
   const char* name;   // in messages and the help ("Delay mix")
-  const char* label;  // the menu row ("Mix")
+  const char* label;  // a short name for a UI's menu row ("Mix")
   int16_t min, max, def;
-  uint8_t step;       // per detent in the menu editor
+  uint8_t step;       // per step in a UI's editor
   Unit unit;
   const char* const* choices;  // max + 1 names, or nullptr
   uint8_t flags;               // kInPreset ...

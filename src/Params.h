@@ -1,5 +1,5 @@
 // Params.h - reading and changing the settings (ui::Param, see ParamDefs.h)
-// by number, for the serial commands and the panel alike. applyParam() in
+// by number, for the serial commands, MIDI and any later UI alike. applyParam() in
 // Params.cpp is the one place that knows what each setting does.
 // Ported from teensy-ir-loader (src/Params.h) for the PCM1808 / PCM5102A hardware and the i2s32 driver.
 #pragma once

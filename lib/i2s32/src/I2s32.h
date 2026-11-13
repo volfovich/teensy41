@@ -33,6 +33,10 @@ struct Config {
     Callback callback = nullptr;   // nullptr = transmit silence
     int mutePin = -1;              // GPIO wired to the DAC's XSMT (high = un-muted); -1 = none
     uint8_t irqPriority = 48;      // lower number = more urgent; USB is 112, default is 128
+    // Overload protection: after this many overruns in a row the driver stops calling the
+    // callback, sends silence and mutes the DAC (if it has the pin) until clearFault().
+    // Without it an overloaded callback starves loop() completely. 0 = off.
+    uint16_t faultAfterOverruns = 16;
 };
 
 struct Stats {
@@ -42,6 +46,7 @@ struct Stats {
     uint32_t overruns;        // interrupts that took longer than a block period
     uint32_t fifoErrors;      // SAI FIFO underrun/overflow events
     int32_t txLeadFrames;     // how far the TX DMA is ahead of the RX DMA (diagnostic)
+    uint32_t faults;          // times the overload protection has tripped since begin()
 };
 
 // Starts the clocks, both DMA channels and the interrupt. Call once from setup().
@@ -56,6 +61,12 @@ void setMute(bool muted);
 
 Stats stats();
 void resetStats();                 // clears maxCycles, overruns, fifoErrors
+
+// True while the overload protection holds the output silent (Config::faultAfterOverruns).
+bool faulted();
+// Ends the fault: the callback runs again from the next block. Call from loop(), after
+// reducing the load (or it trips again).
+void clearFault();
 
 uint32_t blockPeriodCycles();      // CPU cycles in one block period
 float load(uint32_t cycles);       // cycles as a fraction of the block period (0..1)

@@ -117,14 +117,6 @@ class AudioChain {
   float takeInputPeak() { float p = inPeak_; inPeak_ = 0.0f; return p; }
   float takeOutputPeak() { float p = outPeak_; outPeak_ = 0.0f; return p; }
   uint32_t clipCount() const { return clips_; }
-  // The same for the display, kept apart so the serial meter and the OLED
-  // don't take each other's peaks.
-  void takeDisplayPeaks(float& in, float& out) {
-    in = dispInPeak_;
-    out = dispOutPeak_;
-    dispInPeak_ = dispOutPeak_ = 0.0f;
-  }
-
   // CPU load of this object, in percent of one core, and the shares of it
   // spent in the amp, the delay, the reverb and the drums.
   float cpuPercent() const { return cyclesToPercent(cyclesAvg_); }
@@ -150,7 +142,6 @@ class AudioChain {
       pk = fmaxf(pk, fabsf(x[i]));
     }
     inPeak_ = fmaxf(inPeak_, pk);
-    dispInPeak_ = fmaxf(dispInPeak_, pk);
     // The tuner's tap: low-passed, every second sample.
     if (tunerOn_ && tunerRing_) {
       uint32_t w = tunerWritten_;
@@ -228,7 +219,6 @@ class AudioChain {
       toOutput(fr, addR, outR, opk, clips);
     }
     outPeak_ = fmaxf(outPeak_, opk);
-    dispOutPeak_ = fmaxf(dispOutPeak_, opk);
     clips_ += clips;
 
     const uint32_t c = ARM_DWT_CYCCNT - t0;
@@ -278,7 +268,6 @@ class AudioChain {
   volatile float gainTarget_ = 0.5f, gainCur_ = 0.5f;
   volatile float wetTarget_ = 1.0f, wetCur_ = 1.0f;
   volatile float inPeak_ = 0.0f, outPeak_ = 0.0f;
-  volatile float dispInPeak_ = 0.0f, dispOutPeak_ = 0.0f;
   volatile uint32_t clips_ = 0;
   volatile float cyclesAvg_ = 0.0f;
   volatile uint32_t cyclesMax_ = 0;

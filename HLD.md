@@ -63,6 +63,19 @@ Measured on the board (13 Nov 2026, 32-sample blocks, built-in example model, no
 - Rule: the worst case per block must stay at or below **80 %** of the block period. Levers if it does not: cap the IR at 2048 samples while the amp is on (about −6 %), 64-sample blocks, or hand-written assembly for the NAM tap passes (about −3 %).
 - No overruns or FIFO errors in any of these runs.
 
+**16-sample blocks were tried (13 Nov 2026) and do not fit.** Same firmware built with `DSP_BLOCK=16` (buffering 0.67 ms instead of 1.33 ms), with a 4018-sample IR from the SD card:
+
+| Running | CPU avg | CPU max | Overruns |
+| --- | --- | --- | --- |
+| Amp + IR + reverb (a typical preset) | 70.9 % | 72.0 % | 0 |
+| Amp + IR + doubler + delay + reverb | 77.0 % | 78.6 % | 0 |
+| The same + drums and bass at 240 BPM, crash every 2 bars | 81.9 % | 104.9 % | 1 |
+| The same while switching IRs | 81.9 % | 117.2 % | 466 |
+
+- The amp is fine at 16 (36.3 %). The convolver is the problem: with a uniform partition equal to the block, its cost doubles to about 22 % for a 4018-sample IR, and doubles again during an IR crossfade.
+- So the block stays at 32. Getting to 16 needs the convolver partitioned non-uniformly (a short head at the block size, a longer tail computed across several blocks), or a hard cap on IR length and no drums.
+- The worst case at 32 has not been measured directly (skipped by decision). Typical presets run at about 56 % with a 4 k IR; a 70 % peak shows right after boot, probably the IR crossfade at load.
+
 ### 2.2 Latency (analog in → analog out)
 
 | Contributor | B = 32 | B = 16 | Notes |
@@ -96,7 +109,7 @@ Most of the firmware is ported from **teensy-ir-loader**, the author's earlier p
 | Drum machine, bass, MIDI drum files, kits, songs | Ported | `dsp/drums/`, `kits/`, `songs/`, `tools/` |
 | The chain | Ported and adapted | `src/AudioChain.*`: was a Teensy Audio Library object with 16-bit I/O, now a plain class with float I/O |
 | SD libraries, presets, settings, serial UI | Ported and adapted | `src/`, `lib/params`: built-in SDIO slot; codec and display code removed |
-| OLED panel, encoder, keys | **Not ported** | Decision: no panel on this build for now |
+| OLED panel, encoder, keys | **Not ported, not planned** | A 2.8-inch TFT with touch will get its own UI design |
 | Teensyduino core, SD/SdFat, EEPROM, USB serial + MIDI | Framework | The PJRC Audio Library is not used |
 | NeuralAmpModelerCore | Reference only | Benchmark (`env:nam_bench`) and the golden test vectors |
 
@@ -137,7 +150,7 @@ Porting rules: ported files keep the old project's formatting; only the namespac
 - Instrumentation: DWT `CYCCNT` per stage, plus max/avg per block.
 - Overrun detection: an interrupt cannot pre-empt itself, so the handler checks at exit. It counts an overrun if its elapsed cycles exceed the block period, or if the next DMA half-interrupt is already pending.
 - Mute line: the driver supports an optional GPIO wired to the DAC's XSMT (`Config::mutePin`), held low during boot until the chain runs. It is currently not wired (`-1`), because the XSMT rework is deferred (§1 item 1b).
-- Fault path: on a streak of overruns the chain output is replaced with silence in software. A hard crash cannot be muted without the XSMT line; the DAC may replay the last buffer until reset.
+- Overload protection (implemented and tested on the board): after 16 overruns in a row the driver stops calling the callback and sends silence, which also gives `loop()` the CPU back (an overloaded callback otherwise starves it completely). `src/main.cpp` then stops the drums and bass, resumes after 1 s, and if it trips again within 10 s switches the doubler, delay and reverb off. Serial `overload` tests it. A hard crash cannot be muted without the XSMT line; the DAC may replay the last buffer until reset.
 
 ### 4.2 DSP library: `lib/dsp` (portable, host-tested)
 
@@ -298,8 +311,11 @@ Measured on the board with `env:nam_bench` (`hw_tests/nam_bench.cpp`): NeuralAmp
 - **Settings:** the last IR and model, levels and every effect and drum setting, in EEPROM, saved a moment after the last change.
 - **Models:** `.nam` files in `/AMP`. A 7.7 KB cache per model in `/AMP/.cache` makes later loads fast. With no model on the card, a built-in example model is listed.
 - **Serial UI:** `?` lists the commands; `s` prints the status with per-stage CPU, driver overruns and levels; `m` shows a live meter. Every setting has a key from the table (`amp on`, `dl on`, `dtime 380`, `rv on`, `pre ...`, `drum ...`).
-- **USB MIDI:** enumerated, incoming messages are drained, nothing is mapped yet.
-- **Not here:** the OLED panel and its controls (teensy-ir-loader's `DISPLAY.md`). Pins 2, 3, 4, 5, 9, 16, 17 are free if it is added later.
+- **USB MIDI** (`src/MidiControl.*`, any channel; serial `midi` prints the map). Built and listed on the board; **not yet tested with real MIDI messages.**
+  - Program Change n recalls preset n + 1 (by the number in its name).
+  - Continuous controllers: 7 output gain (−40..0 dB), 16 amp input, 17 amp output (±12 dB), 70–73 bass / middle / treble / presence, 12 delay mix, 13 delay time, 14 delay repeats, 91 reverb mix, 92 reverb size.
+  - Switches (on from 64): 80 amp, 81 gate, 82 doubler, 83 delay, 84 reverb, 85 cab bypass, 86 drums, 87 tuner mute.
+- **No OLED panel, encoder or keys.** Decision (13 Nov 2026): they will not be used, and the last traces of them are removed from the code. The planned UI is a **2.8-inch TFT with touch**, to be designed from scratch. The settings table keeps each setting's short label and step, and the preset preview functions stay, since any UI needs them.
 - For details of each block see teensy-ir-loader's `NAM.md`, `DELAY.md`, `REVERB.md`, `PRESETS.md` and `DRUMS.md`; they describe the same code.
 
 ## 9. Build environments
@@ -361,22 +377,23 @@ test/                    Unity suites and test/fixtures/nam
 | --- | --- | --- |
 | M0 | Hardware bring-up | Done by ear (clean passthrough). Measurements (24-bit activity, noise floor) not done. |
 | M1 | NAM A2-Lite benchmark | Done: reference engine 62.5 %, own engine 32.4 % at 32-sample blocks |
-| M2 | Own I2S driver | Done and running. Latency measurement and the software fault path are open. |
+| M2 | Own I2S driver | Done and running, with overload protection. Latency measurement dropped by decision. |
 | M3 | IR loader | Ported and host-tested. Not yet exercised with a real SD card. |
 | M4 | NAM in the chain | Done with the built-in model. Loading from SD not yet exercised. |
 | M5 | Effects, presets, drums | Ported and running. Listening check and SD presets open. |
-| M6 | Input preamp, physical controls | Not started. The OLED panel code exists in teensy-ir-loader. |
+| M6 | Input preamp, UI | Not started. UI: a 2.8-inch TFT with touch, to be designed. USB MIDI control is in (untested with a controller). |
 
-Next steps, in order:
-1. Put an SD card in the Teensy 4.1 slot with IRs in `/IR` and A2 models in `/AMP`; check loading, presets and the worst-case CPU with a long IR.
-2. Measure latency and the input level of a real guitar; decide on the input buffer.
-3. Revisit 16-sample blocks: the amp is 35 % there, but the convolver and effects costs rise too.
+Next steps:
+1. Try USB MIDI with a real controller or a DAW.
+2. Design the TFT touch UI (display choice, pins, screens).
+3. Hardware, on the author's side: input buffer, cleaner ADC supply.
+4. If lower latency is wanted: non-uniform partitioning for the convolver, then 16-sample blocks again.
 
 ## 13. Risks and open items
 
 | Risk / question | Impact | Mitigation |
 | --- | --- | --- |
-| Worst-case CPU with a long IR, busy drums and everything on is unmeasured here (expected near 80 %) | Overruns | Measure with an SD card; cap the IR at 2048 while the amp is on; 64-sample blocks as a fallback |
+| Worst-case CPU at 32-sample blocks (long IR, busy drums, IR switching) is unmeasured; at 16 it overran | Overruns | The overload protection mutes for 1 s and sheds load instead of stalling. Cap the IR at 2048 while the amp is on if it happens in practice. |
 | SD paths are ported but untested on this board (built-in SDIO instead of SPI) | IR, model and preset loading may need fixes | First thing to test with a card |
 | No Hi-Z input and no input gain | Dull, quiet guitar; calibration off by the unknown loss | Build the buffer; set `INPUT_PAD_DB` |
 | ADC full-scale level is a datasheet figure | Amp drive level off by a few dB | Measure with a known signal; adjust `ADC_FULL_SCALE_DBU` |
@@ -386,7 +403,7 @@ Next steps, in order:
 | Engine speed depends on the compiler's register allocation | CPU could change with a toolchain update | Re-run `env:nam_a2_bench` after toolchain changes |
 | Two copies of the ported code (here and teensy-ir-loader) | Fixes drift apart | Keep ported files close to the original; port fixes both ways |
 | RAM2 heap is 75 KB | Tight if more load buffers are added | PSRAM for load-time buffers |
-| Later features | – | Compressor, chorus, parametric EQ, USB MIDI mapping, OLED panel, 16-sample blocks, longer delay or looper in PSRAM |
+| Later features | – | Compressor, chorus, parametric EQ, TFT touch UI, non-uniform convolver for 16-sample blocks, longer delay or looper in PSRAM |
 
 ## Sources
 

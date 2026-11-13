@@ -25,7 +25,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 ## Layout
 - `src/main.cpp` – setup and the audio block callback (ADC words -> float -> `AudioChain` -> DAC words)
 - `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> doubler -> delay -> reverb, + drums and bass
-- `src/` (rest) – IR / amp / preset libraries on the SD card, `Params`, `Settings` (EEPROM), `SerialUI`, `Tuner`, `DrumSongs`
+- `src/` (rest) – IR / amp / preset libraries on the SD card, `Params`, `Settings` (EEPROM), `SerialUI`, `MidiControl` (USB MIDI: program change = preset, controllers), `Tuner`, `DrumSongs`
 - `include/config.h` – compile-time settings and hardware constants (guitar channel, ADC full scale, mute pin)
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
 - `lib/dsp/` – **portable float DSP** (namespace `dsp`, no Arduino/Teensy includes), unit-tested on the host: `nam/`, `conv/`, `fx/`, `drums/`
@@ -39,14 +39,16 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Ported files keep the original formatting (2-space indent, `printf` with floats). Only the namespace (`irdsp` -> `dsp`), include paths (`<dsp/...>`, `<params/...>`) and placement macros (`DSP_COLD`, `DSP_PROGMEM`) changed. Keep edits small so fixes can go back to the old project.
 - The ported test suites run the original checks inside one Unity test each (`#define main ported_main`).
 - The settings table is kept identical to the old project's (presets and EEPROM layout are interchangeable). `in`, `out`, `hp` were codec levels and are no-ops here.
-- Not ported: the OLED panel, encoder and keys.
+- Not ported and not wanted: the OLED panel, encoder and keys. The planned UI is a 2.8-inch TFT with touch, designed from scratch.
 
 ## Audio facts
-- 48 kHz only. Block = `DSP_BLOCK` frames (32, set in `platformio.ini`) = `i2s32::kBlock` = `kBlock` in `config.h`. In-to-out latency is about 2 blocks plus converter filters.
+- 48 kHz only. Block = `DSP_BLOCK` frames (32, set in `platformio.ini`; 16 was tried and overruns because the convolver's cost doubles) = `i2s32::kBlock` = `kBlock` in `config.h`. In-to-out latency is about 2 blocks plus converter filters.
 - I2S words are 32-bit, interleaved L,R, with the 24-bit sample in bits 31..8. Convert with `dsp/Convert.h` (`int24InToFloat` / `floatToInt24Out`: saturating, exact round trip).
 - The block callback runs in the RX DMA interrupt at priority 48 (above USB). No `Serial`, `malloc`, `new`, SD access, or blocking calls inside it, and it must finish within one block period (0.67 ms at 32 frames = 400k CPU cycles).
 - Each effect's header states its threading model: setters from `loop()`, `process()` in the interrupt.
 - Watch the serial `s` command: per-stage CPU, driver overruns, FIFO errors, levels. Budget: worst case at or below 80% of the block period. Measured: amp + doubler + delay + reverb 52%, with drums 68% max.
+- Overload protection: 16 overruns in a row make the driver go silent and stop calling the callback (`i2s32::faulted()`); `serviceFault()` in `main.cpp` sheds load and resumes after 1 s. Serial `overload` tests it.
+- The guitar input passes a 30 Hz high-pass first (`INPUT_HIGHPASS_HZ`): the SD card puts a sub-20 Hz thump on the ADC about every 1.4 s.
 - Flush-to-zero and default-NaN float modes are enabled by `i2s32::begin()` (FPSCR and FPDSCR).
 - USB type is `USB_MIDI_SERIAL`. USB audio is not available: the core's implementation is 16-bit / 44.1 kHz.
 - Guitar input is mono on the ADC **right** channel (`GUITAR_ON_RIGHT_CHANNEL` in `config.h`).

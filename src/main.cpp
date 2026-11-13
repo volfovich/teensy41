@@ -11,7 +11,7 @@
 // Copy .wav impulse responses to the SD card (root or /IR folder) and NAM A2 amp models (.nam)
 // to /AMP. Without a card, the amp block uses a built-in example model.
 //
-// Control: USB serial (type "?" for help).
+// Control: USB serial (type "?" for help) and USB MIDI (MidiControl.h).
 //
 //   AudioChain  the signal chain and its memory
 //   Params      reading and changing any setting (the table: lib/params ParamDefs.cpp)
@@ -30,6 +30,7 @@
 #include "AudioChain.h"
 #include "DrumSongs.h"
 #include "IRLibrary.h"
+#include "MidiControl.h"
 #include "Params.h"
 #include "SerialUI.h"
 #include "Settings.h"
@@ -49,6 +50,42 @@ void captureInput() {
   Serial.println("\nCAPTURE END");
 }
 
+// Test of the overload protection (serial command "overload"): for this many blocks the
+// callback wastes 1.2 block periods, as a chain that is too slow would.
+static volatile uint32_t g_overloadBlocks = 0;
+void testOverload() { g_overloadBlocks = 400; }
+
+// The overload protection (lib/i2s32, Config::faultAfterOverruns): when the chain cannot keep
+// up for 16 blocks in a row the driver goes silent and stops calling it, which gives loop()
+// the CPU back. Here the load is reduced, then the audio resumes after a second: first the
+// drums and bass stop; if it trips again within 10 s the doubler, delay and reverb go off too.
+static void serviceFault() {
+  static uint32_t faultAt = 0, lastFaultAt = 0;
+  static bool handling = false;
+  if (!i2s32::faulted()) return;
+  const uint32_t now = millis();
+  if (!handling) {
+    handling = true;
+    faultAt = now;
+    g_overloadBlocks = 0;
+    const bool again = lastFaultAt && now - lastFaultAt < 10000;
+    lastFaultAt = now;
+    Serial.println("\nAUDIO OVERLOAD: the chain could not keep up; output muted for 1 s.");
+    if (getParam(ui::kDrumsPlay)) {
+      setParam(ui::kDrumsPlay, 0);
+    } else if (again) {
+      Serial.println("Again: switching the doubler, delay and reverb off.");
+      setParam(ui::kDblOn, 0);
+      setParam(ui::kDelayOn, 0);
+      setParam(ui::kReverbOn, 0);
+    }
+  } else if (now - faultAt >= 1000) {
+    handling = false;
+    i2s32::clearFault();
+    Serial.println("Audio resumed.");
+  }
+}
+
 // The input high-pass (INPUT_HIGHPASS_HZ in config.h): removes sub-audio thumps that reach
 // the ADC through its supply before they can open the gate or drive the amp model.
 static dsp::Biquad g_inputHp;
@@ -66,6 +103,11 @@ FASTRUN static void audioCallback(const int32_t* rx, int32_t* tx, size_t frames)
   for (size_t i = 0; i < frames; i++) guitar[i] = g_inputHp.process(guitar[i]);
   chain.process(guitar, outL, outR);
   dsp::floatToInt24Out(outL, outR, tx, frames);
+  if (g_overloadBlocks) {
+    g_overloadBlocks = g_overloadBlocks - 1;
+    const uint32_t t0 = ARM_DWT_CYCCNT, burn = i2s32::blockPeriodCycles() + i2s32::blockPeriodCycles() / 5;
+    while (ARM_DWT_CYCCNT - t0 < burn) {}
+  }
 }
 
 void setup() {
@@ -95,5 +137,6 @@ void loop() {
   serviceSerial();
   serviceMeter();
   serviceSave();
-  while (usbMIDI.read()) {}  // drain incoming MIDI; nothing is mapped to it yet
+  serviceMidi();
+  serviceFault();
 }
