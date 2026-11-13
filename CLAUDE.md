@@ -63,7 +63,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - All code goes to ITCM (RAM1) by default. `tools/imxrt1062_t41_cold.ld` keeps background code (libc, SdFat, SerialUI, libraries, loaders) in flash. Never add a file with audio-interrupt code to its cold lists.
 - After changing the linker script or the audio path, run `tools/check_hot_code.sh` (after `pio run`): it fails if an audio-path function was linked into flash.
 - The NAM history must be a plain global (DTCM), not `DMAMEM`: OCRAM costs about 4% CPU more.
-- RAM1 code is close to a 32 KB step (ITCM grows in 32 KB blocks, taken from the stack's space): after adding background code, check `pio run`'s "free for local variables" stays near 95 KB; if it drops by 32 KB, something background was linked into ITCM (add it to the cold list).
+- RAM1 code is close to a 32 KB step (ITCM grows in 32 KB blocks, taken from the stack's space): after adding background code, check `pio run`'s "free for local variables" stays near 95 KB (RAM1 code was about 57 KB of the 64 KB step on 13 Nov 2026); if it drops by 32 KB, something background was linked into ITCM (add it to the cold list).
 - Load-time-only buffers can go in PSRAM (`EXTMEM`), as the IR resampler table does.
 
 ## DSP conventions

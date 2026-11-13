@@ -2,7 +2,7 @@
 
 Version 1 · The single reference for both sides: the firmware (`lib/applink`, `src/AppLink.cpp`) and the app (`app/crates/namforge-link`).
 
-The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO` and `IR_INFO` too. Not implemented yet: `FILE_GET`, `FILE_RENAME`, `DIR_LIST`, `CARD_INFO`. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
+The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO`, `IR_INFO`, `FILE_GET` and `DIR_LIST` too. Not implemented yet: `FILE_RENAME`, `CARD_INFO`. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
 
 ---
 

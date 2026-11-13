@@ -159,6 +159,9 @@ pub enum Event {
     /// A file on its way to the unit: `sent` of `total` bytes. `done` with an empty `error` means it
     /// arrived and is in the lists; with an `error`, why it was not sent.
     Transfer { name: String, sent: u32, total: u32, done: bool, error: String },
+    /// A backup or a restore under way: `done` of `total` files. `finished` with an empty `error`
+    /// means all went well; `detail` is the file being copied, then a summary.
+    Job { title: String, detail: String, done: u32, total: u32, finished: bool, error: String },
     /// The list of presets changed on the unit; the device thread fetches it again.
     PresetsChanged,
     /// Something the user asked for was refused ("No such preset").

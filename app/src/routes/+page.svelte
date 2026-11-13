@@ -7,7 +7,7 @@
   import LevelBar from "$lib/controls/LevelBar.svelte";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
-  import { cancelOffer, cardFile, connectDevice, device, dropping, meters, notice, offered, pickFiles, presetAction, preview, sendFiles, setParam, setTuner, transfer } from "$lib/device.svelte";
+  import { answerRestore, backupCard, cancelOffer, cardFile, chooseBackup, job, restoreOffer, connectDevice, device, dropping, meters, notice, offered, pickFiles, presetAction, preview, sendFiles, setParam, setTuner, transfer } from "$lib/device.svelte";
   import Tuner from "$lib/Tuner.svelte";
   import { baseName, formatValue } from "$lib/format";
   import type { Setting } from "$lib/types";
@@ -116,7 +116,7 @@
   const clipping = $derived(now - clipAt < 2000);
 
   // ---- The library on the unit's card: presets, amp models, IRs
-  let tab = $state<"presets" | "models" | "irs">(hashTab === "models" || hashTab === "irs" ? hashTab : "presets");
+  let tab = $state<"presets" | "models" | "irs" | "card">(hashTab === "models" || hashTab === "irs" || hashTab === "card" ? hashTab : "presets");
   const cardList = $derived(tab === "models" ? device.models : device.irs);
   const loadedPath = $derived(tab === "models" ? device.files.model : device.files.ir);
   let deleting = $state("");
@@ -146,7 +146,14 @@
     if (yes) presetAction("recall", pendingRecall);
     pendingRecall = "";
   }
-  const asking = $derived(!!pendingRecall || offered.replacing.length > 0);
+  const asking = $derived(!!pendingRecall || offered.replacing.length > 0 || !!restoreOffer.folder);
+  // What a backup folder holds, by the card's folders: "12 amp models, 6 IRs, 3 presets".
+  const restoreSummary = $derived.by(() => {
+    const count = (prefix: string) => restoreOffer.files.filter((f) => f.startsWith(prefix)).length;
+    const irs = count("/IR/") + restoreOffer.files.filter((f) => f.lastIndexOf("/") === 0).length;
+    const parts: [number, string][] = [[count("/AMP/"), "amp model"], [irs, "IR"], [count("/PRESETS/"), "preset"], [count("/DRUMS/"), "drum song"]];
+    return parts.filter(([n]) => n).map(([n, what]) => `${n} ${what}${n === 1 ? "" : "s"}`).join(", ");
+  });
   const focusEl = (el: HTMLElement) => el.focus();
   // The name field under the list: for "save as" or for renaming the recalled preset.
   let naming = $state<"" | "new" | "rename">("");
@@ -180,7 +187,7 @@
       return;
     }
     if (asking) {
-      if (e.key === "Escape") (answerRecall(false), cancelOffer());
+      if (e.key === "Escape") (answerRecall(false), cancelOffer(), answerRestore(false));
       return; // a question is open: it has the keyboard
     }
     if (t.closest("input, select, button, [role=slider]")) return;
@@ -226,6 +233,18 @@
         <button class="danger" onclick={() => answerRecall(true)}>Discard and recall</button>
         <button onclick={() => (presetAction("save"), answerRecall(true))}>Save, then recall</button>
         <button use:focusEl onclick={() => answerRecall(false)}>Cancel</button>
+      </div>
+    </div>
+  </div>
+{:else if restoreOffer.folder}
+  <div class="veil">
+    <div class="ask-box" role="alertdialog" aria-label="Restore this backup?">
+      <h2>Send this backup to the unit?</h2>
+      <p>{restoreSummary}, from<br />{restoreOffer.folder}</p>
+      <p>Files on the card with the same names are replaced, presets included. Files the backup does not have are left alone.</p>
+      <div class="row">
+        <button class="danger" onclick={() => answerRestore(true)}>Restore</button>
+        <button use:focusEl onclick={() => answerRestore(false)}>Cancel</button>
       </div>
     </div>
   </div>
@@ -305,8 +324,30 @@
       <button role="tab" aria-selected={tab === "presets"} onclick={() => (tab = "presets")}>Presets</button>
       <button role="tab" aria-selected={tab === "models"} onclick={() => (tab = "models")}>Amps</button>
       <button role="tab" aria-selected={tab === "irs"} onclick={() => (tab = "irs")}>IRs</button>
+      <button role="tab" aria-selected={tab === "card"} onclick={() => (tab = "card")}>Card</button>
     </div>
-    {#if tab !== "presets"}
+    {#if tab === "card"}
+      <div class="card">
+        <p class="none">{device.files.card ? `On the card: ${device.models.length} amp models, ${device.irs.length} IRs, ${device.presets.length} presets.` : "No SD card in the unit."}</p>
+        <div class="row">
+          <button disabled={!device.files.card || !job.finished} onclick={backupCard}>Back up now</button>
+          <button disabled={!device.files.card || !job.finished} onclick={chooseBackup}>Restore…</button>
+        </div>
+        <p class="hint">A backup copies every model, IR, preset and drum song to a new folder in Music / NAM Forge / Backups. The unit keeps playing meanwhile.</p>
+        {#if job.title}
+          <div class="jobbox" class:bad={job.finished && job.error}>
+            <b>{job.title}{job.finished ? (job.error ? " stopped" : " done") : ""}</b>
+            {#if !job.finished}
+              <div class="progress"><div style:width="{job.total ? (100 * job.done) / job.total : 0}%"></div></div>
+              <span>{job.total ? `${job.done} of ${job.total}: ` : ""}{job.detail}</span>
+            {:else}
+              {#if job.detail}<span>{job.detail}</span>{/if}
+              {#if job.error}<span class="why">{job.error}</span>{/if}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {:else if tab !== "presets"}
       {#if !device.files.card}
         <p class="none">No SD card in the unit.</p>
       {:else if !cardList.length}
@@ -727,6 +768,36 @@
   .progress div {
     height: 100%;
     background: #ffb347;
+  }
+  .card {
+    padding: 0 2px;
+  }
+  .card .none {
+    margin: 2px 0 10px;
+    padding: 0 4px;
+  }
+  .jobbox {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 14px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: #1c2027;
+    font-size: 11.5px;
+    color: #c3c8d1;
+    overflow-wrap: anywhere;
+  }
+  .jobbox b {
+    font-size: 12.5px;
+    color: #e6e8ec;
+  }
+  .jobbox.bad b,
+  .jobbox .why {
+    color: #ff8d8d;
+  }
+  .tabs button {
+    min-width: 0;
   }
   .hint {
     margin: 7px 2px 0;

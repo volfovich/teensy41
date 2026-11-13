@@ -49,6 +49,12 @@ SECTIONS
 		*(.flashmem*)
 		/* COLD_TEXT */
 		*libc.a:*(EXCLUDE_FILE(*libc_a-mem*.o *libc_a-str*.o) .text*)
+		/* Background-only parts of what the line above leaves out (it keeps the mem* and str*
+		   routines fast): number parsing and substring search, used by the shell and the loaders. */
+		*libc.a:*libc_a-strtod.o(.text*)
+		*libc.a:*libc_a-strstr.o(.text*)
+		/* Constructors of the chain's objects: they run once, before the audio starts. */
+		*(.text._ZN10AudioChainC2Ev .text._ZN10AudioChainC1Ev .text._ZN3dsp11DrumMachineC2Ef .text._ZN3dsp11DrumMachineC1Ef)
 		*libSdFat.a:*(.text*)
 		*libSD.a:*(.text*)
 		*libEEPROM.a:*(.text*)

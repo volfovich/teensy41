@@ -290,6 +290,67 @@ impl<T: Read + Write> Session<T> {
         .map_err(|problem| SessionError::Malformed { request: msg::IR_INFO, problem })
     }
 
+    /// The files and folders in one of the card's folders ("/AMP", "/"): name, size, is a folder.
+    pub fn dir_list(&mut self, folder: &str) -> Result<Vec<(String, u32, bool)>, SessionError> {
+        let malformed = |problem| SessionError::Malformed { request: msg::DIR_LIST, problem };
+        let mut w = Writer::new();
+        w.str(folder).map_err(malformed)?;
+        let f = self.request_within(msg::DIR_LIST, &w.finish(), SLOW_REPLY_TIMEOUT)?;
+        (|| -> Result<Vec<(String, u32, bool)>, WireError> {
+            let mut r = Reader::new(&f.payload);
+            let n = r.u16()?;
+            let mut list = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                let (name, size, _modified, is_folder) = (r.str()?, r.u32()?, r.u32()?, r.bool()?);
+                list.push((name, size, is_folder));
+            }
+            r.done()?;
+            Ok(list)
+        })()
+        .map_err(malformed)
+    }
+
+    /// Reads a file from the card. It arrives as a series of `FILE_DATA` replies; `progress`
+    /// is called with the bytes received so far.
+    pub fn get_file(&mut self, path: &str, mut progress: impl FnMut(u32, u32)) -> Result<Vec<u8>, SessionError> {
+        let malformed = |problem| SessionError::Malformed { request: msg::FILE_GET, problem };
+        let mut w = Writer::new();
+        w.str(path).map_err(malformed)?;
+        self.sequence = if self.sequence == u16::MAX { 1 } else { self.sequence + 1 };
+        let frame = encode_frame(msg::FILE_GET, 0, self.sequence, &w.finish()).expect("a small request");
+        self.io.write_all(&frame)?;
+        self.io.flush()?;
+        let mut data: Vec<u8> = Vec::new();
+        let mut deadline = Instant::now() + SLOW_REPLY_TIMEOUT;
+        loop {
+            for f in self.read_frames()? {
+                if f.is_event() {
+                    self.pending.push(f);
+                } else if f.is_reply() && f.sequence == self.sequence && f.is_error() {
+                    let mut r = Reader::new(&f.payload);
+                    let code = r.u16().map(ErrorCode::from_u16).unwrap_or(ErrorCode::Other(0));
+                    return Err(SessionError::Device { request: msg::FILE_GET, code, message: r.str().unwrap_or_default() });
+                } else if f.is_reply() && f.sequence == self.sequence && f.msg_type == msg::FILE_DATA {
+                    let mut r = Reader::new(&f.payload);
+                    let (offset, total) = (r.u32().map_err(malformed)?, r.u32().map_err(malformed)?);
+                    let chunk = &f.payload[8..];
+                    if offset as usize != data.len() {
+                        return Err(malformed(WireError::TooShort));
+                    }
+                    data.extend_from_slice(chunk);
+                    progress(data.len() as u32, total);
+                    if data.len() as u32 >= total {
+                        return Ok(data);
+                    }
+                    deadline = Instant::now() + SLOW_REPLY_TIMEOUT;
+                }
+            }
+            if Instant::now() >= deadline {
+                return Err(SessionError::Timeout { request: msg::FILE_GET });
+            }
+        }
+    }
+
     /// A request whose payload is one path and whose reply is empty: `MODEL_LOAD`, `IR_LOAD`,
     /// `FILE_DELETE`.
     pub fn with_path(&mut self, msg_type: u8, path: &str) -> Result<(), SessionError> {

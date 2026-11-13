@@ -82,6 +82,16 @@ export interface FileEntry {
   size: number;
 }
 
+/** A backup or a restore: `done` of `total` files; `finished` with an empty `error` is success. */
+export interface Job {
+  title: string;
+  detail: string;
+  done: number;
+  total: number;
+  finished: boolean;
+  error: string;
+}
+
 /** A file on its way to the unit. `done` with an empty `error` means it arrived. */
 export interface Transfer {
   name: string;
@@ -144,6 +154,7 @@ export type DeviceEvent =
   | { kind: "meters"; meters: Meters }
   | { kind: "presets"; presets: Preset[] }
   | { kind: "presetsChanged" }
+  | ({ kind: "job" } & Job)
   | ({ kind: "tuner" } & TunerReading)
   | { kind: "models"; files: FileEntry[] }
   | { kind: "irs"; files: FileEntry[] }

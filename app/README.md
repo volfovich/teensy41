@@ -22,6 +22,7 @@ cargo run -p namforge-core --example monitor 10            # print what the unit
 cargo run -p namforge-core --example monitor 5 mix 20      # ... and set a setting by its key
 cargo run -p namforge-core --example monitor 5 preset new "My sound"   # also: recall <name>, save, rename <name>, delete <name>
 cargo run -p namforge-core --example monitor 15 send ~/Downloads/amp.nam   # also: load-model <path>, load-ir <path>, delete <path on the card>
+cargo run -p namforge-core --example monitor 120 backup /tmp/card           # also: restore <backup folder>
 ```
 
 Only one program can hold the unit's serial port: close `pio device monitor` before starting the app, and the app before flashing or using the monitor.
@@ -46,6 +47,8 @@ Amps and IRs: click one to load it. "Add files…" or dropping files on the wind
 Tuner: the header's Tuner button or the T key; Esc closes it. The guitar is muted while it is open, and the unit closes it by itself if the app goes away.
 
 The amp and cab editors show what the loaded file is: the model's gear, loudness and input calibration with the gains the unit applies, and the IR's format, the length in use and what the unit changed.
+
+Backup and restore (the Card tab): "Back up now" copies every amp model, IR, preset and drum song from the card into a new folder under `~/Music/NAM Forge/Backups/`, named by date and time and laid out like the card (`AMP/`, `IR/`, `PRESETS/`, `DRUMS/`, IRs from the card's root at the top). "Restore…" lets you pick such a folder, says what it holds, and after a yes sends the files back: files of the same name are replaced, others on the card are left alone.
 
 Not in yet: an IR's waveform and frequency response, a drum song editor. Keys: 1 to 6 open the chain's blocks and 7 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner, L the level bars.
 

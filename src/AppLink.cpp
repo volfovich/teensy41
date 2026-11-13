@@ -1,6 +1,7 @@
 // AppLink.cpp - see AppLink.h. Milestones A1 to A4 of APP.md: the session, the settings table,
 // the state, setting a value, change events, the meter frames, presets, the model and IR
-// lists, sending files to the SD card, and (A5) the tuner and the drums' names.
+// lists, sending files to the SD card, (A5) the tuner and the drums' names, and reading
+// files and folders back for backups.
 #include "AppLink.h"
 
 #include <Arduino.h>
@@ -459,6 +460,97 @@ static void onFileDelete(const applink::FrameHeader& h, Reader& r) {
   replyEmpty(h);
 }
 
+// DIR_LIST: the files of one of the folders the app may see (no hidden names, no subfolders'
+// contents).
+static void onDirList(const applink::FrameHeader& h, Reader& r) {
+  char folder[IR_PATH_MAX];
+  r.str(folder, sizeof(folder));
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad DIR_LIST");
+  if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
+  bool allowed = !strcmp(folder, "/");
+  for (const char* f : kFolders)
+    if (!strncasecmp(folder, f, strlen(f) - 1) && strlen(folder) == strlen(f) - 1) allowed = true;
+  if (!allowed) return replyError(h, Err::kBadPath, "Only /, /AMP, /IR, /PRESETS and /DRUMS can be listed");
+  File d = SD.open(folder);
+  Writer w(g_txPayload, kTxPayload);
+  if (!d || !d.isDirectory()) {  // a folder that does not exist yet: empty
+    w.u16(0);
+    return reply(h, w);
+  }
+  // The count goes first: the entries are written to a second writer behind its place.
+  uint16_t count = 0;
+  Writer entries(g_txPayload + 2, kTxPayload - 2);
+  for (;;) {
+    File e = d.openNextFile();
+    if (!e) break;
+    const char* name = e.name();
+    if (name[0] != '.' && entries.size() + strlen(name) + 16 < kTxPayload - 2) {
+      entries.str(name);
+      entries.u32(e.isDirectory() ? 0 : (uint32_t)e.size());
+      entries.u32(0);  // modified time: not reported yet
+      entries.u8(e.isDirectory());
+      count++;
+    }
+    e.close();
+  }
+  d.close();
+  g_txPayload[0] = (uint8_t)count;
+  g_txPayload[1] = (uint8_t)(count >> 8);
+  const size_t n = applink::encodeFrame((uint8_t)h.type, applink::kFlagReply, h.sequence, g_txPayload,
+                                        (uint32_t)(entries.size() + 2), g_txFrame, sizeof(g_txFrame));
+  if (entries.ok() && n) Serial.write(g_txFrame, n);
+}
+
+// FILE_GET: the file goes out as FILE_DATA replies, one chunk per pass of loop(), so the
+// shell, MIDI and the meters keep running during a long download.
+static constexpr uint32_t kGetChunk = 4096;
+static File g_get;
+static uint32_t g_getSize = 0, g_getSent = 0;
+static uint16_t g_getSequence = 0;
+
+static void onFileGet(const applink::FrameHeader& h, Reader& r) {
+  char path[IR_PATH_MAX];
+  r.str(path, sizeof(path));
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FILE_GET");
+  if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
+  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Only files in /AMP, /IR, /PRESETS or /DRUMS can be read");
+  if (g_get) g_get.close();
+  g_get = SD.open(path, FILE_READ);
+  if (!g_get || g_get.isDirectory()) {
+    g_get.close();
+    return replyError(h, Err::kNotFound, "No such file");
+  }
+  g_getSize = (uint32_t)g_get.size();
+  g_getSent = 0;
+  g_getSequence = h.sequence;
+}
+
+// Sends the next chunk of a download, if one is running.
+static void serviceFileGet(uint32_t now) {
+  if (!g_get) return;
+  const uint32_t want = g_getSize - g_getSent < kGetChunk ? g_getSize - g_getSent : kGetChunk;
+  Writer w(g_txPayload, kTxPayload);
+  w.u32(g_getSent);
+  w.u32(g_getSize);
+  const int got = want ? g_get.read(g_txPayload + 8, want) : 0;
+  if (got != (int)want) {  // the card failed: end the download with an error
+    g_get.close();
+    Writer e(g_txPayload, kTxPayload);
+    e.u16((uint16_t)Err::kIo);
+    e.str("Reading the SD card failed");
+    sendFrame(Msg::kFileGet, applink::kFlagReply | applink::kFlagError, g_getSequence, e);
+    return;
+  }
+  const size_t n = applink::encodeFrame((uint8_t)Msg::kFileData, applink::kFlagReply, g_getSequence, g_txPayload, 8 + want,
+                                        g_txFrame, sizeof(g_txFrame));
+  if (n) Serial.write(g_txFrame, n);
+  g_getSent += want;
+  // A download is the session being alive. (`now`, not millis(): the caller compares its own
+  // `now` with this, and a later time would look like a very old one.)
+  g_lastFrameMs = now;
+  if (g_getSent >= g_getSize) g_get.close();
+}
+
 static void onRescan(const applink::FrameHeader& h) {
   rescanCard();
   Writer w(g_txPayload, kTxPayload);
@@ -555,6 +647,8 @@ static void handleFrame() {
     case Msg::kFilePutEnd: onPutEnd(h); break;
     case Msg::kFileDelete: onFileDelete(h, r); break;
     case Msg::kRescan: onRescan(h); break;
+    case Msg::kDirList: onDirList(h, r); break;
+    case Msg::kFileGet: onFileGet(h, r); break;
     case Msg::kTunerOpen: onTunerOpen(h, r); break;
     case Msg::kPresetRecall:
     case Msg::kPresetSave:
@@ -606,8 +700,10 @@ void serviceAppLink() {
   if (g_parser.busy() && now - g_lastByteMs >= kLineIdleMs) g_parser.idle();
   if (g_put && now - g_putLastMs >= kPutTimeoutMs) abandonPut();  // PROTOCOL.md 4.5
   if (!g_session) return;
+  serviceFileGet(now);
   if (now - g_lastFrameMs >= kSessionTimeoutMs) {
     g_session = false;
+    if (g_get) g_get.close();
     if (g_tunerByApp && chain.tunerOn()) tunerOpen(false);  // or the guitar would stay muted
     g_tunerByApp = false;
     Serial.println("App disconnected.");

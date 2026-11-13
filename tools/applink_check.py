@@ -281,6 +281,28 @@ def main():
               "FILE_DELETE of both: the lists and the state are as before")
         f, _ = link.request(0x45, string("/AMP/applink test.nam"))
         check(f[1] == 3 and Reader(f[3]).u16() == 3, "FILE_DELETE of a missing file: error NOT_FOUND")
+        # Reading back: the folder's list, and a file as FILE_DATA replies.
+        f, _ = link.request(0x47, string("/AMP"), wait=5)
+        r = Reader(f[3])
+        listed = []
+        for _ in range(r.u16()):
+            name, _size, _time, is_folder = r.str(), r.u32(), r.u32(), r.u8()
+            if not is_folder:
+                listed.append("/AMP/" + name)
+        listed.sort()
+        check(f[1] == 1 and listed == sorted(m[0] for m in models), "DIR_LIST /AMP: the same %d files as MODEL_LIST" % len(listed))
+        f, _ = put("/IR/applink test.wav", wav)
+        link.seq += 1
+        link.s.write(frame(0x43, 0, link.seq, string("/IR/applink test.wav")))
+        got, t0 = b"", time.time()
+        while len(got) < len(wav) and time.time() - t0 < 5:
+            for t, fl, seq, payload in link.poll(0.05):
+                if t == 0x44 and fl == 1 and seq == link.seq and struct.unpack_from("<II", payload) == (len(got), len(wav)):
+                    got += payload[8:]
+        check(got == wav, "FILE_GET returns the %d bytes that were sent" % len(wav))
+        link.request(0x45, string("/IR/applink test.wav"), wait=8)
+        f, _ = link.request(0x43, string("/AMP/../x"))
+        check(f[1] == 3 and Reader(f[3]).u16() == 5, "FILE_GET outside the allowed folders: error BAD_PATH")
         f, _ = link.request(0x49, wait=8)
         r = Reader(f[3])
         check((r.u16(), r.u16(), r.u16()) == (len(irs), len(models), len(before)) and state()[1] == files, "RESCAN: the same counts")

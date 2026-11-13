@@ -6,6 +6,7 @@
 //! - [`device`] runs a session on a background thread, reconnects when the unit is unplugged,
 //!   and takes commands from the UI.
 
+pub mod backup;
 pub mod device;
 pub mod files;
 pub mod session;

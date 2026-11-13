@@ -3,7 +3,7 @@
 //
 // In a plain browser (npm run dev, without Tauri) there is no device: the window then shows a
 // saved copy of the unit's state with moving meters, for working on the UI.
-import type { DeviceEvent, Meters, Snapshot, Transfer, TunerReading } from "./types";
+import type { DeviceEvent, Job, Meters, Snapshot, Transfer, TunerReading } from "./types";
 
 const empty: Snapshot = {
   connected: false,
@@ -36,6 +36,10 @@ export const notice = $state({ text: "", at: 0 });
 export const transfer = $state<Transfer & { at: number }>({ name: "", sent: 0, total: 0, done: true, error: "", at: 0 });
 /** The tuner's last reading. Whether it is open is in `meters.tunerOpen`. */
 export const tuner = $state<TunerReading>({ valid: false, hz: 0, note: 0, octave: 0, cents: 0 });
+/** The backup or restore under way, or the last one (`title` empty: none yet). */
+export const job = $state<Job>({ title: "", detail: "", done: 0, total: 0, finished: true, error: "" });
+/** A backup folder the user chose, waiting for the yes to send it back. */
+export const restoreOffer = $state<{ folder: string; files: string[] }>({ folder: "", files: [] });
 /** True while files are dragged over the window. */
 export const dropping = $state({ on: false });
 
@@ -85,6 +89,9 @@ function apply(e: DeviceEvent) {
       break;
     case "tuner":
       Object.assign(tuner, { valid: e.valid, hz: e.hz, note: e.note, octave: e.octave, cents: e.cents });
+      break;
+    case "job":
+      Object.assign(job, { title: e.title, detail: e.detail, done: e.done, total: e.total, finished: e.finished, error: e.error });
       break;
     case "models":
       device.models = e.files;
@@ -231,6 +238,46 @@ export function setTuner(open: boolean) {
   meters.tunerOpen = open; // at once; the unit's meter frames confirm it
   tuner.valid = false;
   if (inTauri) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("tuner", { open }));
+}
+
+/** Copies the card to a new folder in ~/Music/NAM Forge/Backups, named by date and time. */
+export function backupCard() {
+  const d = new Date();
+  const two = (n: number) => String(n).padStart(2, "0");
+  const name = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}.${two(d.getMinutes())}`;
+  if (!inTauri) {
+    Object.assign(job, { title: "Backup", detail: `24 files, 11.3 MB, in ~/Music/NAM Forge/Backups/${name}`, done: 24, total: 24, finished: true, error: "" });
+    return;
+  }
+  Object.assign(job, { title: "Backup", detail: "Starting", done: 0, total: 0, finished: false, error: "" });
+  void import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke<string>("backup", { name }))
+    .catch((why) => Object.assign(job, { finished: true, error: String(why) }));
+}
+
+/** Lets the user choose a backup folder; the screen then asks before anything is sent. */
+export function chooseBackup() {
+  if (!inTauri) {
+    Object.assign(restoreOffer, { folder: "~/Music/NAM Forge/Backups/2026-11-13 14.30", files: ["/AMP/a.nam", "/AMP/b.nam", "/IR/c.wav", "/PRESETS/01 Recto.txt"] });
+    return;
+  }
+  void import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke<[string, string[]] | null>("pick_backup"))
+    .then((picked) => {
+      if (!picked) return;
+      if (picked[1].length) Object.assign(restoreOffer, { folder: picked[0], files: picked[1] });
+      else say("That folder is not a backup: it has no AMP, IR, PRESETS or DRUMS folder with files.");
+    });
+}
+
+/** Sends the chosen backup back to the card (the yes to `restoreOffer`), or drops the offer. */
+export function answerRestore(yes: boolean) {
+  const folder = restoreOffer.folder;
+  Object.assign(restoreOffer, { folder: "", files: [] });
+  if (!yes || !folder) return;
+  if (!inTauri) return say("Restoring needs the unit: this is the preview.");
+  Object.assign(job, { title: "Restore", detail: "Starting", done: 0, total: 0, finished: false, error: "" });
+  void import("@tauri-apps/api/core").then(({ invoke }) => invoke("restore", { folder }));
 }
 
 export type PresetAction = "recall" | "save" | "new" | "rename" | "delete";

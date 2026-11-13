@@ -54,7 +54,7 @@ impl Snapshot {
             Event::Irs { files } => self.irs = files.clone(),
             Event::ModelInfo { info } => self.model_info = info.clone(),
             Event::IrInfo { info } => self.ir_info = info.clone(),
-            Event::Meters { .. } | Event::Tuner { .. } | Event::PresetsChanged | Event::Refused { .. } | Event::Transfer { .. } => {}
+            Event::Meters { .. } | Event::Tuner { .. } | Event::Job { .. } | Event::PresetsChanged | Event::Refused { .. } | Event::Transfer { .. } => {}
             Event::Disconnected { reason } => {
                 self.connected = false;
                 self.detail = reason.clone();
@@ -105,6 +105,39 @@ fn card_file(app: State<'_, App>, action: String, path: String) -> Result<(), St
         other => return Err(format!("unknown file action {other}")),
     }
     Ok(())
+}
+
+/// Copies the unit's card into `~/Music/NAM Forge/Backups/<name>` and returns that folder.
+/// Progress and the result arrive as `job` events.
+#[tauri::command]
+fn backup(handle: tauri::AppHandle, app: State<'_, App>, name: String) -> Result<String, String> {
+    if name.is_empty() || name.starts_with('.') || name.contains(['/', ':']) {
+        return Err("That name cannot be a folder's name.".into());
+    }
+    let dest = handle.path().audio_dir().map_err(|e| e.to_string())?.join("NAM Forge").join("Backups").join(name);
+    std::fs::create_dir_all(&dest).map_err(|e| format!("Cannot create {}: {e}", dest.display()))?;
+    app.device.backup(&dest);
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Lets the user choose a backup folder; returns it with the card paths its files would go to
+/// (empty if it is not a backup). Nothing is sent yet.
+#[tauri::command]
+async fn pick_backup(handle: tauri::AppHandle) -> Option<(String, Vec<String>)> {
+    let start = handle.path().audio_dir().ok().map(|d| d.join("NAM Forge").join("Backups"));
+    let mut dialog = handle.dialog().file().set_title("Choose a backup folder");
+    if let Some(dir) = start.filter(|d| d.is_dir()) {
+        dialog = dialog.set_directory(dir);
+    }
+    let folder = dialog.blocking_pick_folder()?.into_path().ok()?;
+    let files = namforge_core::backup::restorable(&folder).into_iter().map(|(_, card)| card).collect();
+    Some((folder.to_string_lossy().into_owned(), files))
+}
+
+/// Sends a backup folder's files back to the card (the answer to `pick_backup`).
+#[tauri::command]
+fn restore(app: State<'_, App>, folder: String) {
+    app.device.restore(folder);
 }
 
 /// A line from the window for the terminal (with NAMFORGE_LOG=1): script errors, and what the
@@ -181,7 +214,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files, tuner, ui_log])
+        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files, tuner, ui_log, backup, pick_backup, restore])
         .run(tauri::generate_context!())
         .expect("error while running NAM Forge");
 }

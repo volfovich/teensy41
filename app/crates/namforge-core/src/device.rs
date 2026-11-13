@@ -37,6 +37,10 @@ enum Command {
     /// Send this file from the Mac to the card.
     Send { local: PathBuf },
     Tuner { open: bool },
+    /// Copy the card into this folder on the Mac.
+    Backup { dest: PathBuf },
+    /// Send this backup folder's files back to the card.
+    Restore { src: PathBuf },
 }
 
 /// The UI's handle on the device thread. Dropping it stops the thread.
@@ -91,6 +95,15 @@ impl DeviceHandle {
     /// Opens or closes the tuner. Readings arrive as [`Event::Tuner`].
     pub fn tuner(&self, open: bool) {
         let _ = self.commands.send(Command::Tuner { open });
+    }
+    /// Copies the card's models, IRs, presets and drum songs into a folder on the Mac. Progress
+    /// and the result arrive as [`Event::Job`].
+    pub fn backup(&self, dest: impl Into<PathBuf>) {
+        let _ = self.commands.send(Command::Backup { dest: dest.into() });
+    }
+    /// Sends a backup folder's files back to the card, replacing files of the same name.
+    pub fn restore(&self, src: impl Into<PathBuf>) {
+        let _ = self.commands.send(Command::Restore { src: src.into() });
     }
     fn preset(&self, msg_type: u8, name: Option<&str>) {
         let _ = self.commands.send(Command::Preset { msg_type, name: name.map(str::to_string) });
@@ -258,6 +271,8 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
                 Command::Path { msg_type, path } => (s.with_path(msg_type, &path), msg_type == msg::FILE_DELETE),
                 Command::Send { local } => (send_file(&mut s, &local, max_path, emit), true),
                 Command::Tuner { open } => (s.tuner_open(open), false),
+                Command::Backup { dest } => (crate::backup::backup(&mut s, &dest, emit), false),
+                Command::Restore { src } => (crate::backup::restore(&mut s, &src, emit), true),
                 _ => continue,
             };
             match result {

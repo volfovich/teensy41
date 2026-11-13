@@ -46,9 +46,11 @@ fn main() {
                     "load-ir" => device.load_ir(arg),
                     "delete" => device.delete_file(arg),
                     "tuner" => device.tuner(arg == "on"),
+                    "backup" => device.backup(arg),
+                    "restore" => device.restore(arg),
                     _ => {}
                 }
-                if ["send", "load-model", "load-ir", "delete", "tuner"].contains(&action.as_str()) {
+                if ["send", "load-model", "load-ir", "delete", "tuner", "backup", "restore"].contains(&action.as_str()) {
                     preset_at = None;
                 }
             }
@@ -126,6 +128,11 @@ fn main() {
                 println!("presets: {}", presets.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", "))
             }
             Event::PresetsChanged => {}
+            Event::Job { title, detail, done, total, finished, error } => {
+                if finished || done % 10 == 0 {
+                    println!("{title}: {done}/{total} {detail}{}{}", if finished { " (finished)" } else { "" }, if error.is_empty() { String::new() } else { format!(" ERROR: {error}") })
+                }
+            }
             Event::ModelInfo { info } => println!("model info: {info:?}"),
             Event::IrInfo { info } => println!("IR info: {info:?}"),
             Event::Tuner { valid, hz, note, octave, cents } => {
