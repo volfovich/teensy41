@@ -8,6 +8,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - As built: `docs/SIGNAL_CHAIN.md` (the audio path and every gain), `docs/FIRMWARE.md` (structure, memory), `docs/CONTROL.md` (serial commands, settings table, MIDI map), `docs/APP.md` (the macOS app), `protocol/PROTOCOL.md`.
 - Tracking: `docs/STATUS.md` (what works, what is unchecked, open items), `docs/DECISIONS.md` (choices and reasons). Working rules and recipes: `docs/DEVELOPMENT.md`.
 - Design record: `docs/design/HLD.md` (budgets, benchmarks), `docs/design/APP_PLAN.md` (the app's plan), `docs/HARDWARE.md`.
+- State on 13 Nov 2026: work stopped at the author's word after the Mod block and the app's IR graphs; `docs/STATUS.md` ("Where things stand") lists what waits for the author.
 - **Keep the documents true:** a change to the chain, a setting, a command, a message or the app's structure updates the document that owns it in the same commit; finished or newly found things go into `docs/STATUS.md`, new choices into `docs/DECISIONS.md`.
 
 ## Commands

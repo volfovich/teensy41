@@ -2,7 +2,7 @@
 
 Written 13 Nov 2026. **This is the plan, kept as the record of the design.** What is built is described in [`../APP.md`](../APP.md), progress and open items in [`../STATUS.md`](../STATUS.md), the protocol as implemented in [`protocol/PROTOCOL.md`](../../protocol/PROTOCOL.md).
 
-Built so far: milestones A0 to A5 and part of A6, plus backup and restore, the master volume and block level meters (not in the original plan).
+Built so far (13 Nov 2026): milestones A0 to A5 and most of A6 (the IR's waveform and frequency response, the card's free space, backup and restore; not file renaming), plus the master volume, block level meters and the Mod block, which were not in the original plan.
 
 **Where the build differs from this plan:**
 - The chain's order is amp, then gate (the sketch in §3.1 had them swapped; corrected below).
@@ -12,7 +12,8 @@ Built so far: milestones A0 to A5 and part of A6, plus backup and restore, the m
 - "Quiet mode" for the shell while the app is connected was not built; the shell keeps printing and the app ignores text.
 - Changes made from the shell or MIDI reach the app because the unit compares its state every 30 ms, not through one hook.
 - The settings table's hash and the model limit are sent in `HELLO` but the app does not use them yet.
-- `LOG`, `FILE_RENAME` and `CARD_INFO` are not implemented; an error is a flag on a reply, not a message of its own.
+- `LOG` and `FILE_RENAME` are not implemented; an error is a flag on a reply, not a message of its own.
+- The IR's pictures are made from the IR as the unit uses it (a new message, `IR_DATA`), not from the file before it is sent as §6.2 planned.
 - The protocol version is in `lib/applink` (`Messages.h`), the firmware version in `include/config.h`.
 
 **Volfovich NAM Forge** (short name in the window title and the Dock: **NAM Forge**) is a macOS app that controls the guitar DSP unit over USB: edit the sound on a Quad Cortex style screen, manage presets, and send NAM models and IRs straight to the device.

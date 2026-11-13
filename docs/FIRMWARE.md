@@ -96,7 +96,7 @@ Unknown lines are ignored, missing ones get the default, so files move between f
 | Presets | `/PRESETS/*.txt` | Read line by line |
 | Drum songs | `/DRUMS/*.mid` | General MIDI drum files |
 
-The app writes files through `AppLink` (to a temporary file first, then renamed) and only inside these four folders.
+The app writes files through `AppLink` (to a temporary file first, then renamed) and only inside these four folders. `AppLink` also hands the app the loaded IR's samples (`IRLibrary` keeps them after a load) and the card's size and free space.
 
 ## Memory placement
 
@@ -131,4 +131,4 @@ The hardware-test environments extend `teensy41` and replace the firmware on the
 
 ## Kept for later
 - `previewPreset()`, `cancelPreview()`, `keepPreview()`, `presetSaved()` in `PresetLibrary`: trying a preset before committing to it, for the planned touch screen.
-- Message numbers `FILE_RENAME`, `CARD_INFO`, `LOG` and the error `BUSY` in the protocol: reserved, not implemented.
+- Message numbers `FILE_RENAME` and `LOG` and the error `BUSY` in the protocol: reserved, not implemented.

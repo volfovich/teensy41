@@ -63,6 +63,8 @@ The choices made so far, with their reasons, newest group last. Add a line when 
 | Personal use for now: no signing, installer or auto-update | Cheap things that help later are kept: version check in `HELLO`, clear errors, no personal paths |
 | Backups go to `~/Music/NAM Forge/Backups/<date time>/`, laid out like the card | A backup is a plain folder that can be read or copied by hand |
 | Restore replaces files of the same name and leaves the rest | A restore never deletes |
+| The IR's waveform and frequency response are computed from the IR as the unit uses it (13 Nov 2026) | It shows what is really heard: after resampling, trimming, cutting and normalising. The app's core does the maths; the window only draws. |
+| File renaming is held back (13 Nov 2026) | A renamed model or IR is no longer found by the presets that name it. Waiting for the author's choice: the unit rewrites those presets, or the app warns. |
 
 ## Working method
 

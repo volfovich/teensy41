@@ -1,6 +1,19 @@
 # Status
 
-The tracking page: what works and how that is known, what has not been checked, and what is open. Update it when something is finished, tested or found. Last updated: 13 Nov 2026.
+The tracking page: what works and how that is known, what has not been checked, and what is open. Update it when something is finished, tested or found. Last updated: 13 Nov 2026, at the stop described under "Where things stand".
+
+## Where things stand (end of 13 Nov 2026)
+
+Work was stopped here at the author's word. Everything described on this page is committed on the branch `i2s-driver-and-hld`, and the unit runs the firmware built from it.
+
+- **The unit:** the full chain is running: amp, gate, cab, doubler, mod (chorus / flanger), delay, reverb, drums and bass, master volume, tuner. The sound of everything ported is as ported; the author confirmed that by ear.
+- **The app:** connects by itself and covers editing, presets, files, meters, tuner, backup and restore, the IR's graphs and the card's free space.
+- **Checks at this point:** 62 host test cases, 23 Rust tests, the on-unit protocol check and the audio code placement check all pass. A typical preset runs at 56 % CPU; everything on at once reaches the 80 % budget.
+- **Waiting for the author:**
+  1. Listen to the Mod block (chorus and flanger) and say what to tune.
+  2. Try the things only a person can: the Cab graphs with a real IR, the Card tab's buttons and dialogs, drag and drop, the Rate knob's feel.
+  3. Decide how renaming a file should treat presets that name it (see "Open work").
+- **Not started:** anything under "Open work" below.
 
 ## Firmware
 
@@ -18,7 +31,7 @@ The tracking page: what works and how that is known, what has not been checked, 
 | Tuner | Working | Test tone (`tuner test 110`) shows the right note; the author reported it fine with a guitar |
 | Settings in EEPROM | Working | Survive power cycles; old record converted once |
 | Master volume, block level meters | Working | Test tones through the chain; app meters |
-| App link (protocol) | Working | `tools/applink_check.py` passes on the unit, file transfer both ways included |
+| App link (protocol) | Working | `tools/applink_check.py` passes on the unit: every implemented message, file transfer both ways, the IR's samples, the card's space |
 | USB MIDI | Built, **not tried** | Map prints; no real controller or DAW has sent messages |
 | Sound | **As ported** | Confirmed by the author on 13 Nov 2026 after two unrequested level changes were reverted; test tones matched the morning's firmware within 0.3 dB over 36 points |
 
@@ -84,8 +97,11 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - A cleaner supply for the ADC.
 - Optional: XSMT to a GPIO for a firmware mute; the DAC's low-latency filter jumper (saves about 0.35 ms).
 
+### Protocol
+- Reserved and not implemented: `FILE_RENAME`, the `LOG` event, the `BUSY` error.
+
 ## History in short
 | Date | What |
 | --- | --- |
 | 11 Nov 2026 | Project set up; PSRAM soldered and verified |
-| 13 Nov 2026 | Hardware doc and design (HLD); I2S driver; NAM benchmarks; the chain, effects, presets and drums ported from teensy-ir-loader; codec settings removed; link protocol; the app through milestones A0 to A5 and part of A6; master volume; block meters; backup and restore; documentation set; the Mod block (chorus and flanger) |
+| 13 Nov 2026 | Hardware doc and design (HLD); I2S driver; NAM benchmarks; the chain, effects, presets and drums ported from teensy-ir-loader; codec settings removed; link protocol; the app through milestones A0 to A5 and part of A6; master volume; block meters; backup and restore; documentation set; the Mod block (chorus and flanger) with automatic level compensation; the IR's waveform and frequency response and the card's free space in the app. Stopped here. |
