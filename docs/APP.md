@@ -56,7 +56,8 @@ The app has no list of settings of its own. It reads the unit's table (names, ra
 
 ## The screen
 
-- **Top bar:** connection, preset name with ‹ ›, Save, Save as…, Tuner, Levels, input and output meters (with CLIP), the master volume slider.
+- **Top bar:** connection, preset name with ‹ ›, Save, Save as…, Tuner, Levels, the CPU meter, input and output meters (with CLIP), the master volume slider. In a window narrower than about 1250 px the meters move to a second line.
+- **CPU meter** (`controls/CpuMeter.svelte`): the bar is the average share of each audio block's time the chain takes, the mark the highest block of the last 2 s, the line the 80 % budget. Green below 70 %, yellow to 80 %, red from 80 %.
 - **Left:** the library on the card in four tabs: Presets, Amps, IRs, Card (free space, backup and restore).
 - **Middle:** the chain as tiles (Amp, Noise gate, Cab, Doubler, Mod, Delay, Reverb), each with its switch and a level bar; under it the Drums and bass lane.
 - **Bottom:** the selected block's controls; for Amp and Cab also the loaded file's facts, and for Cab the IR's waveform and frequency response.

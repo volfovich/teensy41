@@ -47,6 +47,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 | Amp and IR lists, load, send, delete, file facts | Working | Against the unit |
 | Meters, CLIP, CPU, block level bars | Working | Against the unit with test tones |
 | Master volume | Working | Against the unit |
+| CPU meter in the top bar | Built, **not seen in the real window** | Browser preview at 1040, 1180, 1280 and 1400 px; it shows the same values as the footer, which were checked against the unit |
 | Tuner | Working | Real window with the unit's test tone |
 | Confirmations (recall with edits, replace a file, delete, restore) | Working | Browser preview and the unit |
 | IR waveform and frequency response in the Cab editor | Working | The unit's IR fetched and computed through the app's core (4,049 samples, 120 points); the drawing seen in the browser preview with made-up data only |

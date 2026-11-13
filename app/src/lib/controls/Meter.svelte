@@ -52,7 +52,7 @@
   }
   .bar {
     position: relative;
-    width: 70px;
+    width: 60px;
     height: 8px;
     background: #23272f;
     border-radius: 4px;

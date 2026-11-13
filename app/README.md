@@ -36,6 +36,8 @@ Levels after the cab, as in the original firmware: the Cab block has Out gain (g
 
 The master volume is the slider beside the meters: the last gain before the DAC, from silent (its lowest step) to 0 dB, where it changes nothing. It turns everything down, drums and bass included. It is global, kept in the unit's settings, never in presets, so moving it does not mark a preset as edited.
 
+CPU: the meter at the top shows how much of each audio block's time the unit needs: the bar is the average, the mark the highest block lately, the line the 80 % budget. It turns yellow from 70 % and red from 80 %; the footer has the same numbers with the overrun count.
+
 Levels: each block's tile has a thin bar with the peak level at that block's output (the Levels button or the L key switches the bars off), and the open block's editor shows the held peak as a number. The chain is float, so a level above 0 dBFS between blocks does not clip; it shows red because it would clip at the output, and because the level into the amp and the delay changes how they sound. The Cab tile shows the level after the output gain and the preset's level; the OUT meter in the top bar shows what goes to the DAC, after the master volume.
 
 Knobs: drag up and down, Shift for fine steps, scroll or arrow keys, double-click to type a value, right-click for the default.

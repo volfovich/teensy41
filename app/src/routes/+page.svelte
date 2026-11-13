@@ -7,6 +7,7 @@
   import LevelBar from "$lib/controls/LevelBar.svelte";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
+  import CpuMeter from "$lib/controls/CpuMeter.svelte";
   import { answerRestore, backupCard, cancelOffer, cardFile, chooseBackup, job, restoreOffer, connectDevice, device, dropping, meters, notice, offered, pickFiles, presetAction, preview, sendFiles, setParam, setTuner, transfer } from "$lib/device.svelte";
   import Tuner from "$lib/Tuner.svelte";
   import IrGraph from "$lib/IrGraph.svelte";
@@ -287,6 +288,7 @@
       <button class="save" class:lit={showLevels} aria-pressed={showLevels} title="Show each block's output level on its tile (L)" onclick={toggleLevels}>Levels</button>
     </div>
     <div class="meters">
+      <CpuMeter cpu={meters.cpu} cpuMax={meters.cpuMax} overruns={meters.overruns} />
       <Meter label="IN" peak={meters.inputPeak} />
       <Meter label="OUT" peak={meters.outputPeak} clipped={clipping} />
       {#if blocks.master}
@@ -572,10 +574,12 @@
     stroke-linejoin: round;
   }
 
+  /* The meters move to a second line when the window is too narrow for one. */
   header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 16px;
+    gap: 8px 16px;
     padding: 10px 18px;
     background: #181b21;
     border-bottom: 1px solid #2a2e37;
@@ -607,7 +611,7 @@
     box-shadow: 0 0 8px #3ddc84;
   }
   .preset {
-    flex: 1;
+    flex: 1 0 auto;
     display: flex;
     align-items: baseline;
     justify-content: center;
@@ -920,6 +924,7 @@
   }
   .preset b {
     font-size: 17px;
+    max-width: 300px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -938,6 +943,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
+    margin-left: auto;
   }
   .master {
     display: flex;
@@ -952,7 +958,7 @@
     color: #8a92a0;
   }
   .master input {
-    width: 96px;
+    width: 84px;
     accent-color: #e6e8ec;
   }
   .master b {
