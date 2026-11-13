@@ -3,6 +3,8 @@
 #include <unity.h>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 #include <dsp/fx/Modulation.h>
@@ -265,6 +267,51 @@ static void test_width() {
     }
 }
 
+// The effect is as loud as its input, whatever the settings: the RMS of a guitar-like
+// signal (noise between 80 Hz and 2.5 kHz) stays within 0.5 dB.
+static void test_level_is_compensated() {
+    const int n = 21 * 48000;
+    std::vector<float> in(n);
+    dsp::Biquad lp, hp;
+    lp.setLowpass(2500.0f, kFs);
+    hp.setHighpass(80.0f, kFs);
+    uint32_t seed = 777;
+    for (int i = 0; i < n; i++) {
+        seed = seed * 1664525u + 1013904223u;
+        in[i] = 0.2f * hp.process(lp.process((float)(int32_t)seed / 2147483648.0f));
+    }
+    auto rms = [&](const std::vector<float>& v) {
+        double sum = 0.0;
+        for (int i = 48000; i < n; i++) sum += (double)v[i] * v[i];
+        return sqrt(sum / (n - 48000));
+    };
+    const double ref = rms(in);
+    float worst = 0.0f, worstRaw = 0.0f;
+    char where[96] = "";
+    std::vector<float> l, r;
+    for (int type : {Modulation::kChorus, Modulation::kFlanger})
+        for (float rate : {0.3f, 2.0f})
+            for (float depth : {0.3f, 1.0f})
+                for (float fb : {0.0f, 0.5f, 1.0f})
+                    for (float mix : {0.25f, 0.5f, 0.75f, 1.0f}) {
+                        Rig rig;
+                        rig.mod.set(type, rate, depth, fb, mix, 0.5f);
+                        rig.mod.setOn(true);
+                        run(rig.mod, in, l, r);
+                        const float db = 20.0f * log10f((float)(rms(l) / ref));
+                        const float raw = db - 20.0f * log10f(rig.mod.makeup());  // without the compensation
+                        if (fabsf(raw) > fabsf(worstRaw)) worstRaw = raw;
+                        if (getenv("MOD_LEVELS")) printf("LV type %d rate %.1f depth %.1f fb %.1f mix %.2f: %+.2f dB (raw %+.2f)\n", type, rate, depth, fb, mix, db, raw);
+                        if (fabsf(db) > fabsf(worst)) {
+                            worst = db;
+                            snprintf(where, sizeof(where), "%+.2f dB at type %d rate %.1f depth %.1f fb %.1f mix %.2f", db, type,
+                                     rate, depth, fb, mix);
+                        }
+                    }
+    printf("level: worst %s; without the compensation the worst would be %+.2f dB\n", where, worstRaw);
+    TEST_ASSERT_TRUE_MESSAGE(fabsf(worst) < 0.5f, where);
+}
+
 // The block size does not change the result.
 static void test_block_size_does_not_matter() {
     const std::vector<float> in = sine(196.0f, 0.6f, 19200);
@@ -298,6 +345,7 @@ int main() {
     RUN_TEST(test_feedback_is_stable);
     RUN_TEST(test_changes_do_not_click);
     RUN_TEST(test_width);
+    RUN_TEST(test_level_is_compensated);
     RUN_TEST(test_block_size_does_not_matter);
     return UNITY_END();
 }

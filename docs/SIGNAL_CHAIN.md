@@ -106,7 +106,8 @@ While the tuner is open the guitar is faded out here (20 ms), before the delay a
 | `mod width` | How far apart the two sides' sweeps are: 0 keeps mono, 100 % is half a cycle |
 
 - The dry signal is not delayed, so the block adds no latency.
-- **Level:** it is louder than the dry signal where dry and wet add up: up to 3 dB at mix 50 %, more with feedback. Measured with sine tones on 13 Nov 2026: chorus at its defaults +2 to +3 dB at the output, flanger with feedback 70 % and full depth +6 to +8 dB. A sine is the worst case; watch the Mod tile's level bar and use the preset level to compensate.
+- **Level:** compensated automatically, so the block is as loud on as off. Without feedback, dry and wet at equal power already come out as loud as the input (the comb's peaks and notches even out over the sweep). Feedback makes the wet signal louder, and the block turns itself down by the matching amount. Measured in the host test with guitar-band noise (80 Hz to 2.5 kHz) over both types and all tested settings: within 0.32 dB of the input, where it would be up to +6.2 dB without the compensation.
+- The compensation matches **loudness, not peaks**. A steady sine that sits on a comb peak still reads higher on the meters: on the unit (13 Nov 2026) the chorus at its defaults +2 to +3 dB, the flanger with feedback 70 % and full depth +5 to +7 dB. Real playing sits between the two; the Mod tile's level bar shows it.
 - Switching on fills the delay lines for 20 ms, then fades in over 20 ms; a change of type fades out and back in. No clicks.
 
 ### Delay (`dl`, in presets)

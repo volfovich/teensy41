@@ -12,7 +12,7 @@ The tracking page: what works and how that is known, what has not been checked, 
 | Noise gate, tone, DC blocker | Working | Host tests against references; in use |
 | Cab IR loading and convolution | Working | Host tests; IRs loaded from the card and played |
 | Doubler, delay, reverb | Working | Host tests; in use |
-| Mod (chorus, flanger) | Working, **not yet heard by the author** | 10 host tests (clicks, stability, ranges, rate); on the unit with test tones: 2.3 % CPU, levels and CPU unchanged with Mod off |
+| Mod (chorus, flanger) | Working, **not yet heard by the author** | 11 host tests (clicks, stability, ranges, rate, loudness); on the unit with test tones: 2.3 % CPU, levels and CPU unchanged with Mod off |
 | Presets on the card | Working | Recall, save, new, rename, delete from the shell and the app |
 | Drums and bass | Working | Host tests; running on the board |
 | Tuner | Working | Test tone (`tuner test 110`) shows the right note; the author reported it fine with a guitar |
@@ -51,7 +51,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 
 ## Known issues and observations
 - **With every block and the drums on, the worst block reaches the 80 % CPU budget** (80.4 % measured; by subtraction about 78 % before the Mod block). No overruns, and the overload protection covers a spike, but there is no margin left for another effect without making room.
-- **The Mod block raises the level** where dry and wet add up (chorus about +3 dB, flanger with feedback up to about +8 dB on a sine). Not compensated; the preset level is the tool.
+- **The Mod block's level is compensated for loudness** (within 0.3 dB on guitar-band noise in the host test), not for peaks: a steady sine on a comb peak still reads up to +3 dB (chorus) or +7 dB (flanger with strong feedback) higher.
 - The Mod block's voicing (centre delays, depth scaling, feedback tone) is a first version, to be tuned by ear.
 - **Cab bypass also skips the output gain and preset level.** As ported; see [SIGNAL_CHAIN.md](SIGNAL_CHAIN.md). Left alone unless the author wants it changed.
 - **Levels after the cab can exceed 0 dBFS** with a high-gain model and a resonant IR at amp output 0 dB. Harmless inside the chain; left alone.

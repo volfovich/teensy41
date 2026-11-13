@@ -16,6 +16,15 @@
 //   mix       0 = the input only, 0.5 = equal parts (the flanger's deepest notches),
 //             1 = the wet signal only (vibrato on the chorus). Equal power: at 0.5 both
 //             are at 0.707, so where they add up the peak is up to 3 dB higher.
+//   level     kept as loud as the input, automatically. Dry and wet at equal power
+//             already do that without feedback: the comb's peaks and notches even out
+//             over the sweep. Feedback makes the wet signal louder, by 1 / (1 - fb^2)
+//             in power (a comb resonator's average gain), so both are turned down by
+//             1 / sqrt(dry^2 + wet^2 / (1 - fb^2)). The loop is a little weaker than
+//             the feedback setting (its low-pass and the interpolation take some), by a
+//             factor measured with band-limited noise: kChorusLoop, kFlangerLoop. This
+//             matches loudness, not peaks: a single sine sitting on a comb peak still
+//             reads higher.
 //
 //   - On and off ramp (20 ms) between the input and the effect. Off and settled,
 //     process() returns false, writes nothing and costs no CPU. The next on starts from
@@ -47,6 +56,9 @@ class Modulation {
   static constexpr float kChorusCentreMs = 12.0f, kChorusSweepMs = 5.0f, kChorusKneeHz = 1.0f;
   static constexpr float kFlangerMinMs = 0.3f, kFlangerSweepMs = 6.7f, kFlangerKneeHz = 2.0f;
   static constexpr float kMaxFeedback = 0.9f;
+  // The loop's gain relative to the feedback, for the level compensation (measured with
+  // noise between 80 Hz and 2.5 kHz, test_modulation).
+  static constexpr float kChorusLoop = 0.965f, kFlangerLoop = 0.94f;
 
   explicit Modulation(float sampleRate)
       : fs_(sampleRate),
@@ -89,6 +101,11 @@ class Modulation {
     s.dry = m <= 0.0f ? 1.0f : cosf(m);
     s.wet = m <= 0.0f ? 0.0f : sinf(m);
     if (s.dry < 1e-6f) s.dry = 0.0f;
+    // The level compensation (see the top of the file); 1 without feedback or at mix 0.
+    const float loop = s.fb * (s.type == kFlanger ? kFlangerLoop : kChorusLoop);
+    s.makeup = 1.0f / sqrtf(s.dry * s.dry + s.wet * s.wet / (1.0f - loop * loop));
+    s.dry *= s.makeup;
+    s.wet *= s.makeup;
     s.phase = (uint32_t)((double)clamp01(width) * 2147483648.0);  // up to half a cycle
     cur_ = 1 - cur_;
   }
@@ -172,6 +189,8 @@ class Modulation {
   float delayMin() const { return sets_[cur_].base - sets_[cur_].sweep; }
   float delayMax() const { return sets_[cur_].base + sets_[cur_].sweep; }
   int type() const { return type_; }
+  // The level compensation of the settings given last (1 = none).
+  float makeup() const { return sets_[cur_].makeup; }
   float fade() const { return mix_; }
 
  private:
@@ -180,7 +199,8 @@ class Modulation {
     uint32_t adder = 0;  // the LFO's phase step per sample
     uint32_t phase = 0;  // the right side's lag (2^32 = a cycle)
     float base = 0.0f, sweep = 0.0f;  // samples: the delay is base +- sweep
-    float fb = 0.0f, dry = 1.0f, wet = 0.0f;
+    float fb = 0.0f, dry = 1.0f, wet = 0.0f;  // dry and wet include the makeup
+    float makeup = 1.0f;
   };
 
   // The sine at a 32-bit phase, -1 .. 1.

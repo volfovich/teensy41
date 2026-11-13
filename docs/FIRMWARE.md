@@ -121,7 +121,7 @@ The Teensy 4.1 has several kinds of memory with very different speeds. RAM1 is t
 | Env | What it is |
 | --- | --- |
 | `teensy41` (default) | The firmware: `USB_MIDI_SERIAL`, `DSP_BLOCK=32`, the cold-code linker script; drum kits and songs are compiled in by `tools/pio_kits.py` |
-| `native` | Host tests: 17 suites, 61 cases |
+| `native` | Host tests: 17 suites, 62 cases |
 | `i2s_loopback` | Driver self-test on a bare board (jumper pin 7 to pin 8); never with the converter boards attached |
 | `nam_a2_bench` | The NAM engine against the reference output, and its CPU cost |
 | `nam_bench` | The reference engine (NeuralAmpModelerCore) for comparison; fetched into `third_party/` |
