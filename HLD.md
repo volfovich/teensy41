@@ -247,6 +247,12 @@ Measured on the board with `env:nam_bench` (`hw_tests/nam_bench.cpp`): NeuralAmp
 - **Model files are read directly:** `dsp::readNamA2Lite` streams a `.nam` JSON file (A2 container or plain A2-Lite WaveNet) and extracts the Lite weights and metadata. The 666 KB example file parses in 43 ms from flash on the board; from SD it will be slower **(measure)**. So **no host converter and no `.namb` format are needed**: copy `.nam` files to the SD card. Files that are not A2 are refused with a message.
 - No Eigen, JSON library, exceptions or heap: the reference engine is now only a benchmark and the source of golden vectors.
 
+**In the live audio path (13 Nov 2026).** `src/main.cpp` now runs guitar → input gain → `NamA2` → output level → DAC, with the example A2 model embedded in flash and read at boot by `readNamA2Lite`. Measured on the board: **33.8 % total load (max 34.0 %), no overruns or FIFO errors.**
+- Input gain defaults to the model's calibration (`kAdcFullScaleDbu` 2.7 − `input_level_dbu` 14.76 = −12.1 dB); output defaults to loudness normalisation to −18 dB (+6.0 dB for this model). Both have serial trims (`g`, `v`).
+- The model always runs, so switching the amp on and off (`a`) has no gap; the output is muted for the 132 ms warm-up after boot, then faded in.
+- With nothing playing, the input peaks at about −84 dBFS and the amp output at about −53 dBFS: the model adds about 30 dB of gain to the input noise, so a noise gate is needed (§5 stage 2).
+- Not done yet: loading from SD, model switching, the DC blocker and the gate.
+
 **How the engine works (design notes for further tuning):**
 - A layer at a time over the whole block; two taps per pass with their 18 weights held in registers; one more pass for LeakyReLU, the head sum and the 1x1 residual, written straight into the next layer's ring buffer.
 - One ring buffer per layer, sized to the taps' reach plus a block, so every block costs the same.
