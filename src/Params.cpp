@@ -68,8 +68,8 @@ void paramText(int id, char* buf, int n) {
 
 // What each setting does. Saved values are already in g_settings.
 static void applyParam(int id, int v) {
-  dsp::StudioDelay& d = chain.delay();
-  dsp::Reverb80& r = chain.reverb();
+  dsp::DelayBank& d = chain.delay();
+  dsp::ReverbBank& r = chain.reverb();
   dsp::DrumMachine& dm = chain.drums();
   const int16_t* s = g_settings.v;
   switch (id) {
@@ -91,6 +91,7 @@ static void applyParam(int id, int v) {
     case kReverbMod: r.setMod(v / 100.0f); break;
     case kReverbEra: r.setEra(v / 100.0f); break;
     case kReverbGate: r.setGateMs(v); break;
+    case kDelayType: d.setType(v); break;
     case kOutGain:
     case kPresetLevel: chain.setOutputGainDb((s[kOutGain] + s[kPresetLevel]) * 0.5f); break;
     // The master volume: the last gain before the DAC; its minimum is silence.

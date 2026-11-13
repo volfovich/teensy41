@@ -8,7 +8,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - As built: `docs/SIGNAL_CHAIN.md` (the audio path and every gain), `docs/FIRMWARE.md` (structure, memory), `docs/CONTROL.md` (serial commands, settings table, MIDI map), `docs/APP.md` (the macOS app), `protocol/PROTOCOL.md`.
 - Tracking: `docs/STATUS.md` (what works, what is unchecked, open items), `docs/DECISIONS.md` (choices and reasons). Working rules and recipes: `docs/DEVELOPMENT.md`.
 - Design record: `docs/design/HLD.md` (budgets, benchmarks), `docs/design/APP_PLAN.md` (the app's plan), `docs/HARDWARE.md`.
-- State on 13 Nov 2026: work stopped at the author's word after the Mod block and the app's IR graphs, then went on the same day with the limiter and two more Mod types (ce2, phase90); `docs/STATUS.md` ("Where things stand") lists what waits for the author.
+- State on 13 Nov 2026: work stopped at the author's word after the Mod block and the app's IR graphs, then went on the same day with the limiter, two more Mod types (ce2, phase90), two more reverb modes (plate, spring) and two more delay types (tape, analog); `docs/STATUS.md` ("Where things stand") lists what waits for the author.
 - **Keep the documents true:** a change to the chain, a setting, a command, a message or the app's structure updates the document that owns it in the same commit; finished or newly found things go into `docs/STATUS.md`, new choices into `docs/DECISIONS.md`.
 
 ## Commands
@@ -31,7 +31,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 
 ## Layout
 - `src/main.cpp` – setup and the audio block callback (ADC words -> float -> `AudioChain` -> DAC words)
-- `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> output gain + preset level -> doubler -> mod (chorus / flanger / ce2 / phase90) -> delay -> reverb, + drums and bass -> master volume -> limiter (optional) -> clip
+- `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> output gain + preset level -> doubler -> mod (chorus / flanger / ce2 / phase90) -> delay (digital / tape / analog) -> reverb (hall / gated / plate / spring), + drums and bass -> master volume -> limiter (optional) -> clip
 - `src/` (rest) – IR / amp / preset libraries on the SD card, `Params`, `Settings` (EEPROM), `SerialUI`, `AppLink` (the desktop app's binary protocol, on the same serial port as the shell), `MidiControl` (USB MIDI: program change = preset, controllers), `Tuner`, `DrumSongs`
 - `include/config.h` – compile-time settings and hardware constants (guitar channel, ADC full scale, mute pin)
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
@@ -48,6 +48,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Ported files keep the original formatting (2-space indent, `printf` with floats). Only the namespace (`irdsp` -> `dsp`), include paths (`<dsp/...>`, `<params/...>`) and placement macros (`DSP_COLD`, `DSP_PROGMEM`) changed. Keep edits small so fixes can go back to the old project.
 - The ported test suites run the original checks inside one Unity test each (`#define main ported_main`).
 - The settings table is the old project's minus its three codec levels (`in`, `out`, `hp`: line in, line out, headphones), which this hardware does not have. Preset files are still interchangeable (those three were never in presets); the EEPROM record is not (`Settings.cpp` converts the old record once).
+- `Reverb80` and `StudioDelay` are ported and are not edited: the plate and spring reverbs and the tape and analog delays are separate classes written for this project (`PlateReverb`, `SpringReverb`, `TapeDelay`, `AnalogDelay`), chosen through `ReverbBank` / `DelayBank`, which hand hall, gated and digital through bit for bit (`test_fx_banks`). A new mode or type must cost no more CPU than the ported one and fit the block's existing memory.
 - Not ported and not wanted: the OLED panel, encoder and keys. The planned UI is a 2.8-inch TFT with touch, designed from scratch.
 
 ## Audio facts
@@ -68,7 +69,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - All code goes to ITCM (RAM1) by default. `tools/imxrt1062_t41_cold.ld` keeps background code (libc, SdFat, SerialUI, libraries, loaders) in flash. Never add a file with audio-interrupt code to its cold lists.
 - After changing the linker script or the audio path, run `tools/check_hot_code.sh` (after `pio run`): it fails if an audio-path function was linked into flash.
 - The NAM history must be a plain global (DTCM), not `DMAMEM`: OCRAM costs about 4% CPU more.
-- RAM1 code is close to a 32 KB step (ITCM grows in 32 KB blocks, taken from the stack's space): after adding background code, check `pio run`'s "free for local variables" stays near 95 KB (RAM1 code was 60.4 KB of the 64 KB step on 13 Nov 2026: 5 KB left); if it drops by 32 KB, something background was linked into ITCM (add it to the cold list).
+- RAM1 code is close to a 32 KB step (ITCM grows in 32 KB blocks, taken from the stack's space): after adding background code, check `pio run`'s "free for local variables" stays near 95 KB (RAM1 code was 63.9 KB of the 64 KB step on 13 Nov 2026: 1.6 KB left, free for local variables 91.5 KB); if it drops by 32 KB, something background was linked into ITCM (add it to the cold list).
 - Load-time-only buffers can go in PSRAM (`EXTMEM`), as the IR resampler table does.
 
 ## DSP conventions

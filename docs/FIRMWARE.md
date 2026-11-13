@@ -105,13 +105,15 @@ The Teensy 4.1 has several kinds of memory with very different speeds. RAM1 is t
 | Region | Used (13 Nov 2026) | Holds |
 | --- | --- | --- |
 | RAM1 code (ITCM) | 59 KB of a 64 KB step (5 KB left before the stack loses 32 KB) | The audio path only |
-| RAM1 data (DTCM) | 365 KB, 94 KB left for the stack | Amp history (87 KB), one delay line (144 KB), the convolver's spectra |
+| RAM1 data (DTCM) | 367 KB, 91 KB left for the stack | Amp history (87 KB), one delay line (144 KB), the convolver's spectra |
 | RAM2 (OCRAM, `DMAMEM`) | 466 KB, 58 KB heap | The other delay line, reverb, doubler, mod, file lists, load buffers |
 | PSRAM (`EXTMEM`, 8 MB) | under 1 MB | IR resampler table, app link buffers, the raw capture buffer |
 | Flash | 1.6 MB of 8 MB | Background code, the built-in model, drum kits |
 
 - By default the Teensy core puts **all** code in RAM1. `tools/imxrt1062_t41_cold.ld` keeps background code (libc, SD, shell, app link, loaders) in flash instead. A file with interrupt code must never be added to its lists.
 - `tools/check_hot_code.sh` (after `pio run`) fails if an audio-path function ended up in flash, where it would run several times slower without any error.
+- The chain's constructors (they run once) and libm's double-precision sine, cosine and square root (only the IR loader uses doubles) are sent to flash by the same script; the single-precision maths stays in RAM1, because the drums' compressor and the effects' coefficient updates call it from the interrupt.
+- The delay and the reverb are each a bank of effects on one block of memory (`dsp/fx/DelayBank.h`, `ReverbBank.h`): the ported effect and the two written here. The bank passes the settings to all of them and runs one; `BankSwitch` in `dsp/fx/FxParts.h` does the fade, clear and restart between them. Their setup, clearing and coefficient code is in `.cpp` files marked `DSP_COLD` (flash); only `process()` is in RAM1.
 - RAM1 code grows in 32 KB steps taken from the stack's space. If "free for local variables" in the build output drops by 32 KB, background code has leaked into RAM1.
 - The amp's history must be a plain global (DTCM); in OCRAM the amp costs about 4 % more CPU.
 - `EXTMEM` memory is not cleared at boot, and a random read from it costs about 0.9 µs: use it block-wise.

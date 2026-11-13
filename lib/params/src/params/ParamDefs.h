@@ -20,7 +20,7 @@ namespace ui {
 enum Param : uint8_t {
   kDelayOn, kDelayMix, kDelayTime, kDelayRepeats, kDelayTone, kDelayMod, kDelayDuck, kDelayDrive, kDelayEra,
   kReverbOn, kReverbMix, kReverbSize, kReverbTone,
-  kReverbMode,  // 0 hall, 1 gated
+  kReverbMode,  // 0 hall, 1 gated, 2 plate, 3 spring (dsp::ReverbBank::Mode)
   kReverbPreDelay, kReverbMod, kReverbEra, kReverbGate,
   kOutGain,  // half-dB steps; applied after the cab, with the preset's level. Not in presets.
   kBypass,   // the cab IR off (the amp and effects stay)
@@ -54,6 +54,7 @@ enum Param : uint8_t {
   kLimCeiling,  // half-dB steps below 0
   kLimRelease,  // ms
   kLimLook,     // the 1 ms lookahead (adds that much latency)
+  kDelayType,   // 0 digital, 1 tape, 2 analog (dsp::DelayBank::Type). Here, not with the delay's others: ids are positions.
   kParamCount,
   // Not saved.
   kDrumsPlay = kParamCount,

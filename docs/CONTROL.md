@@ -55,7 +55,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 
 ## Settings table
 
-67 values in the firmware's order (the number is the setting's id in the link protocol). The first 64 are saved in the unit; "In presets" marks the 42 a preset stores. New settings are added after the last saved one, so ids of saved settings never change; the three unsaved ones at the end move up. Defaults are what a blank unit starts with.
+68 values in the firmware's order (the number is the setting's id in the link protocol). The first 65 are saved in the unit; "In presets" marks the 43 a preset stores. New settings are added after the last saved one, so ids of saved settings never change; the three unsaved ones at the end move up. Defaults are what a blank unit starts with.
 
 | # | Key | Name | Range | Default | In presets |
 | --- | --- | --- | --- | --- | --- |
@@ -72,7 +72,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | 10 | `mix` | Reverb mix | 0 % to 100 % | 25 % | yes |
 | 11 | `size` | Reverb size | 0 % to 100 % | 50 % | yes |
 | 12 | `tone` | Reverb tone | 0 % to 100 % | 50 % | yes |
-| 13 | `rmode` | Reverb mode | hall, gated | hall | yes |
+| 13 | `rmode` | Reverb mode | hall, gated, plate, spring | hall | yes |
 | 14 | `rpre` | Reverb pre-delay | 0 ms to 150 ms | 40 ms | yes |
 | 15 | `rmod` | Reverb modulation | 0 % to 100 % | 40 % | yes |
 | 16 | `rera` | Reverb era | 0 % to 100 % | 40 % | yes |
@@ -123,13 +123,15 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | 61 | `lim ceil` | Limiter ceiling | -12.0 dB to -0.5 dB | -1.0 dB | no |
 | 62 | `lim rel` | Limiter release | 10 ms to 1000 ms | 100 ms | no |
 | 63 | `lim look` | Limiter lookahead | on, off | off | no |
-| 64 | `drum` | Drums | on, off | off | no |
-| 65 | – | Loop from | off, or a bar of the song | off | no |
-| 66 | – | Loop to | a bar of the song | the last bar | no |
+| 64 | `dtype` | Delay type | digital, tape, analog | digital | yes |
+| 65 | `drum` | Drums | on, off | off | no |
+| 66 | – | Loop from | off, or a bar of the song | off | no |
+| 67 | – | Loop to | a bar of the song | the last bar | no |
 
 Notes:
 - `g` and `pvol` are one gain after the cab; `master` is the last gain before the DAC, and the limiter (`lim`) comes after it ([SIGNAL_CHAIN.md](SIGNAL_CHAIN.md)).
 - `dtime`'s upper end is `DELAY_MAX_MS` in `include/config.h`.
+- `dtype` sits at the end and not with the delay's other settings because it was added later (ids are positions). Which settings each delay type and reverb mode has: [SIGNAL_CHAIN.md](SIGNAL_CHAIN.md). A preset written before `dtype` existed loads as `digital`; a preset with `rmode plate`, `rmode spring` or `dtype` loads on older firmware with those lines ignored (hall, digital).
 - The amp model and the IR are not settings: they are files, chosen with `amp <name>` and `<number>`, and stored in presets as paths.
 
 ## USB MIDI

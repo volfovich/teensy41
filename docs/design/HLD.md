@@ -173,7 +173,7 @@ ADC R ─► 30 Hz high-pass (src/main.cpp, removes supply thumps)
       ─► amp (NAM A2-Lite, optional: DC blocker, tone stack)
       ─► noise gate (listens to the input, gates after the amp)
       ─► IR convolution (cab) ─► × (output gain + preset level), bypass blend   mono
-      ─► doubler ─► studio 80s delay ─► 80s reverb (hall / gated)     stereo
+      ─► doubler ─► mod ─► delay ─► reverb                            stereo
       ─► + drums and bass (never through the guitar effects)
       ─► master volume ─► clip ─► DAC L / R
 
@@ -188,8 +188,8 @@ The chain in full, with every gain and setting, and the Mod block added later: [
 | Noise gate | Hard gate with adjustable release (default), or the NAM plugin's expander | – |
 | Cab IR | Up to 4096 samples, 25 ms crossfade between IRs, passthrough with none loaded | Spectra in DTCM |
 | Doubler | A second "take" 1–35 ms later, panned opposite | 8 KB, OCRAM |
-| Delay | Dual delay, 20–750 ms, ducking, drive, "era" | 144 KB DTCM + 144 KB OCRAM |
-| Reverb | Hall (8-line FDN) or gated, pre-delay, "era" | 148 KB, OCRAM |
+| Delay | Dual delay, 20–750 ms, ducking, drive, "era"; since 13 Nov 2026 also a tape echo and an analog (bucket-brigade) delay on the same lines | 144 KB DTCM + 144 KB OCRAM |
+| Reverb | Hall (8-line FDN) or gated, pre-delay, "era"; since 13 Nov 2026 also a plate and a spring in the same memory | 148 KB, OCRAM |
 | Drums, bass | Sampled or synthesized kit, styles, songs, MIDI files, speed trainer | Kits in flash |
 
 Planned in the first draft and not in the ported chain: compressor, chorus/flanger and a multi-band parametric EQ. They move to a "later" list (§13).

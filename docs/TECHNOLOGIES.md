@@ -41,7 +41,7 @@ Written for this project: the I2S driver (`lib/i2s32`: SAI1, eDMA), sample conve
 | Cab | Uniformly partitioned frequency-domain convolution (overlap-save), partition = block, radix FFT in `dsp/Fft.h` |
 | IR loading | Windowed-sinc resampling to 48 kHz, trimming, energy normalisation |
 | Gate | Hard gate on the input level, or the NAM plugin's expander |
-| Delay, reverb, doubler | Delay lines with modulation; the hall is an 8-line feedback delay network |
+| Delay, reverb, doubler | Delay lines with modulation; the hall is an 8-line feedback delay network. Plate: Dattorro's all-pass and delay tank. Spring: stretched all-pass cascades (chirp) in a loop of two delays. Tape: a soft-clipped line with wow, flutter and playback filters. Analog: a line between a compressor and an expander with steep low-passes (bucket-brigade model) |
 | Limiter | Brickwall peak limiter: instant attack, 10 ms hold, exponential release, stereo-linked; optional 1 ms lookahead (sliding minimum, then a moving average) |
 | Mod | Chorus, flanger and the CE-2 style chorus: one LFO-swept, Hermite-interpolated delay line per side, with low-passed feedback (the CE-2 style one with a triangle LFO and a low-passed wet signal). The Phase 90 style phaser: four first-order all-pass stages per side, feedback solved without a delay in the loop |
 | Tuner | YIN pitch detection at 24 kHz |

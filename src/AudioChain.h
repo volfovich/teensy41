@@ -14,8 +14,8 @@
 //            the IR's input by the bypass (bypassed: no IR and no gain)  = core (mono)
 //   core   -> doubler (mono in, stereo out, see dsp/fx/Doubler.h) -> cL, cR
 //   cL, cR -> mod: chorus, flanger, ce2 or phase90 (stereo, see dsp/fx/Modulation.h) -> mL, mR
-//   mL, mR -> studio 80s delay (fed from mL, dry/wet)         -> dL, dR
-//   dL, dR -> 80s reverb, hall or gated (stereo, dry/wet)      -> out L / R
+//   mL, mR -> delay: digital, tape or analog (fed from mL, dry/wet) -> dL, dR
+//   dL, dR -> reverb: hall, gated, plate or spring (stereo, dry/wet) -> out L / R
 //   + drum machine and bass (stereo, added to the outputs, never through
 //     the effects)
 //   -> master volume (the last gain) -> limiter (optional, see dsp/fx/Limiter.h)
@@ -44,8 +44,8 @@
 #include <dsp/fx/Limiter.h>
 #include <dsp/fx/Modulation.h>
 #include <dsp/fx/NoiseGate.h>
-#include <dsp/fx/Reverb80.h>
-#include <dsp/fx/StudioDelay.h>
+#include <dsp/fx/DelayBank.h>
+#include <dsp/fx/ReverbBank.h>
 #include <dsp/nam/AmpStage.h>
 
 #include "config.h"
@@ -53,11 +53,11 @@
 class AudioChain {
  public:
   using Engine = dsp::PartitionedConvolver<kBlock, IR_MAX_LENGTH>;
-  using DelayStage = dsp::FxStage<dsp::StudioDelay, kBlock, false>;
-  using ReverbStage = dsp::FxStage<dsp::Reverb80, kBlock, true>;
+  using DelayStage = dsp::FxStage<dsp::DelayBank, kBlock, false>;
+  using ReverbStage = dsp::FxStage<dsp::ReverbBank, kBlock, true>;
   using Amp = dsp::AmpStage<kBlock>;
   static constexpr int kAmpHistoryFloats = Amp::kHistoryFloats;
-  static constexpr int kReverbMemFloats = dsp::Reverb80::kMemFloats;
+  static constexpr int kReverbMemFloats = dsp::ReverbBank::kMemFloats;
   static constexpr int kBassBufLen = dsp::DrumMachine::kBassBufLen;
   static constexpr int kDoublerFloats = dsp::Doubler::kLen;
   static constexpr int kModFloats = dsp::Modulation::kLen;  // each of its two lines
@@ -87,8 +87,8 @@ class AudioChain {
   Engine& engine() { return engine_; }
   Amp& amp() { return amp_; }
   dsp::NoiseGate<kBlock>& gate() { return gate_; }
-  dsp::StudioDelay& delay() { return delay_.fx(); }
-  dsp::Reverb80& reverb() { return reverb_.fx(); }
+  dsp::DelayBank& delay() { return delay_.fx(); }
+  dsp::ReverbBank& reverb() { return reverb_.fx(); }
   dsp::Doubler& doubler() { return doubler_; }
   dsp::Modulation& mod() { return mod_; }
   dsp::Limiter& limiter() { return limiter_; }

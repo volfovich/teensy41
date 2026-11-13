@@ -2,7 +2,7 @@
 //
 //   guitar -> PCM1808 ADC (right) -> 30 Hz high-pass -> [NAM A2-Lite amp] -> noise gate
 //          -> IR convolution (cab) -> output gain + preset level
-//          -> doubler -> studio 80s delay -> 80s reverb -> + drums and bass
+//          -> doubler -> mod -> delay -> reverb -> + drums and bass
 //          -> master volume -> PCM5102A DAC L/R
 //          (32-bit float throughout, 24-bit converters, 48 kHz; docs/SIGNAL_CHAIN.md)
 //

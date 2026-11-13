@@ -55,7 +55,7 @@ int main() {
   printf("test_presets\n");
   int count = 0;
   for (int id = 0; id < kParamCount; id++) count += inPreset(id);
-  CHECK(count == 42, "42 settings in a preset (%d)", count);
+  CHECK(count == 43, "43 settings in a preset (%d)", count);
   CHECK(inPreset(kAmpIn) && inPreset(kGateType) && inPreset(kPresetLevel) && inPreset(kBypass), "amp, gate, pvol, bypass in");
   CHECK(!inPreset(kOutGain) && !inPreset(kDrumTempo) && !inPreset(kBassOn), "levels, drums, bass out");
 

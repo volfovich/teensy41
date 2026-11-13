@@ -55,6 +55,19 @@ SECTIONS
 		*libc.a:*libc_a-strstr.o(.text*)
 		/* Constructors of the chain's objects: they run once, before the audio starts. */
 		*(.text._ZN10AudioChainC2Ev .text._ZN10AudioChainC1Ev .text._ZN3dsp11DrumMachineC2Ef .text._ZN3dsp11DrumMachineC1Ef)
+		*(.text._ZN3dsp7FxStageI*C2Ef .text._ZN3dsp7FxStageI*C1Ef)
+		/* libm's double-precision sine, cosine, square root and their helpers: only the IR
+		   loader (in flash itself) uses doubles; the audio path's maths is single precision. */
+		*libm.a:*libm_a-s_sin.o(.text*)
+		*libm.a:*libm_a-s_cos.o(.text*)
+		*libm.a:*libm_a-k_sin.o(.text*)
+		*libm.a:*libm_a-k_cos.o(.text*)
+		*libm.a:*libm_a-e_rem_pio2.o(.text*)
+		*libm.a:*libm_a-k_rem_pio2.o(.text*)
+		*libm.a:*libm_a-s_scalbn.o(.text*)
+		*libm.a:*libm_a-s_floor.o(.text*)
+		*libm.a:*libm_a-e_sqrt.o(.text*)
+		*libm.a:*libm_a-w_sqrt.o(.text*)
 		*libSdFat.a:*(.text*)
 		*libSD.a:*(.text*)
 		*libEEPROM.a:*(.text*)

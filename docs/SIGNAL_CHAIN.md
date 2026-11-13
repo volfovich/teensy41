@@ -2,7 +2,7 @@
 
 The audio path as it is in the code. Source: `src/main.cpp` (the block callback), `src/AudioChain.h` (`process()`), `src/Params.cpp` (what each setting does). Last checked against the code: 13 Nov 2026.
 
-**The path is kept as ported from teensy-ir-loader: the author wants the sound unchanged.** Three things were added, all at the author's request and none changing the ported sound: the master volume at the end, the Mod block (chorus / flanger) and the Limiter block. Mod and Limiter pass their input bit for bit while they are off. A change to any gain, level or order here needs the author's say first.
+**The path is kept as ported from teensy-ir-loader: the author wants the sound unchanged.** These were added, all at the author's request and none changing the ported sound: the master volume at the end, the Mod block, the Limiter block, and two more reverb modes (plate, spring) and two more delay types (tape, analog) beside the ported ones, which run unchanged. Mod and Limiter pass their input bit for bit while they are off. A change to any gain, level or order here needs the author's say first.
 
 ## Overview
 
@@ -125,13 +125,36 @@ While the tuner is open the guitar is faded out here (20 ms), before the delay a
 - The compensation matches **loudness, not peaks**. A steady sine that sits on a comb peak still reads higher on the meters: on the unit (13 Nov 2026) the chorus at its defaults +2 to +3 dB, the flanger with feedback 70 % and full depth +5 to +7 dB. Real playing sits between the two; the Mod tile's level bar shows it.
 - Switching on fills the delay lines for 20 ms, then fades in over 20 ms; a change of type fades out and back in. No clicks.
 
-**Settings that do not apply are hidden.** The app shows a setting only with the types or modes it belongs to (`only` in `protocol/blocks.json`), and the shell's `s` leaves it out: the Mod dials above; the gate's release with the `nam` gate type (that gate has its own fixed timing); the reverb's `rmod` in the gated mode and `rgate` in the hall mode. A hidden setting keeps its stored value and can still be set from the shell; it does nothing until its type or mode is chosen.
+**Settings that do not apply are hidden.** The app shows a setting only with the types or modes it belongs to (`only` in `protocol/blocks.json`), and the shell's `s` leaves it out: the Mod dials above; the gate's release with the `nam` gate type (that gate has its own fixed timing); the reverb's and the delay's settings as listed with their modes and types below. A hidden setting keeps its stored value and can still be set from the shell; it does nothing until its type or mode is chosen.
 
 ### Delay (`dl`, in presets)
-`dsp/fx/StudioDelay.h`. An 80s studio dual delay: `dtime` 20 to 750 ms (the right side at 0.75 of it), `dfb` repeats, `dmix`, `dtone`, `dmod`, `dduck` (the repeats duck while playing), `ddrive`, `dera`. Fixed voicing in `include/config.h` (`DELAY80_*`).
+`dsp/fx/DelayBank.h` holds three delays; `dtype` picks one. All take `dmix`, `dtime` (20 to 750 ms), `dfb` repeats, `dtone` and `dmod`; the mono signal (the left side) goes in, as ported.
+
+| `dtype` | What it is | Its other settings |
+| --- | --- | --- |
+| `digital` (the default) | `dsp/fx/StudioDelay.h`, **ported and unchanged**: an 80s studio dual delay, the right side at 0.75 of the time. Fixed voicing in `include/config.h` (`DELAY80_*`). | `dduck` (the repeats duck while playing), `ddrive`, `dera` |
+| `tape` | `dsp/fx/TapeDelay.h`: a tape echo. The tape is written through a soft clip, played back through a 110 Hz low cut and a low-pass (`dtone`, 1.2 to 7 kHz), so each repeat loses lows and highs. `dmod` is wow (0.6 Hz, up to 1 % in pitch) and flutter (7.3 Hz, up to 0.3 %). The right side reads the same tape a little apart in wow and flutter. | `ddrive` (how hard the tape is hit) |
+| `analog` | `dsp/fx/AnalogDelay.h`: a bucket-brigade pedal, mono. A low-pass before the line and a third-order one after it (`dtone`, 1.5 to 4.5 kHz, up to 30 % lower for times above 300 ms, as the chip's clock slows), a 2:1 compressor before and a 1:2 expander after the line with a 12 ms lag (the repeats swell in a little), the chips' soft clip. `dmod` is a chorus on the repeats (0.5 Hz, up to 2.5 ms). | none |
+
+- **Time changes:** the digital delay crossfades to the new time (20 ms, no pitch change). Tape and analog glide: the repeats bend in pitch, by an octave at most, and settle within about a second and a half for a large change. With nothing in the line the time applies at once.
+- **Level:** tape and analog use the digital delay's gains (repeat level x 1.2, the input lowered as the repeats go up). They do not duck, so with a steady tone and many repeats they read higher on the meters than the digital delay at the same settings (measured: 5 to 6 dB at mix 50 %, repeats 50 %, duck 40 %).
+- **Sources:** tape after the usual parts of the published tape-echo models (Arnardottir, Abel and Smith, AES 2008); analog after Raffel and Smith, "Practical Modeling of Bucket-Brigade Device Circuits" (DAFx-10). Written for this project; no code taken from elsewhere. The voicing numbers (filter corners, wow and flutter depth, compander timing) are first choices, to be tuned by ear.
 
 ### Reverb (`rv`, in presets)
-`dsp/fx/Reverb80.h`. `rmode` hall (8-line FDN) or gated, `mix`, `size`, `tone`, `rpre` pre-delay, `rmod`, `rera`, `rgate` (gate time of the gated mode).
+`dsp/fx/ReverbBank.h` holds three reverbs; `rmode` picks one of four modes. All take `mix`, `size` and `tone`; the two sides are summed to mono going in.
+
+| `rmode` | What it is | Its other settings |
+| --- | --- | --- |
+| `hall` (the default), `gated` | `dsp/fx/Reverb80.h`, **ported and unchanged**: an 8-line FDN hall, and a gated burst. | `rpre` pre-delay, `rera`; `rmod` (hall), `rgate` (gated: the gate time) |
+| `plate` | `dsp/fx/PlateReverb.h`: Dattorro's plate (J. Audio Eng. Soc., 1997): four input all-passes, then a tank of two halves feeding each other (a modulated all-pass, a delay, a damping low-pass, an all-pass, a delay each), seven output taps per side. `size` is the decay, 0.5 to 8 s; `tone` the damping, 2.5 to 12 kHz. Dense and bright from the first moment. | `rpre`, `rmod` (how far the tank's two all-passes move) |
+| `spring` | `dsp/fx/SpringReverb.h`: a two-spring tank after Valimaki, Parker and Abel (J. Audio Eng. Soc., 2010), cut down to fit the CPU. Each spring is 26 stretched all-passes (which smear every echo into a rising chirp, the "drip") and a delay (33 and 42 ms); each returns into the other. `size` is the decay, 0.8 to 3.2 s; `tone` the spring's top, 2 to 3.8 kHz. The sound is taken at the springs' far ends, so it starts 33 ms after the input. | none |
+
+- **The plate is a fifth smaller than the paper's.** Its lengths are the paper's (given for 29.8 kHz) times 1.3, not the 1.61 that 48 kHz asks for, so the tank and the 150 ms pre-delay fit the memory the reverbs share.
+- **The spring has far fewer all-passes than the paper** (26 per spring against 100) and only its low-frequency chirp loop: the chirps are shorter than a real tank's. That is what the CPU allows (see below).
+- **Level:** plate and spring at 100 % wet are as loud as the input on pink noise, within 0.6 dB (host tests), as the hall is. On steady single notes the spring varies by about 5 dB from note to note (measured on the unit at five notes), as any reverb built on a loop does.
+- **Sources:** written for this project from the two papers; no code taken from elsewhere. HexeFX's library (MIT) was read for comparison.
+
+**The effects of one block share its memory**, so only one of them holds sound at a time. A change between hall and gated is Reverb80's own (as ported). Any other change of `rmode`, and every change of `dtype`, does the same thing: the tail fades out over 20 ms, the memory is cleared in silence (up to 12 ms), and the other effect starts; with the block off and rung out the change is immediate. The settings go to every effect that has them, so they are in place after a change. With `hall`, `gated` and `digital` the samples are exactly those of the ported effects (host test `test_fx_banks`).
 
 An effect that is off and has rung out is idle: it costs no CPU and passes its input through bit for bit. With doubler, mod, delay, reverb and drums all idle, the mono signal goes to both outputs.
 
@@ -194,13 +217,14 @@ Measured on the board, 32-sample blocks (budget: worst case at or below 80 % of 
 | Doubler | 1.1 % | 13 Nov 2026 |
 | Mod: chorus, flanger, phase90 / ce2 | 2.4 % / 2.7 % | 13 Nov 2026 |
 | Limiter: on and idle / limiting / limiting with lookahead | 0.6 % / 1.1 % / 1.9 % | 13 Nov 2026 |
-| Delay | 4.7 % | 13 Nov 2026 |
-| Reverb, hall | 8.4 % | 13 Nov 2026 |
+| Delay: digital / tape / analog | 4.8 % / 3.5 % / 3.0 % | 13 Nov 2026 |
+| Reverb: hall / gated / plate / spring | 8.1 % / 6.7 % / 4.8 % / 8.0 % | 13 Nov 2026 |
 | Drums and bass, rock at 100 BPM | 4.0 % avg | 13 Nov 2026 |
 | Driver, conversion, gate, idle convolver | about 4.5 % | 13 Nov 2026 |
 | A typical preset: amp + 4 k IR + reverb | 56.3 % avg, 57.1 % max | 13 Nov 2026 |
 | The same + mod | 58.7 % avg, 59.5 % max | 13 Nov 2026 |
 | Everything on: + doubler, mod, delay, drums and bass (rock, 100 BPM) | 69 % avg, **80.4 % max** | 13 Nov 2026 |
+| Everything on, in one later session of 14 s each (limiter on): hall + digital / plate + tape / spring + analog / gated + digital | 75.6 % / 69.7 % / 73.0 % / 73.3 % max | 13 Nov 2026 |
 
 | Stage | Memory |
 | --- | --- |
@@ -209,8 +233,8 @@ Measured on the board, 32-sample blocks (budget: worst case at or below 80 % of 
 | Doubler | 8 KB, OCRAM |
 | Mod | 16 KB, OCRAM |
 | Limiter | 1.3 KB, DTCM |
-| Delay | 144 KB DTCM + 144 KB OCRAM |
-| Reverb | 148 KB, OCRAM |
+| Delay | 144 KB DTCM + 144 KB OCRAM (shared by the three types; tape and analog use the first line) |
+| Reverb | 148 KB, OCRAM (shared by the three reverbs: the plate uses 146 KB of it, the spring 15 KB) |
 | Drum kits | flash |
 
 The everything-on figure above was measured before the limiter existed; with the limiter working as well, expect 1 to 2 % more (not measured together). With everything on, the worst block now touches the 80 % budget (by subtraction it was about 78 % before the Mod block; that was not measured); no overruns were seen. The drums' busiest moments set that maximum.

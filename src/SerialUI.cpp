@@ -260,12 +260,22 @@ static void printStatus() {
   printValues({kLimCeiling, kLimRelease, kLimLook});
   Serial.println();
   Serial.printf("Delay:     %s", effectState(kDelayOn, chain.delayActive()));
-  printValues({kDelayMix, kDelayTime, kDelayRepeats, kDelayTone, kDelayMod, kDelayDuck, kDelayDrive, kDelayEra});
+  // Each type shows the settings it has (as the app does, protocol/blocks.json).
+  if (getParam(kDelayType) == dsp::DelayBank::kTape)
+    printValues({kDelayType, kDelayMix, kDelayTime, kDelayRepeats, kDelayTone, kDelayMod, kDelayDrive});
+  else if (getParam(kDelayType) == dsp::DelayBank::kAnalog)
+    printValues({kDelayType, kDelayMix, kDelayTime, kDelayRepeats, kDelayTone, kDelayMod});
+  else
+    printValues({kDelayType, kDelayMix, kDelayTime, kDelayRepeats, kDelayTone, kDelayMod, kDelayDuck, kDelayDrive, kDelayEra});
   Serial.println();
   printDrumStatus();
   Serial.printf("Reverb:    %s", effectState(kReverbOn, chain.reverbActive()));
-  printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone, kReverbPreDelay, kReverbEra});
-  printValues({getParam(kReverbMode) ? kReverbGate : kReverbMod});
+  switch (getParam(kReverbMode)) {
+    case dsp::ReverbBank::kSpring: printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone}); break;
+    case dsp::ReverbBank::kPlate: printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone, kReverbPreDelay, kReverbMod}); break;
+    case dsp::ReverbBank::kGated: printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone, kReverbPreDelay, kReverbEra, kReverbGate}); break;
+    default: printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone, kReverbPreDelay, kReverbEra, kReverbMod}); break;
+  }
   Serial.println();
   Serial.printf("CPU:       IR + effects %.1f%% avg / %.1f%% max (amp %.1f%%, doubler %.1f%%, mod %.1f%%, delay %.1f%%, reverb %.1f%%, drums %.1f%%, limiter %.1f%%), audio total %.1f%% max\n",
                 chain.cpuPercent(), chain.cpuPercentMax(), chain.ampCpuPercent(),

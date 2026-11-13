@@ -48,8 +48,8 @@ FLASHMEM void audioBegin() {
   chain.begin(g_reverbMem, g_delayA, g_delayB, kDelayLen, g_bassMem, g_ampHistory, g_doublerLine, g_modLineL,
               g_modLineR, g_tunerRing);
 
-  // The delay's fixed voicing (config.h); the rest is the saved settings.
-  dsp::StudioDelay& d = chain.delay();
+  // The digital delay's fixed voicing (config.h); the rest is the saved settings.
+  dsp::StudioDelay& d = chain.delay().studio();
   d.setRightRatio(DELAY80_RIGHT_RATIO);
   d.setCross(DELAY80_CROSS);
   d.setBassCut(DELAY80_BASS_CUT);

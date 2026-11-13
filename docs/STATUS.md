@@ -6,10 +6,11 @@ The tracking page: what works and how that is known, what has not been checked, 
 
 Work was stopped here at the author's word. Everything described on this page is committed on the branch `i2s-driver-and-hld`, and the unit runs the firmware built from it.
 
-- **The unit:** the full chain is running: amp, gate, cab, doubler, mod (chorus, flanger, ce2, phase90), delay, reverb, drums and bass, master volume, limiter, tuner. The sound of everything ported is as ported; the author confirmed that by ear.
+- **The unit:** the full chain is running: amp, gate, cab, doubler, mod (chorus, flanger, ce2, phase90), delay (digital, tape, analog), reverb (hall, gated, plate, spring), drums and bass, master volume, limiter, tuner. The sound of everything ported is as ported; the author confirmed that by ear.
 - **The app:** connects by itself and covers editing, presets, files, meters, tuner, backup and restore, the IR's graphs and the card's free space.
-- **Checks at this point:** 75 host test cases, 23 Rust tests, the on-unit protocol check and the audio code placement check all pass. A typical preset runs at 56 % CPU; everything on at once reaches the 80 % budget.
+- **Checks at this point:** 121 host test cases, 23 Rust tests, the on-unit protocol check and the audio code placement check all pass. A typical preset runs at 56 % CPU; everything on at once reaches the 80 % budget.
 - **Waiting for the author:**
+  1. Listen to the two new reverb modes (`plate`, `spring`) and the two new delay types (`tape`, `analog`), added on 13 Nov 2026 after the Mod types, and say what to tune: their voicing numbers are first choices.
   1. Listen to the two new Mod types, `ce2` and `phase90` (added after the stop, the same day), and say what to tune; the chorus and the flanger were heard by the author on 13 Nov 2026 and are fine. The limiter was tried by the author on 13 Nov 2026 and works well; still to say: whether the lookahead was compared.
   2. Try the things only a person can: the Cab graphs with a real IR, the Card tab's buttons and dialogs, drag and drop, the Rate knob's feel.
   3. Decide how renaming a file should treat presets that name it (see "Open work").
@@ -24,7 +25,8 @@ Work was stopped here at the author's word. Everything described on this page is
 | NAM A2-Lite amp | Working | Matches the reference engine to 4.8e-7 (host and board); models loaded from the card |
 | Noise gate, tone, DC blocker | Working | Host tests against references; in use |
 | Cab IR loading and convolution | Working | Host tests; IRs loaded from the card and played |
-| Doubler, delay, reverb | Working | Host tests; in use |
+| Doubler, delay (digital), reverb (hall, gated) | Working | Host tests; in use. Bit for bit unchanged behind the new banks (host test `test_fx_banks`) |
+| Reverb: `plate`, `spring`; delay: `tape`, `analog` | Working, **not yet heard by the author** | 46 host tests (decay times, stability, tone, level, the spring's chirp, the delays' repeats, glide, compander, the change between effects). On the unit with a test tone: each costs no more CPU than the ported effect it replaces, no overruns; settings restored afterwards |
 | Mod: chorus, flanger | Working; heard by the author on 13 Nov 2026 and found fine | 16 host tests for the block (clicks, stability, ranges, rate, loudness); their output is bit for bit what it was before the two new types were added (compared on the host); on the unit with test tones: 2.4 % CPU, levels and CPU unchanged with Mod off |
 | Mod: `ce2` (CE-2 style chorus), `phase90` (Phase 90 style phaser) | Working, **not yet heard by the author** | Host tests: the ce2's triangle sweep, range and low-passed wet signal; the phase90's two notches, sweep rate and feedback hump; both in the click, stability, width, loudness and block-size tests. On the unit with a 220 Hz tone: ce2 2.7 % CPU, phase90 2.4 %, output within 1.3 dB of the Mod-off level, no overruns. Since then the two types have only their pedal's dials (the rest held by the firmware), which was checked in the shell's `s` only |
 | Presets on the card | Working | Recall, save, new, rename, delete from the shell and the app |
@@ -37,7 +39,7 @@ Work was stopped here at the author's word. Everything described on this page is
 | USB MIDI | Built, **not tried** | Map prints; no real controller or DAW has sent messages |
 | Sound | **As ported** | Confirmed by the author on 13 Nov 2026 after two unrequested level changes were reverted; test tones matched the morning's firmware within 0.3 dB over 36 points |
 
-Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb) 56.3 % CPU average, 57.1 % maximum, 0 overruns. With everything on (doubler, mod, delay, reverb, drums and bass) 69 % average, 80.4 % maximum, 0 overruns. RAM1 code 60.4 KB, 93.5 KB free for the stack (after the two new Mod types).
+Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb) 56.3 % CPU average, 57.1 % maximum, 0 overruns. With everything on (doubler, mod, delay, reverb, drums and bass) 69 % average, 80.4 % maximum, 0 overruns. Per effect (13 Nov 2026): reverb hall 8.1 %, gated 6.7 %, plate 4.8 %, spring 8.0 %; delay digital 4.8 %, tape 3.5 %, analog 3.0 %. RAM1 code 63.9 KB, 91.5 KB free for the stack (after the new reverbs and delays).
 
 ## App
 
@@ -70,14 +72,17 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - The worst-case CPU (long IR, busy drums at 240 BPM, IR switching) at 32-sample blocks.
 
 ## Known issues and observations
-- **RAM1 code is 5 KB from its next 32 KB step** (60.4 KB of 64 KB; the two new Mod types took 1.2 KB). The next feature with audio-interrupt code may cross it, which takes 32 KB from the stack's 94 KB; check the build output.
+- **RAM1 code is 1.6 KB from its next 32 KB step** (63.9 KB of 64 KB). The new reverbs and delays took it over the step; moving the chain's constructors and libm's double-precision routines to flash brought it back. The next feature with audio-interrupt code will cross it, which takes 32 KB from the stack's 91 KB, unless more is moved out first; check the build output.
 - **The limiter works on sample peaks**, not on peaks between samples; its default ceiling of −1 dB is the margin for that.
 - The limiter's cost with everything else on was not measured together: expect the worst block at 81 to 82 %, over the 80 % budget, when all blocks, the drums and the lookahead limiter run at once.
 - Asking the card for its free space stops the unit's `loop()` for about 0.8 s (16 GB card): the audio keeps running, the app's meters pause for that moment. It happens when the app connects and after each file sent or deleted.
 - **With every block and the drums on, the worst block reaches the 80 % CPU budget** (80.4 % measured; by subtraction about 78 % before the Mod block). No overruns, and the overload protection covers a spike, but there is no margin left for another effect without making room.
 - **The Mod block's level is compensated for loudness** (within 0.3 dB on guitar-band noise in the host test), not for peaks: a steady sine on a comb peak still reads up to +3 dB (chorus) or +7 dB (flanger with strong feedback) higher.
 - The Mod block's voicing is a first version, to be tuned by ear. The `ce2` and `phase90` types follow the pedals' published circuits, not recordings or measurements of real pedals; the top of the phase90's sweep (1.6 kHz) is an estimate.
-- The worst block with everything on was not measured again with the new types: the ce2 costs 0.3 % more than the chorus the 80.4 % was measured with.
+- The worst block with everything on was not measured again with the new Mod types: the ce2 costs 0.3 % more than the chorus the 80.4 % was measured with.
+- With the new reverbs and delays the worst block was compared in one session (everything on, limiter with lookahead, 14 s each): hall + digital 75.6 %, plate + tape 69.7 %, spring + analog 73.0 %, gated + digital 73.3 %. The new ones are below the ported pair. These windows are shorter than the one that gave 80.4 %, so they compare the combinations; they are not a new worst case.
+- **The new reverbs' and delays' voicing is a first version**, built from papers, not from measurements of real units: the plate is a fifth smaller than Dattorro's (to fit the memory), the spring has 26 all-passes per spring where the paper has 100 (to fit the CPU), so its chirps are short; the tape's wow and flutter, the analog's filters and compander timing are first choices.
+- A change of reverb mode to or from plate or spring, or of delay type, while the effect sounds, cuts its tail: 20 ms fade, a few ms of silence, then the new effect from nothing. The same happens when a preset change changes the mode or type.
 - **Cab bypass also skips the output gain and preset level.** As ported; see [SIGNAL_CHAIN.md](SIGNAL_CHAIN.md). Left alone unless the author wants it changed.
 - **Levels after the cab can exceed 0 dBFS** with a high-gain model and a resonant IR at amp output 0 dB. Harmless inside the chain; left alone.
 - **Presets 01 and 03** could not be put back to their contents of the morning of 13 Nov 2026 after that day's level experiments; preset 02 was rewritten once.
@@ -98,7 +103,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - Try USB MIDI with a controller or a DAW.
 - The touch screen UI (2.8-inch TFT): display choice, pins, screens. To read `protocol/blocks.json` like the app.
 - Lower latency, if wanted: a non-uniformly partitioned convolver, then 16-sample blocks again.
-- Later effects: compressor, parametric EQ, more Mod types (tremolo); a longer delay or a looper in PSRAM.
+- Later effects: compressor, parametric EQ, more Mod types (tremolo), more reverbs or delays (shimmer, ping-pong, reverse were offered and not chosen); a longer delay or a looper in PSRAM.
 
 ### Hardware (the author's side)
 - Input buffer (1 MΩ), then set `INPUT_PAD_DB`.
@@ -113,3 +118,4 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 | --- | --- |
 | 11 Nov 2026 | Project set up; PSRAM soldered and verified |
 | 13 Nov 2026 | Hardware doc and design (HLD); I2S driver; NAM benchmarks; the chain, effects, presets and drums ported from teensy-ir-loader; codec settings removed; link protocol; the app through milestones A0 to A5 and part of A6; master volume; block meters; backup and restore; documentation set; the Mod block (chorus and flanger) with automatic level compensation; the IR's waveform and frequency response and the card's free space in the app; a CPU meter in the app's top bar; the Limiter block; two more Mod types (`ce2`, `phase90`); settings that do not apply to the chosen type or mode are hidden in the app. |
+| 13 Nov 2026 | Two more reverb modes (plate, spring) and two more delay types (tape, analog) behind `ReverbBank` / `DelayBank`, the ported effects untouched; the `dtype` setting; editors and the shell show each mode's and type's own settings; measured on the unit |

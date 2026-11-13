@@ -15,7 +15,8 @@ namespace ui {
 // on the firmware (the delay's longest time, how many styles, kits, songs and
 // bars there are) are narrowed by the firmware's paramLimits().
 
-static const char* const kReverbModes[] = {"hall", "gated"};
+static const char* const kReverbModes[] = {"hall", "gated", "plate", "spring"};
+static const char* const kDelayTypes[] = {"digital", "tape", "analog"};
 static const char* const kCrashNames[] = {"off", "2 bars", "4 bars", "8 bars", "16 bars"};
 static const char* const kCountNames[] = {"off", "1 bar", "2 bars", "3 bars", "4 bars"};
 static const char* const kGateTypes[] = {"nam", "hard"};
@@ -41,7 +42,7 @@ static const ParamDef kParams[kValueCount] = {
     {"mix",          "Reverb mix",         "Mix",            0,  100,  25, 1, U::kPercent, nullptr, kPreset},
     {"size",         "Reverb size",        "Size",           0,  100,  50, 1, U::kPercent, nullptr, kPreset},
     {"tone",         "Reverb tone",        "Tone",           0,  100,  50, 1, U::kPercent, nullptr, kPreset},
-    {"rmode",        "Reverb mode",        "Mode",           0,    1,   0, 1, U::kNone,    kReverbModes, kPreset},
+    {"rmode",        "Reverb mode",        "Mode",           0,    3,   0, 1, U::kNone,    kReverbModes, kPreset},
     {"rpre",         "Reverb pre-delay",   "Pre-delay",      0,  150,  40, 1, U::kMs,      nullptr, kPreset},
     {"rmod",         "Reverb modulation",  "Mod",            0,  100,  40, 1, U::kPercent, nullptr, kPreset},
     {"rera",         "Reverb era",         "Era",            0,  100,  40, 1, U::kPercent, nullptr, kPreset},
@@ -97,6 +98,9 @@ static const ParamDef kParams[kValueCount] = {
     {"lim ceil",     "Limiter ceiling",    "Ceiling",      -24,   -1,  -2, 1, U::kHalfDb,  nullptr, 0},
     {"lim rel",      "Limiter release",    "Release",       10, 1000, 100, 10, U::kMs,     nullptr, 0},
     {"lim look",     "Limiter lookahead",  "Lookahead",      0,    1,   0, 1, U::kOnOff,   nullptr, 0},
+    // The delay's type: the digital rack delay, a tape echo or an analog (bucket-brigade) pedal.
+    // Added after the others, so it sits at the end of the saved block.
+    {"dtype",        "Delay type",         "Type",           0,    2,   0, 1, U::kNone,    kDelayTypes, kPreset},
     // Not saved.
     {"drum",         "Drums",              "Play",           0,    1,   0, 1, U::kOnOff,   nullptr, 0},
     {nullptr,        "Loop from",          "Loop from",      0,  512,   0, 1, U::kNone,    nullptr, 0},

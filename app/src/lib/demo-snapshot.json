@@ -9,9 +9,9 @@
   "maxModels": 64,
   "maxIrs": 128,
   "maxPath": 95,
-  "savedSettings": 64,
-  "settings": 67,
-  "schemaHash": 3697114854,
+  "savedSettings": 65,
+  "settings": 68,
+  "schemaHash": 3543549278,
   "port": "preview"
  },
  "settings": [
@@ -190,14 +190,16 @@
    "name": "Reverb mode",
    "label": "Mode",
    "min": 0,
-   "max": 1,
+   "max": 3,
    "default": 0,
    "step": 1,
    "unit": 0,
    "inPreset": true,
    "choices": [
     "hall",
-    "gated"
+    "gated",
+    "plate",
+    "spring"
    ]
   },
   {
@@ -904,6 +906,23 @@
   },
   {
    "id": 64,
+   "key": "dtype",
+   "name": "Delay type",
+   "label": "Type",
+   "min": 0,
+   "max": 2,
+   "default": 0,
+   "step": 1,
+   "unit": 0,
+   "inPreset": true,
+   "choices": [
+    "digital",
+    "tape",
+    "analog"
+   ]
+  },
+  {
+   "id": 65,
    "key": "drum",
    "name": "Drums",
    "label": "Play",
@@ -916,7 +935,7 @@
    "choices": []
   },
   {
-   "id": 65,
+   "id": 66,
    "key": "",
    "name": "Loop from",
    "label": "Loop from",
@@ -929,7 +948,7 @@
    "choices": []
   },
   {
-   "id": 66,
+   "id": 67,
    "key": "",
    "name": "Loop to",
    "label": "Loop to",
@@ -953,13 +972,13 @@
   20,
   100,
   1,
-  7,
-  20,
+  5,
+  17,
   100,
   0,
   40,
   40,
-  60,
+  0,
   300,
   -12,
   0,
@@ -981,18 +1000,18 @@
   50,
   1,
   0,
-  0,
+  -6,
   1,
-  -67,
-  4,
+  -70,
   0,
-  1,
+  0,
+  0,
   3,
   10,
   0,
   10,
   50,
-  0,
+  1,
   1,
   0,
   0,
@@ -1007,15 +1026,16 @@
   -2,
   100,
   1,
+  1,
   0,
   0,
   1
  ],
  "files": {
-  "model": "/AMP/JCM_800_2203_OD8008_Boosted_Amp_Gain_7.nam",
-  "ir": "/OH Hair-Metal.wav",
-  "preset": "02 JCM8OO",
-  "edited": false,
+  "model": "/AMP/03 - RECTO ACTIVE RAW.nam",
+  "ir": "/OH 412 RECT.wav",
+  "preset": "01 Recto  91",
+  "edited": true,
   "card": true
  }
 }
