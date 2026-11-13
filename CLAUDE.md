@@ -9,7 +9,8 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 ## Commands
 - Build firmware: `pio run`
 - Flash: `pio run -t upload` (Teensy Loader GUI; press the board's button if it doesn't auto-reboot)
-- Serial monitor / command shell: `pio device monitor` (type `?` for commands)
+- Serial monitor / command shell: `pio device monitor` (type `?` for commands, `s` for status)
+- Check that no audio code was linked into flash: `tools/check_hot_code.sh` (after `pio run`)
 - Host unit tests for portable DSP: `pio test -e native`
 - I2S driver self-test (bare board, jumper pin 7 -> pin 8; replaces app firmware until you re-upload):
   `pio run -e i2s_loopback -t upload && pio device monitor -e i2s_loopback`
@@ -22,30 +23,46 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Refresh editor IntelliSense after adding libs/flags: `pio run -t compiledb`
 
 ## Layout
-- `src/main.cpp` – setup, audio block callback, serial command shell, USB MIDI
+- `src/main.cpp` – setup and the audio block callback (ADC words -> float -> `AudioChain` -> DAC words)
+- `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> doubler -> delay -> reverb, + drums and bass
+- `src/` (rest) – IR / amp / preset libraries on the SD card, `Params`, `Settings` (EEPROM), `SerialUI`, `Tuner`, `DrumSongs`
+- `include/config.h` – compile-time settings and hardware constants (guitar channel, ADC full scale, mute pin)
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
-- `lib/dsp/` – **portable float DSP, header-only where practical** (no Arduino/Teensy includes). Put algorithms here so they are unit-testable on the host.
-- `lib/dsp/src/dsp/nam/` – NAM A2-Lite engine (`NamA2.h`, 32% CPU at 32-frame blocks) and `.nam` file reader (`NamFile.*`), ported from the teensy-ir-loader project. Give the engine's history buffer DTCM memory (a plain global), not `DMAMEM`.
-- `test/fixtures/nam/` – example A2 model and NeuralAmpModelerCore reference output used by the tests and the on-board check.
-- `hw_tests/` – standalone firmware images that test hardware (PSRAM, I2S loopback); each has its own env.
-- `test/` – Unity tests, run on the host via the `native` env.
+- `lib/dsp/` – **portable float DSP** (namespace `dsp`, no Arduino/Teensy includes), unit-tested on the host: `nam/`, `conv/`, `fx/`, `drums/`
+- `lib/params/` – the settings table (`ParamDefs`) and preset file format. Portable.
+- `hw_tests/` – standalone firmware images that test hardware (PSRAM, I2S loopback, NAM benchmarks); each has its own env.
+- `tools/` – cold-code linker script, `check_hot_code.sh`, drum kit and song compilers. `kits/`, `songs/` – drum assets.
+- `test/` – Unity suites, run on the host via the `native` env; fixtures in `test/fixtures/`.
+
+## Ported code (from github.com/volfovich/teensy-ir-loader)
+- Almost everything in `lib/dsp`, `lib/params` and `src/` except `main.cpp`, `AudioChain.*` (adapted), `lib/i2s32` and `dsp/Convert.h` is ported from that project. Its `NAM.md`, `DELAY.md`, `REVERB.md`, `PRESETS.md`, `DRUMS.md` describe the same code.
+- Ported files keep the original formatting (2-space indent, `printf` with floats). Only the namespace (`irdsp` -> `dsp`), include paths (`<dsp/...>`, `<params/...>`) and placement macros (`DSP_COLD`, `DSP_PROGMEM`) changed. Keep edits small so fixes can go back to the old project.
+- The ported test suites run the original checks inside one Unity test each (`#define main ported_main`).
+- The settings table is kept identical to the old project's (presets and EEPROM layout are interchangeable). `in`, `out`, `hp` were codec levels and are no-ops here.
+- Not ported: the OLED panel, encoder and keys.
 
 ## Audio facts
-- 48 kHz only. Block = `DSP_BLOCK` frames (32, set in `platformio.ini`) = `i2s32::kBlock`. In-to-out latency is about 2 blocks plus converter filters.
+- 48 kHz only. Block = `DSP_BLOCK` frames (32, set in `platformio.ini`) = `i2s32::kBlock` = `kBlock` in `config.h`. In-to-out latency is about 2 blocks plus converter filters.
 - I2S words are 32-bit, interleaved L,R, with the 24-bit sample in bits 31..8. Convert with `dsp/Convert.h` (`int24InToFloat` / `floatToInt24Out`: saturating, exact round trip).
 - The block callback runs in the RX DMA interrupt at priority 48 (above USB). No `Serial`, `malloc`, `new`, SD access, or blocking calls inside it, and it must finish within one block period (0.67 ms at 32 frames = 400k CPU cycles).
-- Pass parameters from `loop()` to the callback through `volatile`/atomic values or a double-buffered struct; the callback pre-empts `loop()` at any point.
-- Watch `i2s32::stats()` (serial `s` command): load, max load, overruns, FIFO errors. Budget: worst case at or below 80% of the block period.
+- Each effect's header states its threading model: setters from `loop()`, `process()` in the interrupt.
+- Watch the serial `s` command: per-stage CPU, driver overruns, FIFO errors, levels. Budget: worst case at or below 80% of the block period. Measured: amp + doubler + delay + reverb 52%, with drums 68% max.
 - Flush-to-zero and default-NaN float modes are enabled by `i2s32::begin()` (FPSCR and FPDSCR).
-- USB type is `USB_MIDI_SERIAL` (set in `platformio.ini`). USB audio is not available: the core's implementation is 16-bit / 44.1 kHz.
-- Guitar input is mono on the ADC **right** channel (`kGuitarOnRightChannel` in `src/main.cpp`); the left input is unused.
+- USB type is `USB_MIDI_SERIAL`. USB audio is not available: the core's implementation is 16-bit / 44.1 kHz.
+- Guitar input is mono on the ADC **right** channel (`GUITAR_ON_RIGHT_CHANNEL` in `config.h`).
+
+## Memory placement (RAM1 is tight)
+- All code goes to ITCM (RAM1) by default. `tools/imxrt1062_t41_cold.ld` keeps background code (libc, SdFat, SerialUI, libraries, loaders) in flash. Never add a file with audio-interrupt code to its cold lists.
+- After changing the linker script or the audio path, run `tools/check_hot_code.sh` (after `pio run`): it fails if an audio-path function was linked into flash.
+- The NAM history must be a plain global (DTCM), not `DMAMEM`: OCRAM costs about 4% CPU more.
+- Load-time-only buffers can go in PSRAM (`EXTMEM`), as the IR resampler table does.
 
 ## DSP conventions
-- Process in `float` internally, samples normalized to [-1, 1). CMSIS-DSP (`<arm_math.h>`) is available on the target only; `lib/dsp` must also build on the host.
-- Use `float` literals (`0.5f`) and `std::sin`/`sinf`, never implicit double; `-Wdouble-promotion` is on for `src/` and the native tests.
-- Keep per-channel state in the effect object; no globals in DSP code.
-- Every new algorithm in `lib/dsp` gets a host test in `test/` (frequency response, stability, edge cases) before hardware testing.
+- Process in `float` internally, samples normalized to [-1, 1). `lib/dsp` must also build on the host.
+- Keep state in the effect object, memory handed in by the caller; no globals in DSP code.
+- Every new algorithm in `lib/dsp` gets a host test in `test/` before hardware testing.
 - No algorithm on the audio path may add latency: no lookahead, no oversampling, no linear-phase filters, no FFT blocks larger than the audio block.
+- Warnings: `-Wall` for `src/`; `-Wall -Wextra` for the native tests.
 
 ## PSRAM (8 MB APS6404L, hand-soldered, verified by hw_tests/psram_deep.cpp)
 - Mapped at 0x70000000, 8 MB, D-cached, 105.6 MHz QSPI (core default). Use for big buffers: delay lines, reverb, loopers, samples.

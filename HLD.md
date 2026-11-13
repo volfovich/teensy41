@@ -1,6 +1,6 @@
 # Teensy 4.1 Guitar DSP Platform: High-Level Design
 
-Nov 12, 2026 · Status: draft for review
+Nov 13, 2026 · Status: driver, amp, cab, effects, presets and drums are running on the board; the signal chain and app layer are ported from [teensy-ir-loader](https://github.com/volfovich/teensy-ir-loader)
 
 Companion to [`Teensy 4.1 Audio DSP Platform PCM1808 + PCM5102A Design Doc.md`](<Teensy 4.1 Audio DSP Platform PCM1808 + PCM5102A Design Doc.md>) (the "hardware doc").
 Numbers marked **(verify)** are taken from datasheets or vendor claims quoted from memory, and need to be checked or measured.
@@ -43,17 +43,25 @@ The pinout (MCLK 23, BCLK 21, LRCLK 20, IN1 8, OUT1A 7) is correct. So are the P
 
 ### 2.1 CPU
 
-At 600 MHz and 48 kHz there are **12,500 CPU cycles per sample**: 400 k cycles per 32-sample block, or 200 k per 16-sample block.
+At 600 MHz and 48 kHz there are **12,500 CPU cycles per sample**: 400 k cycles per 32-sample block.
 
-| Stage | Target share | Notes |
-| --- | --- | --- |
-| NAM A2-Lite | **32.4 % measured at B = 32** (35.0 % at B = 16) | Own engine `dsp::NamA2`, history in DTCM (§6.2). The reference engine measured 62.5 % / 75.5 %. |
-| IR cab, 2048 taps | ~4 % (B=32) / ~7 % (B=16) | Partitioned FFT convolution (§6.3) |
-| Gate, comp, EQ, mod, delay, reverb | ≤ 20 % target; **about 40 % available at B = 32, about 36 % at B = 16** | 80 % rule minus NAM, IR and driver |
-| Driver, conversion, parameter smoothing | ~2 % | |
-| **Headroom** | **≥ 20 %** | Covers interrupt jitter, PSRAM cache misses, and USB/SD activity |
+Measured on the board (13 Nov 2026, 32-sample blocks, built-in example model, no IR loaded, serial `s`):
 
-Rule: the sum of worst-case stage costs per block, measured with the DWT cycle counter, must stay at or below **80 %** of the block period. The shares above are targets within that 80 %. If NAM measures above 50 % at M1, the effects budget shrinks first.
+| Stage | CPU |
+| --- | --- |
+| NAM A2-Lite amp (with DC blocker and tone stack) | 32.9 % |
+| Doubler | 1.1 % |
+| Studio delay | 4.7 % |
+| 80s reverb (hall) | 8.4 % |
+| Drums and bass, rock style at 100 BPM | 4.0 % avg |
+| Driver, conversion, gate, idle convolver | about 4.5 % |
+| **Amp + doubler + delay + reverb** | **51.6 % avg, 52.4 % max** |
+| **The same plus drums and bass** | **55.3 % avg, 67.9 % max** |
+
+- Not yet measured here: an IR loaded. In teensy-ir-loader a 4096-sample IR cost about 12 % at this block size and a 2048-sample one about 6 %.
+- So the expected worst case with a long IR and busy drums is around 80 %, the limit below. teensy-ir-loader measured 86 % for its worst case (240 BPM with crashes, IR switching) on the same processor.
+- Rule: the worst case per block must stay at or below **80 %** of the block period. Levers if it does not: cap the IR at 2048 samples while the amp is on (about −6 %), 64-sample blocks, or hand-written assembly for the NAM tap passes (about −3 %).
+- No overruns or FIFO errors in any of these runs.
 
 ### 2.2 Latency (analog in → analog out)
 
@@ -72,25 +80,29 @@ Rule: the sum of worst-case stage costs per block, measured with the DWT cycle c
 
 ---
 
-## 3. What we use, how, and what we build
+## 3. What we use, and where it comes from
 
-| Component | Decision | How it is used |
+Most of the firmware is ported from **teensy-ir-loader**, the author's earlier project for a Teensy 4.0 with an SGTL5000 Audio Shield. Its DSP was already portable, host-tested and designed for 48 kHz and 32-sample blocks. What is new here is the hardware layer.
+
+| Component | Source | Notes |
 | --- | --- | --- |
-| Teensyduino core 1.62 (PlatformIO `teensy`) | **Use** | Boot, clocks, `DMAChannel`, USB serial and MIDI, `EXTMEM`/`DMAMEM`, `elapsedMillis` |
-| PJRC Teensy Audio Library | **Drop** | 16-bit / 44.1 kHz / 128-sample blocks. Kept only until M2 replaces `src/main.cpp`. |
-| [Teensy4i2s](https://github.com/ValdemarOrn/Teensy4i2s) | **Use for bring-up (M0)** | 32-bit I2S at 48 kHz, same pins. Proves the hardware before we write a driver. Not used in production: its `AUDIO_BLOCK_SAMPLES` name clashes with the core's, and its buffer queue adds latency. |
-| OpenAudio_ArduinoLibrary (F32) | **Don't use** | An AudioStream-style graph scheduled from a software interrupt adds buffering. Its I2S 24/32-bit support is uncertain **(verify)**. We need none of its blocks. |
-| **Own I2S driver** (`lib/i2s32`) | **Build** | SAI1 + eDMA ping-pong, 32-bit words, PLL4 at exactly 48 kHz, compile-time B, processing in the DMA interrupt. Modelled on the core's `output_i2s.cpp`/`input_i2s.cpp` configuration and on Teensy4i2s. |
-| CMSIS-DSP (`arm_math.h`, already linked) | **Use** | `arm_rfft_fast_f32` for the IR, `arm_biquad_cascade_df2T_f32` for EQ, vector multiply/add/scale, and complex multiply-accumulate. |
-| [NAM A2](https://www.tone3000.com/guides/nam-a2-the-complete-guide) (MIT) | **Use the model format and architecture** | A2-Lite variant (3 channels). `.nam` files are read directly on the device (§6.2); no converter. |
-| NeuralAmpModelerCore + `nam-binary-loader` (as used in [tone-3000/nam-pedal](https://github.com/tone-3000/nam-pedal), MIT) | **Use as reference, then tune or replace** | Phase A runs it on the Teensy with the A2 fast path (`NAM_ENABLE_A2_FAST`) to benchmark, and on the host to produce golden vectors. Phase B is an optimised engine: TONE3000's C engine if it is published, otherwise our own (§6.2). |
-| SdFat (bundled with Teensyduino, built-in SDIO slot) | **Use** | Reads `.nam` models, IR WAVs and presets from `loop()` only. |
-| ArduinoJson | **Use** | Preset files. |
-| `usbMIDI` (core) | **Use** | Program change selects presets; control changes set parameters. |
-| `lib/dsp` (ours, portable, header-only) | **Build and extend** | All algorithms, unit-tested on the host. The existing `dsp::Biquad` is reused. |
-| `lib/audio_fx` (AudioStream wrappers) | **Delete at M2** | No AudioStream on the new path. |
+| I2S driver `lib/i2s32` | **New** | SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt (§4.1) |
+| Sample conversion `dsp/Convert.h` | **New** | 24-bit words ↔ float, saturating |
+| NAM A2-Lite engine, `.nam` reader, weights cache | Ported | `dsp/nam/` (§6.2) |
+| Amp stage, DC blocker, tone stack, noise gate | Ported | `dsp/nam/AmpStage.h`, `dsp/fx/` |
+| IR loader and partitioned convolver | Ported | `dsp/conv/` (§6.3) |
+| Doubler, studio delay, 80s reverb, effect slots | Ported | `dsp/fx/` |
+| Tuner (YIN pitch detection) | Ported | `dsp/fx/PitchDetect.h`, `src/Tuner.*` |
+| Drum machine, bass, MIDI drum files, kits, songs | Ported | `dsp/drums/`, `kits/`, `songs/`, `tools/` |
+| The chain | Ported and adapted | `src/AudioChain.*`: was a Teensy Audio Library object with 16-bit I/O, now a plain class with float I/O |
+| SD libraries, presets, settings, serial UI | Ported and adapted | `src/`, `lib/params`: built-in SDIO slot; codec and display code removed |
+| OLED panel, encoder, keys | **Not ported** | Decision: no panel on this build for now |
+| Teensyduino core, SD/SdFat, EEPROM, USB serial + MIDI | Framework | The PJRC Audio Library is not used |
+| NeuralAmpModelerCore | Reference only | Benchmark (`env:nam_bench`) and the golden test vectors |
 
----
+Third-party code that came along, with its notices kept in the file headers: hexefx_audiolib_F32 building blocks (MIT, Piotr Zapart), AudioDSPTools noise gate and DC blocker (MIT, Steven Atkinson), the NeuralAmpModelerCore example model (MIT), and AVL Drumkits samples (CC BY-SA 3.0, `kits/rock/CREDITS.md`).
+
+Porting rules: ported files keep the old project's formatting; only the namespace (`irdsp` → `dsp`), include paths and placement macros change. Fixes should be made so they can go back to teensy-ir-loader.
 
 ## 4. Architecture
 
@@ -121,69 +133,58 @@ Rule: the sum of worst-case stage costs per block, measured with the DWT cycle c
   - Implemented in the portable `dsp/Convert.h` and called from the block callback, so it is host-tested.
   - In: `(raw >> 8) * 2⁻²³` (the low byte is dropped).
   - Out: `x * 2²³`, saturated to [−2²³, 2²³−1], rounded, `<< 8`. NaN becomes 0.
-  - The guitar input is mono, wired to the ADC **right** channel (`kGuitarOnRightChannel` in `src/main.cpp`). The ADC left channel is spare: second input, re-amp, or expression input. **(Decide.)**
+  - The guitar input is mono, wired to the ADC **right** channel (`GUITAR_ON_RIGHT_CHANNEL` in `include/config.h`). The ADC left channel is spare: second input, re-amp, or expression input. **(Decide.)**
 - Instrumentation: DWT `CYCCNT` per stage, plus max/avg per block.
 - Overrun detection: an interrupt cannot pre-empt itself, so the handler checks at exit. It counts an overrun if its elapsed cycles exceed the block period, or if the next DMA half-interrupt is already pending.
 - Mute line: the driver supports an optional GPIO wired to the DAC's XSMT (`Config::mutePin`), held low during boot until the chain runs. It is currently not wired (`-1`), because the XSMT rework is deferred (§1 item 1b).
 - Fault path: on a streak of overruns the chain output is replaced with silence in software. A hard crash cannot be muted without the XSMT line; the DAC may replay the last buffer until reset.
 
-### 4.2 DSP engine: `lib/dsp` (portable, host-tested)
+### 4.2 DSP library: `lib/dsp` (portable, host-tested)
 
-- `dsp::Processor` interface:
-  - `prepare(fs, maxBlock)`, `process(float* buf, size_t n)` (mono), or a stereo variant.
-  - `reset()`, `setBypass(bool)` with a short crossfade, and `latencySamples()`, which must return 0 on the audio path.
-- `dsp::Chain` has fixed stage slots in a fixed order (§5). There is no dynamic graph and no allocation in `process`. All memory is reserved at `prepare()` from static arenas, and each arena's placement (DTCM, OCRAM or PSRAM) is chosen by the Teensy-side wrapper.
-- `dsp` code has no Arduino includes. Memory placement is passed in as pointers and sizes, so the same code runs in host tests.
+- Namespace `dsp`, no Arduino includes. Every block takes its memory from the caller, so the firmware decides what lives in DTCM, OCRAM or PSRAM and the same code runs in host tests.
+- Each effect documents its own threading model: setters are called from `loop()`, `process()` runs in the audio interrupt, and a setter either writes single values or fills a spare set and switches to it.
+- An effect that is off and has rung out goes idle: it costs no CPU and passes its input through bit-identically (`FxSlot`, `FxStage`).
 
-### 4.3 Control plane: `loop()`, `src/`
+### 4.3 The chain and the control plane: `src/`
 
-- **Parameter flow:** `loop()` writes a full `ChainParams` struct into the back buffer, then publishes it by setting an index (`std::atomic<uint32_t>`). The interrupt picks it up at the next block start. This needs no locks and guarantees the interrupt never sees a half-written struct.
-- **Smoothing:** continuous parameters (gains, mix, cutoff) are ramped per sample (one-pole or linear over 10–20 ms) to avoid zipper noise. Biquad coefficients are recomputed in `loop()` and swapped with the parameter set.
-- **Asset loading** (model, IR) happens entirely in `loop()`, into a staging buffer, followed by a hand-off (§6.2, §6.3). The interrupt never touches SD or calls `malloc`.
-- **Interfaces:**
-  - Serial shell: extends the existing `pollSerial`/`handleCommand` pattern in `src/main.cpp`.
-  - USB MIDI: program change selects presets; control changes are mapped to parameters.
-  - Later: footswitches, encoders, display.
-
----
+- `AudioChain::process(in, outL, outR)` runs the whole chain for one block. `src/main.cpp`'s callback converts the ADC words to float, calls it, and converts back.
+- `loop()` services the serial UI, the level meter and the delayed EEPROM save. File loading (IRs, models, presets, MIDI drum files) runs here; the audio never stops for it.
+- Settings live in one table (`lib/params` `ParamDefs.cpp`): serial key, name, range, default and unit. The serial commands, the EEPROM record and the preset files all read it. `Params.cpp` says what each setting does.
+- The table is identical to teensy-ir-loader's, so presets and the EEPROM layout are interchangeable. Three of its settings (`in`, `out`, `hp`) were codec levels and do nothing on this hardware.
+- Cold code is kept out of RAM1 by `tools/imxrt1062_t41_cold.ld`; `tools/check_hot_code.sh` verifies that no audio-path function was linked into flash. This matters: before the rule was tightened, the NAM inner loops had landed in flash.
 
 ## 5. Signal chain
 
 ```
-ADC R ─► [1] input cal + DC block ─► [2] noise gate ─► [3] comp ─► [4] boost/drive
-      ─► [5] NAM A2-Lite ─► [6] IR cab ─► [7] EQ ─► [8] mod (chorus)
-      ─► [9] delay ─► [10] reverb ─► [11] stereo out: level + safety clip ─► DAC L/R
-                      └── mono → stereo split at [9] (ping-pong delay, stereo reverb)
+ADC R ─► amp (NAM A2-Lite, optional: DC blocker, tone stack)
+      ─► noise gate (listens to the input, gates after the amp)
+      ─► IR convolution (cab) ─► bypass blend × output gain          mono
+      ─► doubler ─► studio 80s delay ─► 80s reverb (hall / gated)     stereo
+      ─► + drums and bass (never through the guitar effects) ─► DAC L / R
 
-tuner tap after [1]  →  ring buffer  →  pitch detection in loop()
+tuner tap on the input (decimated to 24 kHz) → pitch detection in loop(); mutes the guitar
 ```
 
-| # | Stage | Algorithm | Memory | Approx. CPU |
-| --- | --- | --- | --- | --- |
-| 1 | Input cal + DC block | Gain from calibration (§6.1) plus a 1-pole HPF at about 10 Hz | DTCM | < 0.5 % |
-| 2 | Noise gate | Envelope follower with hysteresis and attack/hold/release. Always detects on the clean input. Where the gain reduction is applied is a parameter: before NAM, after the IR, or both. Gating only in front does not silence a high-gain model that amplifies residual input noise, so "after" is the default for high-gain presets. | DTCM | < 0.5 % |
-| 3 | Compressor (opt.) | Feed-forward, peak/RMS detector, no lookahead | DTCM | ~1 % |
-| 4 | Boost / drive (opt.) | Clean boost plus tone (biquad) at first. A drive stage would be a second small NAM, or static waveshaping with an anti-aliasing compromise. **(Decide later; oversampling is banned, §2.2.)** | DTCM | ~1 % |
-| 5 | **NAM A2-Lite** | §6.2 | DTCM | ≤ 50 % |
-| 6 | **IR cab** | §6.3 | OCRAM | ~4 % |
-| 7 | EQ | 5-band parametric plus low/high cut, built on `dsp::Biquad` (CMSIS DF2T cascade on target) | DTCM | ~1 % |
-| 8 | Modulation | Chorus/flanger: modulated short delay, linear or Hermite interpolation, max 30 ms | DTCM | ~1 % |
-| 9 | Delay | Up to 2.5 s, feedback with filtering, tap tempo, ping-pong. Block-wise PSRAM access (§7). | PSRAM, plus a scratch buffer in DTCM | ~2 % |
-| 10 | Reverb | 8-line FDN (Householder matrix) or Dattorro plate, with damping and pre-delay | OCRAM | ~5 % |
-| 11 | Output | Master level, soft safety clip just below 0 dBFS, 24-bit conversion. No dither is needed, since float→24-bit truncation noise is far below the DAC's 112 dB. | – | < 0.5 % |
+| Stage | What it does | Memory |
+| --- | --- | --- |
+| Amp | A2-Lite network, input and output gains, 5 Hz DC blocker, bass / middle / treble / presence. Click-free on/off and model swap; 132 ms warm-up after a load. | History 87 KB in DTCM |
+| Noise gate | Hard gate with adjustable release (default), or the NAM plugin's expander | – |
+| Cab IR | Up to 4096 samples, 25 ms crossfade between IRs, passthrough with none loaded | Spectra in DTCM |
+| Doubler | A second "take" 1–35 ms later, panned opposite | 8 KB, OCRAM |
+| Delay | Dual delay, 20–750 ms, ducking, drive, "era" | 144 KB DTCM + 144 KB OCRAM |
+| Reverb | Hall (8-line FDN) or gated, pre-delay, "era" | 148 KB, OCRAM |
+| Drums, bass | Sampled or synthesized kit, styles, songs, MIDI files, speed trainer | Kits in flash |
 
-Every stage has bypass (with a 5–10 ms crossfade) and its own cycle meter. Spillover of delay and reverb tails across preset changes is a nice-to-have.
-
----
+Planned in the first draft and not in the ported chain: compressor, chorus/flanger and a multi-band parametric EQ. They move to a "later" list (§13).
 
 ## 6. Core components in detail
 
 ### 6.1 Input calibration
 
-- At the ADC pins, 0 dBFS = 1.06 Vrms ≈ +2.7 dBu **(verify by measurement)**. With a preamp of gain G dB, 0 dBFS at the guitar jack = (2.7 − G) dBu.
-- NAM model metadata carries `input_level_dbu`: the dBu level that maps to 0 dBFS during capture. The digital trim is `trim_dB = (2.7 − G) − input_level_dbu`, so the model sees the same drive level as the real amp did.
-- Use `output_level_dbu` and loudness metadata the same way, to level-match between models.
-- Fall back to a manual input trim when a model has no metadata.
+- At the ADC pins, 0 dBFS = 1.06 Vrms ≈ +2.7 dBu **(datasheet value, not yet measured)**: `ADC_FULL_SCALE_DBU` in `include/config.h`. A buffer in front adds its loss as `INPUT_PAD_DB` (0 now; teensy-ir-loader's TL072 buffer is −6 dB).
+- With `amp cal` on, the gain into the model is that full scale minus the model's `input_level_dbu` (or minus +12 dBu, the NAM plugin's default, for an uncalibrated capture). For the example model: 2.7 − 14.76 = −12.1 dB.
+- The model's output is levelled to −12 dB loudness (`AMP_LEVEL_DB`) from the file's `loudness`, plus the `amp out` setting.
+- There is no input gain control on this hardware, so a guitar's level at the ADC is what it is until a preamp exists (§1 item 1).
 
 ### 6.2 NAM A2-Lite
 
@@ -242,7 +243,7 @@ Measured on the board with `env:nam_bench` (`hw_tests/nam_bench.cpp`): NeuralAmp
 | 32 | OCRAM, 87 KB | 4,511 | 36.1 % | 38.0 % | – |
 
 - **Correct:** on the board and on the host, the output matches NeuralAmpModelerCore on the golden test signal to a maximum error of 4.8e-7, 130 dB below the signal (`test/test_nam_a2`, fixtures in `test/fixtures/nam`). All block sizes give identical output.
-- **About half the CPU of the reference engine**, with a steady worst case, and almost no penalty for small blocks. **B = 16 is now possible**: NAM 35 % + IR about 7 % + driver 2 % leaves about 36 % for effects, and would cut latency by 0.67 ms. B stays 32 until the rest of the chain exists; revisit at M5.
+- **About half the CPU of the reference engine**, with a steady worst case, and almost no penalty for small blocks. **B = 16 is now possible**: NAM 35 % + IR about 7 % + driver 2 % leaves about 36 % for effects, and would cut latency by 0.67 ms. B stays 32 for now; the rest of the chain's costs at 16 are not measured (§12, next steps).
 - **DTCM matters:** the same engine with its history in OCRAM costs 36.1 %.
 - **Model files are read directly:** `dsp::readNamA2Lite` streams a `.nam` JSON file (A2 container or plain A2-Lite WaveNet) and extracts the Lite weights and metadata. The 666 KB example file parses in 43 ms from flash on the board; from SD it will be slower **(measure)**. So **no host converter and no `.namb` format are needed**: copy `.nam` files to the SD card. Files that are not A2 are refused with a message.
 - No Eigen, JSON library, exceptions or heap: the reference engine is now only a benchmark and the source of golden vectors.
@@ -251,191 +252,139 @@ Measured on the board with `env:nam_bench` (`hw_tests/nam_bench.cpp`): NeuralAmp
 - Input gain defaults to the model's calibration (`kAdcFullScaleDbu` 2.7 − `input_level_dbu` 14.76 = −12.1 dB); output defaults to loudness normalisation to −18 dB (+6.0 dB for this model). Both have serial trims (`g`, `v`).
 - The model always runs, so switching the amp on and off (`a`) has no gap; the output is muted for the 132 ms warm-up after boot, then faded in.
 - With nothing playing, the input peaks at about −84 dBFS and the amp output at about −53 dBFS: the model adds about 30 dB of gain to the input noise, so a noise gate is needed (§5 stage 2).
-- Not done yet: loading from SD, model switching, the DC blocker and the gate.
+- This simple path was then replaced by the ported `AmpStage` inside `AudioChain` (§5): model switching, the DC blocker, tone controls and the gate come with it.
 
 **How the engine works (design notes for further tuning):**
 - A layer at a time over the whole block; two taps per pass with their 18 weights held in registers; one more pass for LeakyReLU, the head sum and the 1x1 residual, written straight into the next layer's ring buffer.
 - One ring buffer per layer, sized to the taps' reach plus a block, so every block costs the same.
 - Remaining levers, from the earlier project's measurements: hand-written assembly for the tap passes (about −3 % CPU) and 720 MHz overclock (not planned).
 
-**Model loading and switching:**
-- `.nam` files are copied to the SD card under `/models/` as downloaded.
-- `loop()`:
-  1. Stream the `.nam` file through `dsp::readNamA2Lite` into a staging weight buffer (1,871 floats). A small cache file next to the model can skip the JSON parse on later loads, as in teensy-ir-loader (`NamCache.h`), if SD parsing proves slow.
-  2. Validate (architecture = A2, Lite variant, 48 kHz).
-  3. Ask the interrupt to fade out (10 ms). The interrupt then skips the NAM stage.
-  4. `loop()` swaps the weights and clears the history. Clearing about 150 KB is too slow to do inside one block, which is why it happens here and not in the interrupt.
-  5. **Prewarm**: the interrupt runs the new model on silence for the receptive field (132 ms) with output muted, because biases make "zeroed state" differ from "steady state".
-  6. Fade in.
-- A model change therefore causes about 150 ms of silence, which is acceptable for preset changes. Crossfading two NAMs is not possible within the CPU budget.
+**Model loading and switching (as ported, `AmpLibrary` + `AmpStage`):**
+- `.nam` files are copied to `/AMP` on the SD card as downloaded. `loop()` streams the file through `dsp::readNamA2Lite` into a staging buffer, or reads the model's 7.7 KB cache file if it has one.
+- With the amp on, a new model is swapped in within a 20 ms fade to silence, the network warms up for its receptive field (132 ms) in silence, then fades back in: a gap of about 170 ms. With the amp off the weights are just swapped.
+- Switching the amp on keeps the dry signal during the warm-up, then crossfades to the amp in 20 ms. Switching it off stops the network, so it costs no CPU.
 
 **Scope: NAM A2 only (A2-Lite).** A1 models are not supported, loaded, or benchmarked; the loader rejects them.
 
-### 6.3 IR loader (cab simulation)
+### 6.3 IR loader (cab simulation), as ported
 
-- **Format:** mono WAV, 48 kHz, up to **2048 taps (43 ms)**. A host tool `tools/ir_prep` resamples, trims, and normalises to 32-bit float WAV. The device accepts only 48 kHz and rejects anything else, so it never resamples.
-- **Algorithm:** uniformly partitioned overlap-save convolution (UPOLS) with partition size = B and FFT size = 2B. It **adds no latency** beyond the I/O block.
-  - B = 32: 64 partitions, FFT size 64, 33 bins.
-  - Per block: 1 real FFT, 64 × 33 complex multiply-accumulates, 1 inverse FFT. About 15 k cycles, or about 4 % CPU.
-  - A direct 2048-tap FIR would cost about 20 %, so it is used only as the test reference.
-  - At B = 16 the per-sample cost doubles (128 partitions). If B = 16 is chosen and the IR share matters, fall back to two-stage partitioning: a head at B and a tail at 4·B or 8·B, with the tail's work spread evenly across blocks. This still adds no latency.
-- **Memory:** IR spectra plus the input frequency-domain delay line ≈ 2 × 17 KB, in OCRAM (DMAMEM, cached).
-- **Switching:** a new IR is transformed in `loop()` into a second convolver instance, and the interrupt **crossfades** the two over about 20 ms with no gap. Two convolvers run only during the crossfade.
-- **Options:** IR level normalisation; low/high cut implemented with `dsp::Biquad`. Optional dual-IR blend (two convolvers, about 8 %) if budget allows.
+- **Files:** WAV in the card's root or `/IR`: mono or stereo, 8/16/24/32-bit PCM or 32/64-bit float, including `WAVE_FORMAT_EXTENSIBLE`, at any rate from 8 to 384 kHz.
+- **On load** (in `loop()`): streamed from the card, resampled to 48 kHz with a windowed-sinc kernel, leading silence and inaudible tail trimmed, cut at 4096 samples with a fade, and loudness-normalised.
+- Resampling an IR file once at load is file preparation, not sample-rate conversion in the audio path. So the first draft's rule "reject non-48 kHz files, prepare them with a host tool" is dropped.
+- **Convolution:** uniformly partitioned overlap-save with partition = block size, so it adds no latency. Two spectrum sets share one input history, so a new IR is crossfaded in over 25 ms without clicks.
+- The 56 KB resampler table is only used while loading, so on this board it lives in PSRAM.
 
 ### 6.4 Tuner
 
-- The interrupt copies the post-input signal, decimated 4× (12 kHz), into a ring buffer.
-- `loop()` runs YIN/McLeod pitch detection on it, using no audio-thread CPU.
-- Tuner mode can mute the output.
+- The chain copies the input, low-passed and decimated to 24 kHz, into a ring; `loop()` runs YIN on it. The guitar is muted while the tuner is open, before the delay and reverb so their tails ring out.
 
----
+## 7. Memory map (as built, from `teensy_size`)
 
-## 7. Memory map
+| Region | Used | Free | What is there |
+| --- | --- | --- | --- |
+| RAM1 code (ITCM) | 64 KB | – | The audio path only; background code stays in flash |
+| RAM1 data (DTCM) | 362 KB | 96 KB for the stack | NAM history (87 KB), one delay line (144 KB), the convolver's spectra and history, effect state |
+| RAM2 (OCRAM) | 449 KB | 75 KB heap | The other delay line (144 KB), reverb (148 KB), file lists, load buffers, DMA buffers |
+| PSRAM | 57 KB | about 7.9 MB | IR resampler table. Free for a longer delay or a looper later; measure before using it per sample. |
+| Flash | about 1.6 MB | 6.5 MB | Code, the built-in example model (666 KB as JSON), drum kits |
 
-| Region | Size | Use |
-| --- | --- | --- |
-| ITCM (RAM1) | shared 512 KB | `FASTRUN` hot code: interrupt handler, NAM kernels, convolution MAC loop |
-| DTCM (RAM1) | (rest of 512 KB) | NAM weights and history (130–150 KB), small DSP state (gate, comp, EQ, chorus ≤ 30 ms ≈ 6 KB), per-block scratch, parameter sets |
-| OCRAM (RAM2, `DMAMEM`) | 512 KB | DMA buffers (1 KB), IR spectra and delay line (~34 KB ×2 during crossfade), reverb delay lines (~128 KB), asset staging buffers, heap |
-| PSRAM (`EXTMEM`) | 8 MB | Delay line (2.5 s × 2 ch × 4 B ≈ 1 MB), future looper. **Zeroed in `setup()`** (not initialised at boot). Accessed block-wise with memcpy to and from DTCM scratch, never with scattered per-sample reads (≈ 0.9 µs per cache miss). |
-| SD card | – | `/models/*.nam`, `/irs/*.wav`, `/presets/*.json` |
+- The NAM history must stay in DTCM: in OCRAM the engine costs 36.1 % instead of 32.4 %.
+- RAM1 is the tight one. The two things that keep it workable are the cold-code linker script and reading model files as a stream.
 
-RAM1 is shared between code (ITCM) and data (DTCM), and Teensyduino places all code in ITCM by default. Cold code (SdFat, ArduinoJson, the shell, the loaders) is marked `FLASHMEM` so that it stays in flash and leaves RAM1 for the NAM state.
+## 8. Presets, settings and control (as ported)
 
----
+- **Presets:** whole sounds as plain text files in `/PRESETS` on the card (amp and model, gate, IR, doubler, delay, reverb, level). Not JSON, so no ArduinoJson.
+- **Settings:** the last IR and model, levels and every effect and drum setting, in EEPROM, saved a moment after the last change.
+- **Models:** `.nam` files in `/AMP`. A 7.7 KB cache per model in `/AMP/.cache` makes later loads fast. With no model on the card, a built-in example model is listed.
+- **Serial UI:** `?` lists the commands; `s` prints the status with per-stage CPU, driver overruns and levels; `m` shows a live meter. Every setting has a key from the table (`amp on`, `dl on`, `dtime 380`, `rv on`, `pre ...`, `drum ...`).
+- **USB MIDI:** enumerated, incoming messages are drained, nothing is mapped yet.
+- **Not here:** the OLED panel and its controls (teensy-ir-loader's `DISPLAY.md`). Pins 2, 3, 4, 5, 9, 16, 17 are free if it is added later.
+- For details of each block see teensy-ir-loader's `NAM.md`, `DELAY.md`, `REVERB.md`, `PRESETS.md` and `DRUMS.md`; they describe the same code.
 
-## 8. Presets and control
+## 9. Build environments
 
-- **Preset** = JSON on SD:
-  - model file and IR file names
-  - per-stage bypass and parameters
-  - input trim, output level
-  - MIDI mappings
-- 128 presets are addressable through MIDI program change.
-- **Serial shell** (extends the current command parser):
-  - `s` stats: CPU per stage, max cycles, missed deadlines, latency setting
-  - `p <n>` preset
-  - `m <file>` model
-  - `ir <file>` IR
-  - `set <stage>.<param> <value>`
-  - `bypass <stage>`
-  - `save <n>`
-- **USB MIDI:**
-  - program change → preset
-  - control change → mapped parameters (expression on CC 11, etc.)
-  - tap tempo on a CC
-- **Physical controls** (M6, hardware TBD): 2–3 footswitches (bypass, preset up/down, tap), 4 encoders, and a small OLED.
-
----
-
-## 9. Build configuration changes
-
-- `env:teensy41`:
-  - `-D USB_MIDI_SERIAL`
-  - remove `AUDIO_BLOCK_SAMPLES` and `AUDIO_SAMPLE_RATE_EXACT`
-  - add `-D DSP_FS=48000 -D DSP_BLOCK=32`
-  - benchmark `TEENSY_OPT_FASTEST` (-O3) against -O2 for the DSP path
-  - add `-fno-math-errno`; evaluate `-ffast-math` for `lib/dsp` only. The host tests must use the same math flags as the target, or golden-vector comparisons will drift.
-- `env:nam_bench` (exists): `hw_tests/nam_bench.cpp`, the NAM reference engine run over a buffer with cycle counts, no audio I/O. `scripts/nam_core.py` fetches pinned NeuralAmpModelerCore and Eigen into `third_party/` (git-ignored).
-- New native program `tools/render` (§10): WAV in → `dsp::Chain` → WAV out.
-- `env:i2s_loopback` (exists): `hw_tests/i2s_loopback.cpp`, the driver self-test on the bare board with a pin 7 → pin 8 jumper.
-- New `env:i2s_bringup` (M0): `hw_tests/i2s_bringup.cpp` with Teensy4i2s as a `lib_deps` git dependency, `USB_SERIAL`. Contents: sine out, passthrough, 24-bit bit-activity check, input noise RMS.
-- New `env:latency_test`: impulse out → analog loopback → measured round trip in samples.
-- `env:native` (host tests): unchanged, plus NeuralAmpModelerCore for golden-vector generation, or golden vectors checked in as binary fixtures. **(Decide at M1.)**
-
----
-
-## 10. Testing strategy
-
-**Host (`pio test -e native`, Unity)**, one suite per algorithm, written before any hardware testing (per `CLAUDE.md`):
-
-| Test | Checks |
+| Env | What it is |
 | --- | --- |
-| `test_biquad` (exists) | Response, stability |
-| `test_convolver` | UPOLS against direct FIR on random IRs and inputs (error < −120 dB); latency = 0; IR swap crossfade has no clicks |
-| `test_nam_a2` | Golden vectors from the reference engine; receptive field; prewarm reaches steady state; no denormal slowdown on silence |
-| `test_dynamics` | Gate and compressor thresholds and time constants |
-| `test_delay`, `test_reverb` | Feedback stability at maximum settings; decay time; no DC build-up |
-| `test_chain` | Stage order, bypass crossfades, parameter swap, `latencySamples() == 0` for all stages |
-| `test_convert` | int24↔float round trip, clamp at ±1, no overflow at full scale |
+| `teensy41` (default) | The firmware. `USB_MIDI_SERIAL`, `DSP_BLOCK=32`, cold-code linker script, drum kits and songs compiled by `tools/pio_kits.py`. |
+| `native` | Host unit tests (`pio test -e native`) |
+| `i2s_loopback` | Driver self-test on a bare board (jumper pin 7 → 8). Not with the converters attached. |
+| `nam_a2_bench` | Own NAM engine: on-board check against the reference output, and CPU cost |
+| `nam_bench` | Reference NAM engine CPU cost (fetches NeuralAmpModelerCore and Eigen into `third_party/`) |
+| `psram_test`, `psram_deep` | PSRAM hardware tests |
 
-**Host offline renderer (`tools/render`):** a native program that runs a WAV file through the same `dsp::Chain` code as the firmware and writes a WAV. It serves two purposes:
-- Development and listening tests for NAM, IR and effects using DI recordings, before the hardware and preamp are ready.
-- Regression checks: render a fixed input with a fixed preset and compare with a stored reference file.
+## 10. Tests
 
-**On target:**
-- Driver self-test (`env:i2s_loopback`, bare board plus one jumper): sample rate is 48 kHz, every bit of every word survives TX → RX, round-trip delay in frames, no errors at 50 % and 80 % callback load, overruns are detected and the driver recovers, then a soak.
-- Bring-up checklist from the hardware doc.
-- 24-bit check: bits 15–8 of the raw words are active.
-- CPU per stage with `CYCCNT`, at worst-case settings, for 10 minutes with no missed deadlines.
-- Latency measured by analog loopback and compared with §2.2.
-- Noise floor with inputs shorted.
-- Model and IR switching while playing.
-- SD and USB traffic during audio, with no glitches.
+**Host (`pio test -e native`): 15 suites, all passing.** The suites ported from teensy-ir-loader run its original checks unchanged inside one Unity test each.
 
----
+| Suite | Covers |
+| --- | --- |
+| `test_convert` | 24-bit ↔ float: exact round trip, saturation, NaN |
+| `test_nam_a2` | Engine against NeuralAmpModelerCore (max error 4.8e-7, 130 dB below the signal), block sizes, reset |
+| `test_nam` | Amp stage switching and model swap, both gates against a reference, DC blocker, tone stack |
+| `test_namfile` | `.nam` reader: key orders, wrong architectures, damaged files, the weights cache |
+| `test_convolver`, `test_irloader` | Convolution against direct FIR, IR crossfade; WAV formats, resampling, trimming, normalisation |
+| `test_fxstage`, `test_studio_delay`, `test_reverb80`, `test_doubler`, `test_pitch` | The effects and the tuner |
+| `test_drums`, `test_bass`, `test_midi` | Drum machine, bass, MIDI drum files |
+| `test_presets` | Settings table and preset files |
 
-## 11. Repository layout (target)
+**On the board:**
+- Done: clean passthrough by ear; own NAM engine matches the reference; amp, doubler, delay and reverb running with no overruns; drums running.
+- After every change to the linker script or the audio path: `tools/check_hot_code.sh`.
+- Not done: IR loading, model loading and presets from a real SD card; latency by analog loopback; 24-bit bit activity; a long soak with everything on; a listening check of the delay, reverb and drums on this hardware.
+
+## 11. Repository layout
 
 ```
 lib/
-  i2s32/           SAI1 + eDMA 48 kHz / 32-bit driver (Teensy only)
-  dsp/src/dsp/
-    Biquad.h       (existing)
-    Processor.h  Chain.h  Params.h  Smoother.h  Convert.h
-    nam/           NamA2.h (A2-Lite engine), NamFile.* (.nam reader), GoldenSignal.h
-    conv/          UPOLS convolver, FFT abstraction (CMSIS on target, simple FFT on host)
-    fx/            gate, comp, eq, chorus, delay, reverb, tuner
-src/
-  main.cpp         setup, interrupt hook → Chain, loop: shell / MIDI / loaders
-  control/         serial shell, MIDI map, presets (ArduinoJson), asset loaders (SdFat)
-hw_tests/
-  psram_*.cpp      (existing)  i2s_bringup.cpp  nam_bench.cpp  latency_test.cpp
-tools/
-  ir_prep/         resample / trim / normalise IRs to 48 kHz
-  render/          host WAV → Chain → WAV renderer
-test/              Unity suites (§10)
+  i2s32/                 I2S driver (Teensy only)
+  dsp/src/dsp/           portable DSP, namespace dsp
+    Convert.h  ByteSource.h  Port.h  Blocks.h  Fft.h
+    nam/                 NamA2.h  NamFile.*  NamCache.h  AmpStage.h  GoldenSignal.h
+    conv/                PartitionedConvolver.h  IRLoader.*
+    fx/                  NoiseGate  ToneStack  Doubler  StudioDelay  Reverb80  FxSlot  FxStage  PitchDetect
+    drums/               DrumMachine  DrumPatterns  MidiDrums  PluckBass  (+ generated kit and song data)
+  params/                ParamDefs.*  PresetFile.*
+src/                     main.cpp  AudioChain.*  IRLibrary  AmpLibrary  PresetLibrary  Params  Settings
+                         SerialUI  Tuner  DrumSongs  SdSource.h
+include/config.h         compile-time settings and hardware constants
+hw_tests/                psram_*.cpp  i2s_loopback.cpp  nam_bench.cpp  nam_a2_bench.cpp
+tools/                   imxrt1062_t41_cold.ld  check_hot_code.sh  make_kits.py  make_songs.py  import_kit.py  pio_kits.py
+scripts/                 system_headers.py  nam_core.py
+kits/  songs/            drum kit samples and built-in songs
+test/                    Unity suites and test/fixtures/nam
 ```
-
-`lib/audio_fx/` is removed at M2. `CLAUDE.md` is updated at M2 to cover the new hardware, 48 kHz / 24-bit, no Audio Library, and the new commands.
-
-The FFT used in the convolver must also run on the host, where CMSIS is unavailable. A thin `dsp::RealFft` wrapper selects CMSIS on target and a small radix-2 FFT on the host.
-
----
 
 ## 12. Milestones
 
-| M | Deliverable | Exit criteria |
+| M | Deliverable | State |
 | --- | --- | --- |
-| M0 | Hardware bring-up with Teensy4i2s | Hardware doc checklist passes; sine out; passthrough; 24-bit bits active; noise RMS logged. Boards as built (no re-soldering). |
-| M1 ✔ (benchmark done: go, B = 32) | **NAM A2-Lite benchmark (go/no-go).** A2-Lite models only. Reference core with the A2 fast path on the Teensy, no audio I/O. Host build produces golden vectors. Choose B (16 or 32). | A2-Lite cycles per sample measured at B = 16/32/48; CPU budget in §2.1 confirmed or revised; golden vectors generated |
-| M2 | Own driver `lib/i2s32` plus float passthrough chain, serial stats, `USB_MIDI_SERIAL`, software fault path (silence on overrun streak). Host renderer `tools/render`. | Round-trip latency measured ≈ 2·B + converter delays; zero overruns; Audio Library removed |
-| M3 | IR loader (UPOLS) plus SD loading and crossfade | Matches FIR reference; ~4 % CPU; glitch-free IR swap |
-| M4 (engine ✔) | NAM A2-Lite in the chain: model loading from SD, prewarm, calibration. The engine itself is done (32.4 % at B = 32, matches the reference). | Guitar through a real model on the board, inside the 80 % rule |
-| M5 | Gate, comp, EQ, chorus, delay (PSRAM), reverb, tuner; presets plus MIDI | All host tests pass; worst-case CPU ≤ 80 % |
-| M6 | Switchable-gain preamp (hardware) plus physical controls | Calibrated input; footswitch and encoder UI |
+| M0 | Hardware bring-up | Done by ear (clean passthrough). Measurements (24-bit activity, noise floor) not done. |
+| M1 | NAM A2-Lite benchmark | Done: reference engine 62.5 %, own engine 32.4 % at 32-sample blocks |
+| M2 | Own I2S driver | Done and running. Latency measurement and the software fault path are open. |
+| M3 | IR loader | Ported and host-tested. Not yet exercised with a real SD card. |
+| M4 | NAM in the chain | Done with the built-in model. Loading from SD not yet exercised. |
+| M5 | Effects, presets, drums | Ported and running. Listening check and SD presets open. |
+| M6 | Input preamp, physical controls | Not started. The OLED panel code exists in teensy-ir-loader. |
 
-**Progress (Nov 2026):** the converter boards were not wired yet, so the driver part of M2 was built first: `lib/i2s32`, `dsp/Convert.h` with host tests, the loopback self-test, and a passthrough `src/main.cpp` on `USB_MIDI_SERIAL`. The Audio Library and `lib/audio_fx` are gone. Passthrough was then confirmed on the wired boards. Still open in M2: the latency measurement with converters, the fault path, and `tools/render`. M1 is next.
-
-The order puts the largest risk first: M1 needs only the bare Teensy, so it can run in parallel with M0. A unity-gain Hi-Z input buffer (§1 item 1) should be built alongside M2, since everything judged by ear after that depends on it.
-
----
+Next steps, in order:
+1. Put an SD card in the Teensy 4.1 slot with IRs in `/IR` and A2 models in `/AMP`; check loading, presets and the worst-case CPU with a long IR.
+2. Measure latency and the input level of a real guitar; decide on the input buffer.
+3. Revisit 16-sample blocks: the amp is 35 % there, but the convolver and effects costs rise too.
 
 ## 13. Risks and open items
 
 | Risk / question | Impact | Mitigation |
 | --- | --- | --- |
-| `.nam` parse time from SD is unmeasured (43 ms from flash) | Slow preset changes | Measure at M4; add the weights cache file if needed. |
-| Datasheet figures quoted from memory (ADC/DAC group delay, full-scale levels, PCM1808 LSB padding) | Latency and calibration numbers off | Measure in M0/M2 and update this doc. |
-| DAC cannot be muted by firmware (XSMT rework deferred) | Buzz on a firmware crash; possible pop on boot or flash | Volume down before flashing or resetting. Revisit the rework before the unit is used with an amp at volume. |
-| No Hi-Z input yet | Tone cannot be judged with a guitar plugged straight in | Build the unity-gain buffer alongside M2. Use a buffered pedal or DI until then, and DI recordings through `tools/render`. |
-| Audio interrupt priority above USB | Possible USB jitter | Keep the interrupt under 80 % of the block period. Test the serial shell under load. |
-| PSRAM access from the interrupt | Cache-miss stalls | Block-wise memcpy only; delay is the only PSRAM user. |
-| USB 5 V feeds the ADC analog supply | Higher noise floor | Clean 5 V or LDO from an external supply later (already in the hardware doc). |
-| ADC left channel use (guitar is on the right) | – | Decide: second input, re-amp, or expression pedal. |
-
----
+| Worst-case CPU with a long IR, busy drums and everything on is unmeasured here (expected near 80 %) | Overruns | Measure with an SD card; cap the IR at 2048 while the amp is on; 64-sample blocks as a fallback |
+| SD paths are ported but untested on this board (built-in SDIO instead of SPI) | IR, model and preset loading may need fixes | First thing to test with a card |
+| No Hi-Z input and no input gain | Dull, quiet guitar; calibration off by the unknown loss | Build the buffer; set `INPUT_PAD_DB` |
+| ADC full-scale level is a datasheet figure | Amp drive level off by a few dB | Measure with a known signal; adjust `ADC_FULL_SCALE_DBU` |
+| DAC cannot be muted by firmware (XSMT rework deferred) | Buzz on a firmware crash; possible pop on boot or flash | Volume down before flashing or resetting |
+| A hot function linked into flash | Large, silent CPU increase | `tools/check_hot_code.sh` after linker-script or audio-path changes |
+| Engine speed depends on the compiler's register allocation | CPU could change with a toolchain update | Re-run `env:nam_a2_bench` after toolchain changes |
+| Two copies of the ported code (here and teensy-ir-loader) | Fixes drift apart | Keep ported files close to the original; port fixes both ways |
+| RAM2 heap is 75 KB | Tight if more load buffers are added | PSRAM for load-time buffers |
+| Later features | – | Compressor, chorus, parametric EQ, USB MIDI mapping, OLED panel, 16-sample blocks, longer delay or looper in PSRAM |
 
 ## Sources
 
