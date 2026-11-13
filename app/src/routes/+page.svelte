@@ -3,7 +3,8 @@
   // block's controls. Everything is built from the device's settings table and the block
   // definitions shared with the unit's own UI (protocol/blocks.json).
   import { onMount } from "svelte";
-  import { blockActive, blockOn, blockOnValue, buildBlocks, type Block } from "$lib/blocks";
+  import { blockActive, blockOn, blockOnValue, blockPeak, buildBlocks, type Block } from "$lib/blocks";
+  import LevelBar from "$lib/controls/LevelBar.svelte";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
   import { cancelOffer, cardFile, connectDevice, device, dropping, meters, notice, offered, pickFiles, presetAction, preview, sendFiles, setParam, setTuner, transfer } from "$lib/device.svelte";
@@ -85,6 +86,15 @@
     return out;
   });
   const factsOf = (b: Block) => (b.def.file === "model" ? modelFacts : b.def.file === "ir" ? irFacts : []);
+
+  // The level at a block's output. The Output block's is the unit's output itself.
+  const peakOf = (b: Block): number | null => (b.def.id === "output" ? meters.outputPeak : blockPeak(b, meters));
+  // The level bars on the tiles can be switched off; the choice is remembered.
+  let showLevels = $state(typeof localStorage === "undefined" || localStorage.getItem("levels") !== "off");
+  function toggleLevels() {
+    showLevels = !showLevels;
+    localStorage.setItem("levels", showLevels ? "on" : "off");
+  }
 
   const cpuOf = (b: Block): number | null =>
     ({ amp: meters.cpuAmp, doubler: meters.cpuDoubler, delay: meters.cpuDelay, reverb: meters.cpuReverb, drums: meters.cpuDrums })[b.def.id] ?? null;
@@ -174,7 +184,9 @@
       return; // a question is open: it has the keyboard
     }
     if (t.closest("input, select, button, [role=slider]")) return;
-    if (e.key === "t" || e.key === "T") {
+    if (e.key === "l" || e.key === "L") {
+      toggleLevels();
+    } else if (e.key === "t" || e.key === "T") {
       if (device.connected) setTuner(!meters.tunerOpen);
     } else if (meters.tunerOpen) {
       return; // the tuner has the keyboard
@@ -250,6 +262,7 @@
       <button class="save" disabled={!current || !device.files.edited} title="Write the sound over this preset (Cmd-S)" onclick={() => presetAction("save")}>Save</button>
       <button class="save" disabled={!device.files.card} title="Save the sound as a new preset" onclick={() => startNaming("new")}>Save as…</button>
       <button class="save" title="Tuner (T): mutes the guitar while it is open" onclick={() => setTuner(true)}>Tuner</button>
+      <button class="save" class:lit={showLevels} aria-pressed={showLevels} title="Show each block's output level on its tile (L)" onclick={toggleLevels}>Levels</button>
     </div>
     <div class="meters">
       <Meter label="IN" peak={meters.inputPeak} />
@@ -381,6 +394,7 @@
             <span class="gate" class:open={meters.gateGain > 0.5} title={meters.gateGain > 0.5 ? "Open" : "Closed"}></span>
           {/if}
         </button>
+        {#if showLevels && peakOf(b) !== null}<LevelBar peak={peakOf(b) ?? 0} />{/if}
         {#if b.on}
           <button class="power" aria-label="{b.def.name} {isOn(b) ? 'off' : 'on'}" title="Switch {isOn(b) ? 'off' : 'on'}" onclick={() => toggle(b)}>
             <svg viewBox="0 0 16 16"><path d="M8 2v6M4.5 4.6a5 5 0 1 0 7 0" /></svg>
@@ -422,6 +436,7 @@
         <button class="choose" onclick={() => (tab = selected.def.file === "model" ? "models" : "irs")}>Choose…</button>
       {/if}
       <span class="grow"></span>
+      {#if peakOf(selected) !== null}<span class="stagecpu">Out</span><LevelBar text peak={peakOf(selected) ?? 0} />{/if}
       {#if cpuOf(selected) !== null}<span class="stagecpu" title="This block's share of the processing time">{cpuOf(selected)?.toFixed(1)}% CPU</span>{/if}
       {#if selected.on}
         <button class="onoff" class:on={isOn(selected)} onclick={() => toggle(selected)}>
@@ -913,7 +928,7 @@
     background: none;
     border: 0;
     border-radius: 12px;
-    padding: 12px 12px 10px;
+    padding: 12px 12px 13px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -938,10 +953,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .save.lit {
+    background: #2d323c;
+    color: #fff;
+  }
   .gate {
     position: absolute;
     right: 12px;
-    bottom: 14px;
+    bottom: 16px;
     width: 7px;
     height: 7px;
     border-radius: 50%;

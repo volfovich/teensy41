@@ -76,6 +76,9 @@ pub struct Meters {
     pub drums_playing: bool,
     pub muted: bool,
     pub tuner_open: bool,
+    /// The peak at each block's output, in chain order: amp, gate, cab, doubler, delay, reverb.
+    /// Above 1.0 is over full scale. Empty from firmware that does not measure them.
+    pub stage_peaks: Vec<f32>,
 }
 
 /// A preset on the unit's SD card.

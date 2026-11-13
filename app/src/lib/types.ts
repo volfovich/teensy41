@@ -57,6 +57,8 @@ export interface Meters {
   drumsPlaying: boolean;
   muted: boolean;
   tunerOpen: boolean;
+  /** The peak at each block's output, in chain order; above 1 is over full scale. May be empty. */
+  stagePeaks: number[];
 }
 
 /** A tuner reading: `note` 0 (C) to 11 (B), `cents` -50 to +50 from that note. */

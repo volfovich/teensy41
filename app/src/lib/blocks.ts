@@ -12,6 +12,8 @@ export interface BlockDef {
   onInverted?: boolean;
   file?: string;
   summary?: string;
+  /** The block's place among the meter frame's block peaks. */
+  peak?: number;
   activity?: string;
   sections: { title?: string; settings: string[] }[];
 }
@@ -66,6 +68,11 @@ export function blockOn(b: Block, values: number[]): boolean {
 /** The value that switches the block on or off. */
 export function blockOnValue(b: Block, on: boolean): number {
   return (b.def.onInverted ? !on : on) ? 1 : 0;
+}
+
+/** The peak at the block's output (linear, above 1 is over full scale), or null if it is not measured. */
+export function blockPeak(b: Block, m: Meters): number | null {
+  return b.def.peak === undefined ? null : (m.stagePeaks[b.def.peak] ?? null);
 }
 
 /** Whether the device reports the block as working (an effect's tail still ringing, the drums playing). */

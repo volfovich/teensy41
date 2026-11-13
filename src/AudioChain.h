@@ -84,7 +84,11 @@ class AudioChain {
   dsp::DrumMachine& drums() { return drums_; }
   const dsp::DrumMachine& drums() const { return drums_; }
 
+  // The preset's level: applied after the cab, before the doubler, delay and reverb.
   void setOutputGainDb(float db) { gainTarget_ = powf(10.0f, db / 20.0f); }
+  // The master volume: applied last, to everything that goes to the DAC (the guitar with its
+  // effects' tails, the drums and the bass). -200 or less is silence.
+  void setMasterDb(float db) { masterTarget_ = db <= -200.0f ? 0.0f : powf(10.0f, db / 20.0f); }
   void setBypass(bool on) { wetTarget_ = on ? 0.0f : 1.0f; }
   bool bypassed() const { return wetTarget_ < 0.5f; }
 
@@ -120,6 +124,10 @@ class AudioChain {
   float takeInputPeak() { float p = inPeak_; inPeak_ = 0.0f; return p; }
   float takeOutputPeak() { float p = outPeak_; outPeak_ = 0.0f; return p; }
   uint32_t clipCount() const { return clips_; }
+  // The peak at a block's output since the last call, as takeInputPeak(). Above 1.0 is over
+  // full scale: fine between blocks (the chain is float), but it would clip at the output.
+  enum Stage { kStageAmp, kStageGate, kStageCab, kStageDoubler, kStageDelay, kStageReverb, kStageCount };
+  float takeStagePeak(int stage) { float p = stagePeak_[stage]; stagePeak_[stage] = 0.0f; return p; }
   // CPU load of this object, in percent of one core, and the shares of it
   // spent in the amp, the delay, the reverb and the drums.
   float cpuPercent() const { return cyclesToPercent(cyclesAvg_); }
@@ -169,7 +177,10 @@ class AudioChain {
     const bool amped = amp_.process(x, a);
     amp_.addCycles(ARM_DWT_CYCCNT - ta);
     float* src = amped ? a : x;
+    const float ampPk = amped ? peakOf(a) : pk;
+    notePeak(kStageAmp, ampPk);
     gate_.process(x, src);  // listens to the input (src may be x)
+    notePeak(kStageGate, peakOf(src));
 
     engine_.process(src, y);
 
@@ -189,6 +200,8 @@ class AudioChain {
     gainCur_ = g1;
     wetCur_ = w1;
     playCur_ = u1;
+    const float cabPk = peakOf(y);  // after the cab and the preset's level
+    notePeak(kStageCab, cabPk);
 
     // The doubler, the delay, then the reverb. An idle effect passes its
     // input through, so with all idle the signal stays mono.
@@ -208,6 +221,12 @@ class AudioChain {
     reverb_.addCycles(ARM_DWT_CYCCNT - t2);
     const float* fl = reverbed ? ol : sl;
     const float* fr = reverbed ? orr : sr;
+    // An idle effect's output is its input: the level before it.
+    const float dblPk = doubled ? fmaxf(peakOf(cl), peakOf(cr)) : cabPk;
+    const float dlyPk = delayed ? fmaxf(peakOf(dl), peakOf(dr)) : dblPk;
+    notePeak(kStageDoubler, dblPk);
+    notePeak(kStageDelay, dlyPk);
+    notePeak(kStageReverb, reverbed ? fmaxf(peakOf(ol), peakOf(orr)) : dlyPk);
 
     // Drums (stereo), added to the outputs below (nullptr while idle).
     const uint32_t t3 = ARM_DWT_CYCCNT;
@@ -219,13 +238,15 @@ class AudioChain {
 
     float opk = 0.0f;  // this block's
     uint32_t clips = 0;
+    const float m0 = masterCur_, m1 = ramp(m0, masterTarget_);  // 20 ms from silent to full
+    masterCur_ = m1;
     if (!doubled && !delayed && !reverbed && !drums) {
       // Effects and drums idle: the dry signal goes to both outputs.
-      toOutput(y, nullptr, outL, opk, clips);
+      toOutput(y, nullptr, m0, m1, outL, opk, clips);
       memcpy(outR, outL, sizeof(float) * B);
     } else {
-      toOutput(fl, addL, outL, opk, clips);
-      toOutput(fr, addR, outR, opk, clips);
+      toOutput(fl, addL, m0, m1, outL, opk, clips);
+      toOutput(fr, addR, m0, m1, outR, opk, clips);
     }
     outPeak_ = fmaxf(outPeak_, opk);
     clips_ += clips;
@@ -247,10 +268,21 @@ class AudioChain {
     return target > cur ? fminf(cur + step, target) : fmaxf(cur - step, target);
   }
 
-  // Adds add (if any) and clips to full scale, counting the clipped samples.
-  static void toOutput(const float* v, const float* add, float* out, float& peak, uint32_t& clips) {
+  static float peakOf(const float* v) {
+    float p = 0.0f;
+    for (int i = 0; i < kBlock; i++) p = fmaxf(p, fabsf(v[i]));
+    return p;
+  }
+  void notePeak(int stage, float p) {
+    if (p > stagePeak_[stage]) stagePeak_[stage] = p;
+  }
+
+  // Adds add (if any), applies the master volume (m0 to m1 over the block) and clips to full
+  // scale, counting the clipped samples.
+  static void toOutput(const float* v, const float* add, float m0, float m1, float* out, float& peak, uint32_t& clips) {
+    const float dm = (m1 - m0) / (float)kBlock;
     for (int i = 0; i < kBlock; i++) {
-      float s = add ? v[i] + add[i] : v[i];
+      float s = (add ? v[i] + add[i] : v[i]) * (m0 + dm * (float)(i + 1));
       const float a = fabsf(s);
       peak = fmaxf(peak, a);
       if (a > 0.9999999f) {
@@ -276,9 +308,12 @@ class AudioChain {
   volatile uint32_t tunerWritten_ = 0;  // samples since the tuner went on
   dsp::Biquad tunerLp_;
   float playCur_ = 1.0f;  // 0 while the tuner mutes
-  volatile float gainTarget_ = 0.5f, gainCur_ = 0.5f;
+  volatile float gainTarget_ = 1.0f, gainCur_ = 1.0f;
+  volatile float masterTarget_ = 0.5f;
+  float masterCur_ = 0.0f;  // fades in at power-on
   volatile float wetTarget_ = 1.0f, wetCur_ = 1.0f;
   volatile float inPeak_ = 0.0f, outPeak_ = 0.0f;
+  volatile float stagePeak_[kStageCount] = {};
   volatile uint32_t clips_ = 0;
   volatile float cyclesAvg_ = 0.0f;
   volatile uint32_t cyclesMax_ = 0;

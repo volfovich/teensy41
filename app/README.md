@@ -33,6 +33,8 @@ The app connects by itself and shows the main screen: the library on the unit's 
 
 The master volume is the slider beside the meters, from silent (its lowest step) to 0 dB, the DAC's full level; there is no gain above that, because the converter has no analog volume and more digital gain would only clip. It is one setting for all presets, kept in the unit's own settings (EEPROM), not in presets, so moving it never marks a preset as edited. The Output block's Level is the preset's own level and is saved with it.
 
+Levels: each block's tile has a thin bar with the peak level at that block's output (the Levels button or the L key switches the bars off), and the open block's editor shows the held peak as a number. The chain is float, so a level above 0 dBFS between blocks does not clip; it shows red because it would clip at the output, and because the level into the amp and the delay changes how they sound. The Output tile shows the unit's output after the master volume.
+
 Knobs: drag up and down, Shift for fine steps, scroll or arrow keys, double-click to type a value, right-click for the default.
 
 Presets: click one in the list to recall it, or step with the header's arrows or the arrow keys. Save (Cmd-S) writes over the recalled preset, "Save as…" makes a new one at the lowest free number, Rename and Delete are under the list. When the recalled preset has unsaved edits, recalling a preset asks first (discard, save first, or cancel).
@@ -43,7 +45,7 @@ Tuner: the header's Tuner button or the T key; Esc closes it. The guitar is mute
 
 The amp and cab editors show what the loaded file is: the model's gear, loudness and input calibration with the gains the unit applies, and the IR's format, the length in use and what the unit changed.
 
-Not in yet: an IR's waveform and frequency response, a drum song editor. Keys: 1 to 7 open the chain's blocks and 8 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner.
+Not in yet: an IR's waveform and frequency response, a drum song editor. Keys: 1 to 7 open the chain's blocks and 8 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner, L the level bars.
 
 The icon is drawn in `src-tauri/icons/source/icon.svg`; after changing it, render it to a 1024-pixel PNG and run `npx tauri icon <png>`.
 

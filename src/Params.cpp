@@ -91,11 +91,9 @@ static void applyParam(int id, int v) {
     case kReverbMod: r.setMod(v / 100.0f); break;
     case kReverbEra: r.setEra(v / 100.0f); break;
     case kReverbGate: r.setGateMs(v); break;
-    case kOutGain:
-    case kPresetLevel:
-      // The master volume at its minimum is silence, whatever the preset's level.
-      chain.setOutputGainDb(s[kOutGain] <= paramDef(kOutGain).min ? -200.0f : (s[kOutGain] + s[kPresetLevel]) * 0.5f);
-      break;
+    // The master volume: the last thing before the DAC; its minimum is silence.
+    case kOutGain: chain.setMasterDb(v <= paramDef(kOutGain).min ? -200.0f : v * 0.5f); break;
+    case kPresetLevel: chain.setOutputGainDb(v * 0.5f); break;
     case kBypass: chain.setBypass(v); break;
     case kDrumStyle: dm.setStyle(v); break;
     case kDrumKit: dm.setKit(&dsp::drumKit(v)); break;

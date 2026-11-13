@@ -23,7 +23,7 @@ const noMeters: Meters = {
   inputPeak: 0, outputPeak: 0, gateGain: 1, clipped: 0,
   cpu: 0, cpuMax: 0, cpuAmp: 0, cpuDoubler: 0, cpuDelay: 0, cpuReverb: 0, cpuDrums: 0,
   overruns: 0, overloadMutes: 0,
-  ampRunning: false, delayRinging: false, reverbRinging: false, drumsPlaying: false, muted: false, tunerOpen: false,
+  ampRunning: false, delayRinging: false, reverbRinging: false, drumsPlaying: false, muted: false, tunerOpen: false, stagePeaks: [],
 };
 
 export const device = $state<Snapshot>({ ...empty });
@@ -286,6 +286,8 @@ async function startPreview(): Promise<() => void> {
       cpu: 56.2 + Math.sin(t) * 0.4, cpuMax: 57.4,
       cpuAmp: find("amp") ? 33.7 : 0, cpuDoubler: find("dbl") ? 1.1 : 0, cpuDelay: find("dl") ? 6.2 : 0,
       cpuReverb: find("rv") ? 9.4 : 0, cpuDrums: find("drum") ? 4.0 : 0,
+      // amp, gate, cab, doubler, delay, reverb: the amp adds level, the reverb goes over full scale.
+      stagePeaks: [0.9, 0.9, 0.45, 0.45, 0.5, 1.3].map((p) => p * Math.sqrt(env) + 0.0001),
       ampRunning: !!find("amp"), delayRinging: !!find("dl"), reverbRinging: !!find("rv"), drumsPlaying: !!find("drum"),
     });
   }, 33);

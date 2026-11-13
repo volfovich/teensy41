@@ -497,6 +497,7 @@ static void onSubscribe(const applink::FrameHeader& h, Reader& r) {
   g_lastMeterMs = millis();
   chain.takeInputPeak();  // the first frame's peaks start now
   chain.takeOutputPeak();
+  for (int stage = 0; stage < AudioChain::kStageCount; stage++) chain.takeStagePeak(stage);
   chain.resetCpuMax();
   Writer w(g_txPayload, kTxPayload);
   w.u16(g_meterRate);
@@ -524,6 +525,7 @@ static void sendMeters() {
   w.u32(drv.faults);
   w.u8((chain.amp().active() ? 1 : 0) | (chain.delayActive() ? 2 : 0) | (chain.reverbActive() ? 4 : 0) |
        (chain.drums().playing() ? 8 : 0) | (i2s32::faulted() ? 16 : 0) | (chain.tunerOn() ? 32 : 0));
+  for (int stage = 0; stage < AudioChain::kStageCount; stage++) w.f32(chain.takeStagePeak(stage));
   chain.resetCpuMax();
   sendFrame(Msg::kMeters, applink::kFlagEvent, 0, w);
 }

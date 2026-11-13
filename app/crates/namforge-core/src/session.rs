@@ -373,6 +373,10 @@ fn read_meters(r: &mut Reader<'_>) -> Result<Meters, WireError> {
     m.drums_playing = bits & 8 != 0;
     m.muted = bits & 16 != 0;
     m.tuner_open = bits & 32 != 0;
+    // Added later: older firmware's frame ends here.
+    while let Ok(peak) = r.f32() {
+        m.stage_peaks.push(peak);
+    }
     Ok(m)
 }
 
@@ -566,6 +570,7 @@ mod tests {
             w.f32(cpu);
         }
         w.u32(2).u32(1).u8(0b0_1101);
+        w.f32(0.75).f32(0.5).f32(1.5);
         dev.send(msg::METERS, flags::EVENT, 0, w.finish());
         let mut s = Session::new(dev);
         let mut events = Vec::new();
@@ -576,6 +581,7 @@ mod tests {
         assert_eq!((m.input_peak, m.output_peak, m.gate_gain, m.clipped), (0.5, 0.25, 1.0, 3));
         assert_eq!((m.cpu, m.cpu_max, m.cpu_amp, m.cpu_drums), (56.0, 57.5, 32.0, 0.0));
         assert_eq!((m.overruns, m.overload_mutes), (2, 1));
+        assert_eq!(m.stage_peaks, [0.75, 0.5, 1.5]);
         assert!(m.amp_running && !m.delay_ringing && m.reverb_ringing && m.drums_playing && !m.muted);
     }
 
