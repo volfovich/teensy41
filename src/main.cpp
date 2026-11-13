@@ -1,102 +1,69 @@
-// Teensy 4.1 audio DSP starter
+// Teensy 4.1 guitar DSP platform: main firmware.
 //
-// Signal flow (stereo):
-//   Audio Shield line-in (I2S) ─┐
-//                               ├─ mixer ─ AudioEffectBiquadFloat ─┬─ Audio Shield headphone/line-out (I2S)
-//   USB audio from computer ────┘                                  └─ USB audio to computer
+// Signal flow today (driver bring-up stage, see HLD.md):
+//   PCM1808 ADC left ─► float ─► [DSP chain goes here] ─► float ─► PCM5102A DAC left + right
+//
+// Audio runs in the I2S DMA interrupt, one block of DSP_BLOCK frames (48 kHz, 24-bit) at a
+// time. loop() only handles the serial shell and USB MIDI.
 //
 // Serial commands (pio device monitor), one per line:
-//   s              print CPU / audio memory usage
-//   b              toggle DSP bypass
-//   f <hz>         set lowpass cutoff
-//   q <q>          set lowpass Q
-//   v <0..1>       headphone volume
-//   i <line|mic>   select codec input
+//   s    print audio statistics (CPU load, overruns)
+//   b    toggle bypass (bypass = input copied to output bit-for-bit)
+//   m    toggle output mute
 
 #include <Arduino.h>
-#include <Audio.h>
-#include <AudioEffectBiquadFloat.h>
+#include <I2s32.h>
+#include <dsp/Convert.h>
 
-// ---- Audio graph ------------------------------------------------------------
-AudioInputI2S          i2sIn;
-AudioInputUSB          usbIn;
-AudioMixer4            mixL, mixR;
-AudioEffectBiquadFloat fxL, fxR;
-AudioOutputI2S         i2sOut;
-AudioOutputUSB         usbOut;
-AudioControlSGTL5000   codec;
+// GPIO wired to the PCM5102A XSMT pad (HLD.md section 1, item 1b). -1 = not wired.
+static constexpr int kDacMutePin = -1;
 
-AudioConnection c0(i2sIn, 0, mixL, 0);
-AudioConnection c1(i2sIn, 1, mixR, 0);
-AudioConnection c2(usbIn, 0, mixL, 1);
-AudioConnection c3(usbIn, 1, mixR, 1);
-AudioConnection c4(mixL, 0, fxL, 0);
-AudioConnection c5(mixR, 0, fxR, 0);
-AudioConnection c6(fxL, 0, i2sOut, 0);
-AudioConnection c7(fxR, 0, i2sOut, 1);
-AudioConnection c8(fxL, 0, usbOut, 0);
-AudioConnection c9(fxR, 0, usbOut, 1);
+static volatile bool g_bypass = false;
+static volatile bool g_muted = false;
 
-// ---- Parameters -------------------------------------------------------------
-constexpr float kFs = AUDIO_SAMPLE_RATE_EXACT;
-float g_cutoffHz = 1000.0f;
-float g_q = 0.7071f;
+FASTRUN static void audioCallback(const int32_t* rx, int32_t* tx, size_t frames) {
+    if (g_bypass) {
+        memcpy(tx, rx, 2 * frames * sizeof(int32_t));
+        return;
+    }
 
-static void applyFilter() {
-    const auto c = dsp::BiquadCoeffs::lowpass(kFs, g_cutoffHz, g_q);
-    fxL.setCoeffs(c);
-    fxR.setCoeffs(c);
+    float left[i2s32::kBlock];
+    float right[i2s32::kBlock];
+    dsp::int24InToFloat(rx, left, right, frames);
+
+    // Guitar is mono on the ADC's left channel. The DSP chain will process `left` here.
+
+    if (g_muted) memset(left, 0, sizeof(left));
+    dsp::floatToInt24Out(left, left, tx, frames);
 }
 
 static void printStats() {
-    Serial.printf("CPU %.1f%% (max %.1f%%)  blocks %u (max %u)  bypass=%d  fc=%.0f Hz  Q=%.3f\n",
-                  AudioProcessorUsage(), AudioProcessorUsageMax(),
-                  AudioMemoryUsage(), AudioMemoryUsageMax(),
-                  fxL.bypass(), (double)g_cutoffHz, (double)g_q);
+    const i2s32::Stats s = i2s32::stats();
+    Serial.printf("blocks %lu  load %.1f%% (max %.1f%%)  overruns %lu  fifo errors %lu  bypass=%d  mute=%d\n",
+                  static_cast<unsigned long>(s.blocks),
+                  static_cast<double>(100.0f * i2s32::load(s.lastCycles)),
+                  static_cast<double>(100.0f * i2s32::load(s.maxCycles)),
+                  static_cast<unsigned long>(s.overruns), static_cast<unsigned long>(s.fifoErrors),
+                  g_bypass, g_muted);
 }
 
 static void handleCommand(char* line) {
-    char* arg = line + 1;
-    while (*arg == ' ') ++arg;
-
     switch (line[0]) {
     case 's':
         printStats();
-        AudioProcessorUsageMaxReset();
-        AudioMemoryUsageMaxReset();
+        i2s32::resetStats();
         break;
-    case 'b': {
-        const bool b = !fxL.bypass();
-        fxL.setBypass(b);
-        fxR.setBypass(b);
-        Serial.printf("bypass=%d\n", b);
+    case 'b':
+        g_bypass = !g_bypass;
+        Serial.printf("bypass=%d\n", g_bypass);
         break;
-    }
-    case 'f': {
-        const float hz = atof(arg);
-        if (hz > 10.0f && hz < 0.49f * kFs) { g_cutoffHz = hz; applyFilter(); }
-        printStats();
-        break;
-    }
-    case 'q': {
-        const float q = atof(arg);
-        if (q > 0.05f && q < 50.0f) { g_q = q; applyFilter(); }
-        printStats();
-        break;
-    }
-    case 'v': {
-        const float v = atof(arg);
-        codec.volume(constrain(v, 0.0f, 1.0f));
-        Serial.printf("volume=%.2f\n", (double)v);
-        break;
-    }
-    case 'i':
-        if (strncmp(arg, "mic", 3) == 0) codec.inputSelect(AUDIO_INPUT_MIC);
-        else codec.inputSelect(AUDIO_INPUT_LINEIN);
-        Serial.printf("input=%s\n", arg);
+    case 'm':
+        g_muted = !g_muted;
+        i2s32::setMute(g_muted);
+        Serial.printf("mute=%d\n", g_muted);
         break;
     default:
-        Serial.println("commands: s | b | f <hz> | q <q> | v <0..1> | i <line|mic>");
+        Serial.println("commands: s (stats) | b (bypass) | m (mute)");
         break;
     }
 }
@@ -117,27 +84,20 @@ static void pollSerial() {
 void setup() {
     Serial.begin(115200);
 
-    // Audio blocks are statically allocated; raise this if AudioMemoryUsageMax() hits it.
-    AudioMemory(40);
-
-    codec.enable();
-    codec.inputSelect(AUDIO_INPUT_LINEIN);
-    codec.volume(0.5f);
-
-    for (int ch = 0; ch < 2; ++ch) {
-        mixL.gain(ch, 0.5f);
-        mixR.gain(ch, 0.5f);
-    }
-
-    applyFilter();
+    i2s32::Config cfg;
+    cfg.callback = audioCallback;
+    cfg.mutePin = kDacMutePin;
+    i2s32::begin(cfg);
 
     const uint32_t t0 = millis();
     while (!Serial && millis() - t0 < 1500) {}
-    Serial.println("Teensy 4.1 audio DSP ready. Type ? for commands.");
+    Serial.printf("Guitar DSP ready: 48 kHz / 24-bit, block %u frames. Type ? for commands.\n",
+                  static_cast<unsigned>(i2s32::kBlock));
 }
 
 void loop() {
     pollSerial();
+    while (usbMIDI.read()) {}   // drain incoming MIDI; mapping comes with presets
 
     static elapsedMillis sinceStats;
     if (sinceStats >= 5000) {

@@ -1,0 +1,7 @@
+{
+  "name": "i2s32",
+  "version": "0.1.0",
+  "description": "Low-latency 48 kHz / 32-bit-slot I2S driver for Teensy 4.x (SAI1 + eDMA, block callback in the DMA interrupt)",
+  "frameworks": "arduino",
+  "platforms": "teensy"
+}
