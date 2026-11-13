@@ -1,5 +1,5 @@
 // NamFile.h - reads the A2-Lite network out of a Neural Amp Modeler .nam
-// file (see HLD.md section 6.2; ported from teensy-ir-loader).
+// file (see docs/design/HLD.md section 6.2; ported from teensy-ir-loader).
 //
 // A .nam file is JSON. An A2 file is a "SlimmableContainer" holding complete
 // WaveNet models of different sizes (A2-Lite: 3 channels, A2-Full: 8); a

@@ -123,7 +123,6 @@ public:
     }
 
     bool ok() const { return ok_; }
-    size_t remaining() const { return left_; }
     // True if everything was read without error and nothing is left over.
     bool done() const { return ok_ && left_ == 0; }
 

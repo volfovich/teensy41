@@ -23,7 +23,7 @@ constexpr float kSampleRate = (float)i2s32::kSampleRate;
 // itself adds zero latency; total latency is ~2 blocks of I/O buffering plus
 // the converters' filters (about 0.8 ms as the boards are built):
 //   64 -> ~2.7 ms   32 -> ~1.3 ms   16 -> ~0.7 ms  (+ converters)
-// Smaller blocks cost more CPU (see HLD.md for numbers).
+// Smaller blocks cost more CPU (see docs/design/HLD.md for numbers).
 
 // ---------------------------------------------------------------------------
 // Impulse responses
@@ -71,14 +71,14 @@ constexpr float kSampleRate = (float)i2s32::kSampleRate;
 #define DELAY80_DUCK_RELEASE_MS 200.0f   // how fast the repeats swell back after you stop
 
 // ---------------------------------------------------------------------------
-// Amp (before the IR): NAM A2-Lite models from /AMP (see HLD.md and teensy-ir-loader's NAM.md).
+// Amp (before the IR): NAM A2-Lite models from /AMP (see docs/design/HLD.md and teensy-ir-loader's NAM.md).
 // ---------------------------------------------------------------------------
 // The loudness every model is levelled to, in dB (the model's gain is this
 // minus its "loudness"; the amp's output setting comes on top). NAM players
 // use -18; the amp here stands in for a tube amp's line out, which is hotter,
 // so -12 makes output 0 dB about as loud. With a high-gain model and a cab IR
-// with a strong resonance this peaks near 0 dBFS after the cab: the master
-// volume's default of -6 dB is the headroom.
+// with a strong resonance this peaks near 0 dBFS after the cab: the output
+// gain's default of -6 dB (after the cab) is the headroom.
 #define AMP_LEVEL_DB -12.0f
 // The loss of the buffer in front of the ADC, in dB (0 without one, as now).
 // teensy-ir-loader's JFET TL072 buffer (1 MOhm in, 100 Ohm out) has -6 dB;
@@ -108,7 +108,7 @@ constexpr float kSampleRate = (float)i2s32::kSampleRate;
 // 20 Hz: -79 dBFS, almost no loss.)
 #define INPUT_HIGHPASS_HZ 30.0f
 // GPIO wired to the PCM5102A's XSMT pad (high = un-muted), or -1: the pad is
-// soldered high for now (HLD.md section 1, item 1b).
+// soldered high for now (docs/design/HLD.md section 1, item 1b).
 #define DAC_MUTE_PIN -1
 // The SD card: the Teensy 4.1's own slot.
 #define SDCARD_CS_PIN BUILTIN_SDCARD

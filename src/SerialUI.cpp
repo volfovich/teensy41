@@ -2,7 +2,6 @@
 #include "SerialUI.h"
 
 #include <Arduino.h>
-#include <SD.h>
 
 #include <initializer_list>
 
@@ -70,7 +69,7 @@ void printHelp() {
   Serial.print("  amp list              list the amp models (/AMP/*.nam)\n"
                "  amp <n|name>          load amp model n, or the first whose name contains it\n"
                "  amp info              what the loaded model says about itself\n"
-               "  amp selftest <n>      runs the model on n floats sent over USB (tools/amp_selftest.py)\n"
+               "  amp selftest <n>      debug: runs the model on n floats sent over USB\n"
                "  pre                   list the presets (/PRESETS); > the recalled one, * edited\n"
                "  pre <n|name>          recall preset n, or the first whose name contains it\n"
                "  pre save              save the sound over the recalled preset\n"
@@ -308,9 +307,6 @@ static char* splitWord(char* s) {
   return *rest ? rest : nullptr;
 }
 
-// The commands that aren't one setting: "drum style|kit|song" take names,
-// "drum loop" and "drum train" several numbers, "bass key" a note name.
-// True if the line was one of them.
 // pre [n|name|save|new <name>|name <text>|del <n>|show]
 static void presetCommand(char* arg) {
   if (!arg) {
@@ -339,6 +335,9 @@ static void presetCommand(char* arg) {
   }
 }
 
+// The commands that aren't one setting: "drum style|kit|song" take names,
+// "drum loop" and "drum train" several numbers, "bass key" a note name.
+// True if the line was one of them.
 static bool specialCommand(const char* cmd, char* arg) {
   if (!strcmp(cmd, "pre")) {
     presetCommand(arg);
@@ -405,8 +404,8 @@ static bool specialCommand(const char* cmd, char* arg) {
       }
       return true;
     }
-    if (!strcmp(arg, "train") && val) {
-      // Three numbers. (No sscanf: it pulls ~30 KB of locale tables into RAM1.)
+    if (!strcmp(arg, "train") && val && *val >= '0' && *val <= '9') {
+      // Three numbers ("drum train on|off" is the setting itself: the table handles it).
       int n[3], count = 0;
       for (char* p = val; *p && count < 3;) {
         n[count++] = (int)strtol(p, &p, 10);
@@ -501,7 +500,11 @@ static void handleCommand(char* line) {
     else Serial.println("Tuner test off: the tuner hears the guitar.");
   } else if (!strcmp(line, "sig")) {
     float hz = 0.0f, db = -20.0f;
-    if (arg) sscanf(arg, "%f %f", &hz, &db);
+    if (arg) {
+      char* p = arg;
+      hz = strtof(p, &p);
+      if (*p) db = strtof(p, &p);
+    }
     if (db > 0.0f) db = 0.0f;
     testSignal(hz, db);
     if (hz > 0.0f) Serial.printf("Test signal: a %.1f Hz sine at %.1f dBFS replaces the guitar ('sig 0' ends it).\n", hz, db);

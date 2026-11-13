@@ -18,8 +18,6 @@ void rescanCard();
 bool loadIRIndex(int idx, bool save = true);
 // Remembers the IR playing now in the settings.
 void saveCurrentIR();
-// The index of the IR in the settings, or -1 (none, or not on the card).
-int irSaved();
 // Loads the next (+1) or previous (-1) IR, skipping files that fail to load.
 void loadRelative(int step);
 // Loads the IR saved in the settings, or the first one that loads.

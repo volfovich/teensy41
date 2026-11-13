@@ -1,4 +1,4 @@
-// AppLink.h - the desktop app's side of the USB serial port (APP.md, protocol/PROTOCOL.md).
+// AppLink.h - the desktop app's side of the USB serial port (docs/APP.md, protocol/PROTOCOL.md).
 //
 // The app (Volfovich NAM Forge) talks in binary frames on the same port as the typed command
 // shell. SerialUI hands every received byte to appLinkFeed() first; what is not part of a
@@ -17,6 +17,3 @@ bool appLinkFeed(uint8_t byte);
 
 // Call often from loop(): the line-idle and session timeouts, and the change events.
 void serviceAppLink();
-
-// True while the app is connected (a frame from it within the last 5 s, after a HELLO).
-bool appLinkActive();

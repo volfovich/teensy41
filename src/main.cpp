@@ -1,8 +1,10 @@
-// Teensy 4.1 guitar DSP platform: main firmware (see HLD.md).
+// Teensy 4.1 guitar DSP platform: main firmware (see README.md and docs/).
 //
-//   guitar -> PCM1808 ADC (right) -> [NAM A2-Lite amp] -> noise gate -> IR convolution (cab)
-//          -> doubler -> studio 80s delay -> 80s reverb -> PCM5102A DAC L/R
-//          (32-bit float throughout, 24-bit converters, 48 kHz; drums and bass added after)
+//   guitar -> PCM1808 ADC (right) -> 30 Hz high-pass -> [NAM A2-Lite amp] -> noise gate
+//          -> IR convolution (cab) -> output gain + preset level
+//          -> doubler -> studio 80s delay -> 80s reverb -> + drums and bass
+//          -> master volume -> PCM5102A DAC L/R
+//          (32-bit float throughout, 24-bit converters, 48 kHz; docs/SIGNAL_CHAIN.md)
 //
 // The audio runs in the I2S driver's interrupt (lib/i2s32), one block at a time: the callback
 // below converts the ADC's words to float, runs the chain (AudioChain.h) and converts back.
@@ -20,7 +22,7 @@
 //   AmpLibrary  the NAM amp models in /AMP and loading them
 //   DrumSongs   the drum songs, built-in and from the SD card
 //   SerialUI    serial commands and level meter
-//   AppLink     the desktop app's binary protocol on the same serial port (APP.md)
+//   AppLink     the desktop app's binary protocol on the same serial port (docs/APP.md)
 //   Tuner       the tuner (pitch from the input while it is open)
 #include <Arduino.h>
 #include <I2s32.h>

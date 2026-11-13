@@ -10,15 +10,9 @@
 pub const MAGIC: [u8; 2] = [0xF1, 0xD5];
 /// The protocol's payload limit.
 pub const MAX_PAYLOAD: usize = 65536;
-/// The largest payload the app sends in one frame (the device's buffer holds at least this).
-pub const MAX_PAYLOAD_TO_DEVICE: usize = 16384;
 pub const HEADER_SIZE: usize = 10;
 pub const CRC_SIZE: usize = 4;
 pub const PROTOCOL_VERSION: u16 = 1;
-
-/// After a request goes unanswered, wait this long before sending again: the device discards
-/// everything after a bad frame until its line has been idle (PROTOCOL.md, section 2.3).
-pub const RESYNC_PAUSE_MS: u64 = 250;
 
 pub mod flags {
     pub const REPLY: u8 = 0x01;
@@ -416,13 +410,6 @@ impl<'a> Reader<'a> {
     pub fn bytes(&mut self, n: usize) -> Result<&'a [u8], WireError> {
         self.take(n)
     }
-    /// Everything that is left.
-    pub fn rest(&mut self) -> &'a [u8] {
-        std::mem::take(&mut self.data)
-    }
-    pub fn remaining(&self) -> usize {
-        self.data.len()
-    }
     /// Call after the last field: an error if bytes are left over.
     pub fn done(&self) -> Result<(), WireError> {
         if self.data.is_empty() {
@@ -653,8 +640,8 @@ mod tests {
         assert_eq!(r.u16().unwrap(), 64);
         assert_eq!(r.u16().unwrap(), 128);
         assert_eq!(r.u16().unwrap(), 95);
-        assert_eq!(r.u16().unwrap(), 52);
-        assert_eq!(r.u16().unwrap(), 55);
+        assert_eq!(r.u16().unwrap(), 53);
+        assert_eq!(r.u16().unwrap(), 56);
         assert_eq!(r.u32().unwrap(), 0xDEAD_BEEF);
         r.done().unwrap();
     }

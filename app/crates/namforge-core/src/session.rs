@@ -3,7 +3,7 @@
 use std::io::{self, Read, Write};
 use std::time::{Duration, Instant};
 
-use namforge_link::{encode_frame, flags, msg, ErrorCode, Fed, Frame, FrameParser, Reader, WireError, Writer};
+use namforge_link::{encode_frame, msg, ErrorCode, Fed, Frame, FrameParser, Reader, WireError, Writer};
 
 use crate::types::{DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};
 
@@ -458,12 +458,10 @@ fn decode_event(f: &Frame) -> Option<Event> {
     }
 }
 
-// The flags constants are part of the protocol crate's public face; keep the import used.
-const _: u8 = flags::EVENT;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use namforge_link::flags;
     use std::collections::VecDeque;
 
     /// A stand-in for the unit: answers the A1 requests like the firmware does, and can have

@@ -205,7 +205,6 @@ pub fn run() {
             app.manage(App { device, snapshot });
             // For checking the tuner from a terminal: NAMFORGE_TUNER=1 opens it after 3 s.
             if std::env::var_os("NAMFORGE_TUNER").is_some() {
-                std::thread::sleep(std::time::Duration::from_millis(0));
                 let h = app.handle().clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(3));

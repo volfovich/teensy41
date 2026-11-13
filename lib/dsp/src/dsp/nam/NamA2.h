@@ -1,4 +1,4 @@
-// NamA2.h - the Neural Amp Modeler "A2-Lite" network (see HLD.md section 6.2).
+// NamA2.h - the Neural Amp Modeler "A2-Lite" network (see docs/design/HLD.md section 6.2).
 // Ported from the author's teensy-ir-loader project (lib/irdsp/src/NamA2.h); only the
 // namespace changed.
 //

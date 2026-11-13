@@ -309,8 +309,8 @@ static void test_wire_reads_the_hello_reply_example() {
     TEST_ASSERT_EQUAL_UINT16(64, r.u16());        // max models
     TEST_ASSERT_EQUAL_UINT16(128, r.u16());       // max IRs
     TEST_ASSERT_EQUAL_UINT16(95, r.u16());        // max path length
-    TEST_ASSERT_EQUAL_UINT16(52, r.u16());        // saved settings
-    TEST_ASSERT_EQUAL_UINT16(55, r.u16());        // all settings
+    TEST_ASSERT_EQUAL_UINT16(53, r.u16());        // saved settings
+    TEST_ASSERT_EQUAL_UINT16(56, r.u16());        // all settings
     TEST_ASSERT_EQUAL_HEX32(0xDEADBEEFu, r.u32()); // settings table hash
     TEST_ASSERT_TRUE(r.done());
 }

@@ -10,12 +10,14 @@
 //   in -> amp (NAM A2-Lite, optional, see dsp/nam/AmpStage.h)
 //      -> noise gate (listens to the input; gates the amp's output, or the
 //         dry input with the amp off, see dsp/fx/NoiseGate.h)    = amped
-//   amped -> IR convolution -> IR bypass blend x output gain = core (mono)
+//   amped -> IR convolution -> x (output gain + preset level), blended with
+//            the IR's input by the bypass (bypassed: no IR and no gain)  = core (mono)
 //   core   -> doubler (mono in, stereo out, see dsp/fx/Doubler.h) -> cL, cR
 //   cL, cR -> studio 80s delay (fed from cL, dry/wet)         -> dL, dR
 //   dL, dR -> 80s reverb, hall or gated (stereo, dry/wet)      -> out L / R
 //   + drum machine and bass (stereo, added to the outputs, never through
 //     the effects)
+//   -> master volume (the last gain) -> clip to full scale -> out L / R
 //
 // The tuner taps the input (decimated to 24 kHz, see dsp/fx/PitchDetect.h) and
 // mutes the guitar, before the delay and reverb so their tails ring out.
@@ -82,7 +84,6 @@ class AudioChain {
   dsp::Reverb80& reverb() { return reverb_.fx(); }
   dsp::Doubler& doubler() { return doubler_; }
   dsp::DrumMachine& drums() { return drums_; }
-  const dsp::DrumMachine& drums() const { return drums_; }
 
   // The output gain plus the preset's level: applied after the cab, before the doubler,
   // delay and reverb (as in teensy-ir-loader; the drums and the bass are not affected).
@@ -142,8 +143,8 @@ class AudioChain {
   void resetCpuMax() { cyclesMax_ = 0; }
 
   // One block: kBlock samples of guitar in, kBlock samples out for each side
-  // (not yet clipped: the caller's conversion saturates; clips are counted
-  // here). Runs in the audio interrupt.
+  // (clipped to full scale and the clips counted, in toOutput()). Runs in the
+  // audio interrupt.
   void process(const float* in, float* outL, float* outR) {
     const uint32_t t0 = ARM_DWT_CYCCNT;
     constexpr int B = kBlock;

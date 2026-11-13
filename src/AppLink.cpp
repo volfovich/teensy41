@@ -1,4 +1,4 @@
-// AppLink.cpp - see AppLink.h. Milestones A1 to A4 of APP.md: the session, the settings table,
+// AppLink.cpp - see AppLink.h. Milestones A1 to A5 of docs/design/APP_PLAN.md: the session, the settings table,
 // the state, setting a value, change events, the meter frames, presets, the model and IR
 // lists, sending files to the SD card, (A5) the tuner and the drums' names, and reading
 // files and folders back for backups.
@@ -719,5 +719,3 @@ void serviceAppLink() {
     sendMeters();
   }
 }
-
-bool appLinkActive() { return g_session; }

@@ -1,4 +1,4 @@
-//! Checks on a file before it is sent to the unit (APP.md section 6). The unit makes the real
+//! Checks on a file before it is sent to the unit (docs/design/APP_PLAN.md section 6). The unit makes the real
 //! decision when it loads the file; these catch the common mistakes early, with a plain message.
 
 use std::path::Path;
@@ -11,7 +11,6 @@ const A2_LITE_WEIGHTS: usize = 1871;
 pub struct Checked {
     /// The path on the card: "/AMP/name.nam" or "/IR/name.wav".
     pub device_path: String,
-    pub is_model: bool,
 }
 
 /// Decides from the file's name and contents where it goes, or says why it cannot be used.
@@ -36,7 +35,7 @@ pub fn check(local: &Path, data: &[u8], max_path: usize) -> Result<Checked, Stri
     } else {
         check_wav(data)?;
     }
-    Ok(Checked { device_path, is_model })
+    Ok(Checked { device_path })
 }
 
 /// A NAM A2 file (a container with a Lite network) or a plain WaveNet file in the Lite shape.
@@ -84,7 +83,7 @@ mod tests {
     fn models() {
         let p = Path::new("/tmp/My Amp.nam");
         let lite = wavenet(A2_LITE_WEIGHTS);
-        assert_eq!(check(p, lite.as_bytes(), 95).unwrap(), Checked { device_path: "/AMP/My Amp.nam".into(), is_model: true });
+        assert_eq!(check(p, lite.as_bytes(), 95).unwrap(), Checked { device_path: "/AMP/My Amp.nam".into() });
         let container = format!(
             r#"{{"architecture":"SlimmableContainer","config":{{"submodels":[{{"max_value":0.5,"model":{lite}}},{{"max_value":1.0,"model":{}}}]}},"weights":[]}}"#,
             wavenet(9000)

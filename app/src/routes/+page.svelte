@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The main screen (APP.md 3.1): the signal chain as blocks, the drums lane, and the selected
+  // The main screen (docs/design/APP_PLAN.md 3.1): the signal chain as blocks, the drums lane, and the selected
   // block's controls. Everything is built from the device's settings table and the block
   // definitions shared with the unit's own UI (protocol/blocks.json).
   import { onMount } from "svelte";

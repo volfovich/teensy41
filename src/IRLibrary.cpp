@@ -162,12 +162,6 @@ void saveCurrentIR() {
   scheduleSave();
 }
 
-int irSaved() {
-  for (int i = 0; i < g_numFiles; i++)
-    if (strcasecmp(g_files[i], g_settings.irPath) == 0) return i;
-  return -1;
-}
-
 void loadRelative(int step) {
   if (g_numFiles == 0) { Serial.println("No IR files."); return; }
   int start = g_current < 0 ? (step > 0 ? -1 : 0) : g_current;
