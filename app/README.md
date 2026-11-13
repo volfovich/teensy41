@@ -31,9 +31,11 @@ Only one program can hold the unit's serial port: close `pio device monitor` bef
 ## State (milestone A5 of APP.md)
 The app connects by itself and shows the main screen: the library on the unit's card (presets, amp models, IRs), the signal chain as blocks (click to edit, power button or Space to switch), the drums and bass lane, the selected block's controls, input and output meters, CPU and the driver's counters. Every control is built from the unit's own settings table; a setting no block names appears under "Other settings".
 
-The master volume is the slider beside the meters, from silent (its lowest step) to 0 dB, the DAC's full level; there is no gain above that, because the converter has no analog volume and more digital gain would only clip. It is one setting for all presets, kept in the unit's own settings (EEPROM), not in presets, so moving it never marks a preset as edited. The Output block's Level is the preset's own level and is saved with it.
+Levels after the cab, as in the original firmware: the Cab block has Out gain (global, −60 to +24 dB, kept in the unit's settings) and Level (the preset's own, saved with it). They are one gain right after the cab, before the doubler, delay and reverb; the drums and bass are not affected by it.
 
-Levels: each block's tile has a thin bar with the peak level at that block's output (the Levels button or the L key switches the bars off), and the open block's editor shows the held peak as a number. The chain is float, so a level above 0 dBFS between blocks does not clip; it shows red because it would clip at the output, and because the level into the amp and the delay changes how they sound. The master volume and the preset's level act after the cab (the Cab tile shows the level after them); the Output tile shows what goes to the DAC.
+The master volume is the slider beside the meters: the last gain before the DAC, from silent (its lowest step) to 0 dB, where it changes nothing. It turns everything down, drums and bass included. It is global, kept in the unit's settings, never in presets, so moving it does not mark a preset as edited.
+
+Levels: each block's tile has a thin bar with the peak level at that block's output (the Levels button or the L key switches the bars off), and the open block's editor shows the held peak as a number. The chain is float, so a level above 0 dBFS between blocks does not clip; it shows red because it would clip at the output, and because the level into the amp and the delay changes how they sound. The Cab tile shows the level after the output gain and the preset's level; the OUT meter in the top bar shows what goes to the DAC, after the master volume.
 
 Knobs: drag up and down, Shift for fine steps, scroll or arrow keys, double-click to type a value, right-click for the default.
 
@@ -45,7 +47,7 @@ Tuner: the header's Tuner button or the T key; Esc closes it. The guitar is mute
 
 The amp and cab editors show what the loaded file is: the model's gear, loudness and input calibration with the gains the unit applies, and the IR's format, the length in use and what the unit changed.
 
-Not in yet: an IR's waveform and frequency response, a drum song editor. Keys: 1 to 7 open the chain's blocks and 8 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner, L the level bars.
+Not in yet: an IR's waveform and frequency response, a drum song editor. Keys: 1 to 6 open the chain's blocks and 7 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner, L the level bars.
 
 The icon is drawn in `src-tauri/icons/source/icon.svg`; after changing it, render it to a 1024-pixel PNG and run `npx tauri icon <png>`.
 

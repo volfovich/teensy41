@@ -87,8 +87,8 @@
   });
   const factsOf = (b: Block) => (b.def.file === "model" ? modelFacts : b.def.file === "ir" ? irFacts : []);
 
-  // The level at a block's output. The Output block's is the unit's output itself.
-  const peakOf = (b: Block): number | null => (b.def.id === "output" ? meters.outputPeak : blockPeak(b, meters));
+  // The level at a block's output.
+  const peakOf = (b: Block): number | null => blockPeak(b, meters);
   // The level bars on the tiles can be switched off; the choice is remembered.
   let showLevels = $state(typeof localStorage === "undefined" || localStorage.getItem("levels") !== "off");
   function toggleLevels() {
@@ -193,7 +193,7 @@
     } else if (e.key === " ") {
       if (selected) toggle(selected);
     } else if (e.key >= "1" && e.key <= "9" && !e.metaKey && !e.ctrlKey) {
-      // 1 .. 7 open the chain's blocks, the next number the drums.
+      // 1 .. 6 open the chain's blocks, the next number the drums.
       const b = [...blocks.chain, blocks.lane][Number(e.key) - 1];
       if (!b) return;
       selectedId = b.def.id;
@@ -270,7 +270,7 @@
       {#if blocks.master}
         {@const m = blocks.master}
         {@const v = value(m.id, m.default)}
-        <label class="master" title="Master volume: from silent to 0 dB, the unit's full output level. One setting for all presets, kept by the unit and not saved in presets. Right-click for the default.">
+        <label class="master" title="Master volume: the last gain before the output, from silent to 0 dB (0 dB changes nothing). It also turns the drums and bass down. One setting for all presets, kept by the unit and not saved in presets. Right-click for 0 dB.">
           <span>MASTER</span>
           <input
             type="range"

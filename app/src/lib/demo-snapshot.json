@@ -9,9 +9,9 @@
   "maxModels": 64,
   "maxIrs": 128,
   "maxPath": 95,
-  "savedSettings": 52,
-  "settings": 55,
-  "schemaHash": 1568031613,
+  "savedSettings": 53,
+  "settings": 56,
+  "schemaHash": 1497036321,
   "port": "preview"
  },
  "settings": [
@@ -255,10 +255,10 @@
   {
    "id": 18,
    "key": "g",
-   "name": "Master volume",
-   "label": "Master",
+   "name": "Output gain",
+   "label": "Out gain",
    "min": -120,
-   "max": 0,
+   "max": 48,
    "default": -12,
    "step": 1,
    "unit": 4,
@@ -743,6 +743,19 @@
   },
   {
    "id": 52,
+   "key": "master",
+   "name": "Master volume",
+   "label": "Master",
+   "min": -120,
+   "max": 0,
+   "default": 0,
+   "step": 1,
+   "unit": 4,
+   "inPreset": false,
+   "choices": []
+  },
+  {
+   "id": 53,
    "key": "drum",
    "name": "Drums",
    "label": "Play",
@@ -755,7 +768,7 @@
    "choices": []
   },
   {
-   "id": 53,
+   "id": 54,
    "key": "",
    "name": "Loop from",
    "label": "Loop from",
@@ -768,7 +781,7 @@
    "choices": []
   },
   {
-   "id": 54,
+   "id": 55,
    "key": "",
    "name": "Loop to",
    "label": "Loop to",
@@ -783,7 +796,7 @@
  ],
  "values": [
   0,
-  25,
+  26,
   450,
   5,
   40,
@@ -792,7 +805,7 @@
   20,
   100,
   1,
-  7,
+  20,
   20,
   100,
   0,
@@ -800,21 +813,21 @@
   40,
   60,
   300,
-  -5,
+  -12,
   0,
   1,
   1,
   0,
   2,
   100,
-  100,
-  32,
+  60,
+  40,
   2,
   0,
   5,
   4,
   140,
-  0,
+  1,
   70,
   4,
   50,
@@ -836,13 +849,14 @@
   0,
   0,
   0,
+  0,
   1
  ],
  "files": {
   "model": "/AMP/JCM_800_2203_OD8008_Boosted_Amp_Gain_7.nam",
   "ir": "/OH Hair-Metal.wav",
   "preset": "02 JCM8OO",
-  "edited": false,
+  "edited": true,
   "card": true
  }
 }

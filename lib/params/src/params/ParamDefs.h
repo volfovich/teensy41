@@ -22,7 +22,7 @@ enum Param : uint8_t {
   kReverbOn, kReverbMix, kReverbSize, kReverbTone,
   kReverbMode,  // 0 hall, 1 gated
   kReverbPreDelay, kReverbMod, kReverbEra, kReverbGate,
-  kOutGain,  // the master volume: half-dB steps up to 0 dB; the minimum (-60 dB) is silence. Not in presets.
+  kOutGain,  // half-dB steps; applied after the cab, with the preset's level. Not in presets.
   kBypass,   // the cab IR off (the amp and effects stay)
   kDrumStyle, kDrumKit,  // 0-based
   kDrumSong,             // 0 = off (the style), else 1-based
@@ -43,6 +43,7 @@ enum Param : uint8_t {
   kGateOn,          // the noise gate (after the amp, before the cab)
   kGateType,        // 0 nam (the NAM plugin's expander), 1 hard (the default; release applies)
   kPresetLevel,     // half-dB steps, added to the output gain; saved in presets (PRESETS.md)
+  kMaster,          // the master volume, the last gain before the DAC: half-dB steps up to 0 dB; the minimum is silence. Not in presets.
   kParamCount,
   // Not saved.
   kDrumsPlay = kParamCount,

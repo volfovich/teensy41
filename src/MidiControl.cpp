@@ -22,8 +22,8 @@ struct CcMap {
 };
 
 const CcMap kMap[] = {
-    // Levels, in half-dB steps. lo == hi: the whole range.
-    {7, kOutGain, 0, 0, false},       // channel volume: the master volume, silent .. 0 dB
+    // Levels. Half-dB steps: -80 .. 0 is -40 .. 0 dB.
+    {7, kOutGain, -80, 0, false},     // channel volume: output gain -40 .. 0 dB
     {16, kAmpIn, -24, 24, false},     // amp input (drive) -12 .. +12 dB
     {17, kAmpOut, -24, 24, false},    // amp output -12 .. +12 dB
     // Amp tone, each over its whole range.
