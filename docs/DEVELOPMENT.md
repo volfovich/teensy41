@@ -41,7 +41,7 @@ How to work on the project without breaking it. Commands for the app are in [`ap
 2. **Tests on the unit put back what they touch:** every setting, the master volume, the loaded model and IR, and unsaved preset edits. `tools/applink_check.py` does this itself. The unit is the author's working instrument. Save the state first (`tools/applink_snapshot.py`), restore to the **saved values** (not to defaults or to what they are assumed to be), and compare a second snapshot with the first.
 3. **One program per serial port.** Quit the app before flashing, the monitor or the Python tools. After an upload wait about 15 s for the port to return.
 4. **Nothing slow in the audio interrupt:** no `Serial`, `malloc`, `new`, SD access or waiting inside `process()` or anything it calls.
-5. **No added latency:** no lookahead, oversampling, linear-phase filters or FFT blocks larger than the audio block.
+5. **No added latency:** no lookahead, oversampling, linear-phase filters or FFT blocks larger than the audio block. The limiter's lookahead switch is the one agreed exception.
 6. **Never list a file with interrupt code as cold** in `tools/imxrt1062_t41_cold.ld`.
 7. **Ported files stay close to the original** (formatting included), so fixes can move between this project and teensy-ir-loader.
 8. **New DSP gets a host test first**, then hardware.

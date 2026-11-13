@@ -6,11 +6,11 @@ The tracking page: what works and how that is known, what has not been checked, 
 
 Work was stopped here at the author's word. Everything described on this page is committed on the branch `i2s-driver-and-hld`, and the unit runs the firmware built from it.
 
-- **The unit:** the full chain is running: amp, gate, cab, doubler, mod (chorus / flanger), delay, reverb, drums and bass, master volume, tuner. The sound of everything ported is as ported; the author confirmed that by ear.
+- **The unit:** the full chain is running: amp, gate, cab, doubler, mod (chorus / flanger), delay, reverb, drums and bass, master volume, limiter, tuner. The sound of everything ported is as ported; the author confirmed that by ear.
 - **The app:** connects by itself and covers editing, presets, files, meters, tuner, backup and restore, the IR's graphs and the card's free space.
-- **Checks at this point:** 62 host test cases, 23 Rust tests, the on-unit protocol check and the audio code placement check all pass. A typical preset runs at 56 % CPU; everything on at once reaches the 80 % budget.
+- **Checks at this point:** 70 host test cases, 23 Rust tests, the on-unit protocol check and the audio code placement check all pass. A typical preset runs at 56 % CPU; everything on at once reaches the 80 % budget.
 - **Waiting for the author:**
-  1. Listen to the Mod block (chorus and flanger) and say what to tune.
+  1. Listen to the Mod block (chorus and flanger) and say what to tune. Switch the limiter on (it is off by default) and judge it with and without lookahead.
   2. Try the things only a person can: the Cab graphs with a real IR, the Card tab's buttons and dialogs, drag and drop, the Rate knob's feel.
   3. Decide how renaming a file should treat presets that name it (see "Open work").
 - **Not started:** anything under "Open work" below.
@@ -30,12 +30,13 @@ Work was stopped here at the author's word. Everything described on this page is
 | Drums and bass | Working | Host tests; running on the board |
 | Tuner | Working | Test tone (`tuner test 110`) shows the right note; the author reported it fine with a guitar |
 | Settings in EEPROM | Working | Survive power cycles; old record converted once |
+| Limiter (brickwall, optional lookahead) | Working, **not yet heard by the author**, off by default | 8 host tests (never over the ceiling in 72 combinations, untouched below it, distortion under −60 dB on steady tones, switching without clicks); on the unit a tone 5 dB over read exactly the ceiling with 0 clipped samples, in both modes |
 | Master volume, block level meters | Working | Test tones through the chain; app meters |
 | App link (protocol) | Working | `tools/applink_check.py` passes on the unit: every implemented message, file transfer both ways, the IR's samples, the card's space |
 | USB MIDI | Built, **not tried** | Map prints; no real controller or DAW has sent messages |
 | Sound | **As ported** | Confirmed by the author on 13 Nov 2026 after two unrequested level changes were reverted; test tones matched the morning's firmware within 0.3 dB over 36 points |
 
-Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb) 56.3 % CPU average, 57.1 % maximum, 0 overruns. With everything on (doubler, mod, delay, reverb, drums and bass) 69 % average, 80.4 % maximum, 0 overruns. RAM1 code 57 KB, 95 KB free for the stack.
+Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb) 56.3 % CPU average, 57.1 % maximum, 0 overruns. With everything on (doubler, mod, delay, reverb, drums and bass) 69 % average, 80.4 % maximum, 0 overruns. RAM1 code 59 KB, 94 KB free for the stack.
 
 ## App
 
@@ -67,6 +68,9 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - The worst-case CPU (long IR, busy drums at 240 BPM, IR switching) at 32-sample blocks.
 
 ## Known issues and observations
+- **RAM1 code is 5 KB from its next 32 KB step** (59 KB of 64 KB). The next feature with audio-interrupt code may cross it, which takes 32 KB from the stack's 94 KB; check the build output.
+- **The limiter works on sample peaks**, not on peaks between samples; its default ceiling of −1 dB is the margin for that.
+- The limiter's cost with everything else on was not measured together: expect the worst block at 81 to 82 %, over the 80 % budget, when all blocks, the drums and the lookahead limiter run at once.
 - Asking the card for its free space stops the unit's `loop()` for about 0.8 s (16 GB card): the audio keeps running, the app's meters pause for that moment. It happens when the app connects and after each file sent or deleted.
 - **With every block and the drums on, the worst block reaches the 80 % CPU budget** (80.4 % measured; by subtraction about 78 % before the Mod block). No overruns, and the overload protection covers a spike, but there is no margin left for another effect without making room.
 - **The Mod block's level is compensated for loudness** (within 0.3 dB on guitar-band noise in the host test), not for peaks: a steady sine on a comb peak still reads up to +3 dB (chorus) or +7 dB (flanger with strong feedback) higher.
@@ -105,4 +109,4 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 | Date | What |
 | --- | --- |
 | 11 Nov 2026 | Project set up; PSRAM soldered and verified |
-| 13 Nov 2026 | Hardware doc and design (HLD); I2S driver; NAM benchmarks; the chain, effects, presets and drums ported from teensy-ir-loader; codec settings removed; link protocol; the app through milestones A0 to A5 and part of A6; master volume; block meters; backup and restore; documentation set; the Mod block (chorus and flanger) with automatic level compensation; the IR's waveform and frequency response and the card's free space in the app. Stopped here. |
+| 13 Nov 2026 | Hardware doc and design (HLD); I2S driver; NAM benchmarks; the chain, effects, presets and drums ported from teensy-ir-loader; codec settings removed; link protocol; the app through milestones A0 to A5 and part of A6; master volume; block meters; backup and restore; documentation set; the Mod block (chorus and flanger) with automatic level compensation; the IR's waveform and frequency response and the card's free space in the app; a CPU meter in the app's top bar; the Limiter block. |

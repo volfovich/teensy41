@@ -10,7 +10,7 @@ The choices made so far, with their reasons, newest group last. Add a line when 
 | No PJRC Audio Library on the audio path; own I2S driver | The library is 16-bit, 44.1 kHz, 128-sample blocks (2.9 ms each) |
 | The whole chain runs in the DMA interrupt, one block at a time | Lowest latency, deterministic timing; `loop()` is free for files and control |
 | Block size 32 samples | 16 was tried: the amp is fine, but the convolver's cost doubles and the worst case overruns |
-| No algorithm may add latency | The point of the platform; so no lookahead, oversampling, linear-phase filters or large FFT blocks |
+| No algorithm may add latency | The point of the platform; so no lookahead, oversampling, linear-phase filters or large FFT blocks. One exception, switched by the user: the limiter's 1 ms lookahead (13 Nov 2026). |
 | Worst-case CPU at or below 80 % of a block | Margin for interrupts and for cases not yet measured |
 | USB is serial + MIDI, no USB audio | The core's USB audio is 16-bit / 44.1 kHz |
 | Converter boards are not re-soldered for now | So no firmware mute of the DAC and the DAC stays on its normal-latency filter (costs 0.35 ms) |
@@ -48,6 +48,9 @@ The choices made so far, with their reasons, newest group last. Add a line when 
 | The Mod block compensates its own level, for loudness rather than peaks (13 Nov 2026) | Asked for by the author. Matching peaks would make it sound about 3 dB quieter when switched on; matching loudness keeps the volume where it was. No setting for it. |
 | The Mod rate is shown in Hz, on a logarithmic knob | The author's choice; the real speed is visible, and slow rates get fine steps |
 | New saved settings are appended after the last saved one | Existing EEPROM records and setting ids stay valid |
+| A brickwall limiter as the last stage, after the master volume; global, off by default (13 Nov 2026) | The author wants the output never to clip. After the master it protects what really goes to the DAC, drums included. Global because it is protection, like the master. Off by default so that nothing changes until it is switched on. |
+| The limiter's lookahead is a switch, zero latency by default | The author's choice: lowest latency for playing, the cleaner 1 ms lookahead when wanted |
+| The limiter limits sample peaks with a −1 dB default ceiling, no oversampling | True-peak limiting needs oversampling, which the CPU budget does not allow |
 | Block level meters show peaks at each block's output | To see where a level gets too hot before it reaches the next block or the output |
 
 ## The app

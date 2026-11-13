@@ -49,6 +49,11 @@ enum Param : uint8_t {
   kModType,   // 0 chorus, 1 flanger
   kModRate,   // hundredths of a Hz
   kModDepth, kModFeedback, kModMix, kModWidth,  // %
+  // The Limiter block: the last stage, after the master volume. Not in presets.
+  kLimOn,
+  kLimCeiling,  // half-dB steps below 0
+  kLimRelease,  // ms
+  kLimLook,     // the 1 ms lookahead (adds that much latency)
   kParamCount,
   // Not saved.
   kDrumsPlay = kParamCount,

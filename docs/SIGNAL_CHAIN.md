@@ -2,7 +2,7 @@
 
 The audio path as it is in the code. Source: `src/main.cpp` (the block callback), `src/AudioChain.h` (`process()`), `src/Params.cpp` (what each setting does). Last checked against the code: 13 Nov 2026.
 
-**The path is kept as ported from teensy-ir-loader: the author wants the sound unchanged.** Two things were added, both at the author's request and neither changing the ported sound: the master volume at the end, and the Mod block (chorus / flanger), which passes its input bit for bit while it is off. A change to any gain, level or order here needs the author's say first.
+**The path is kept as ported from teensy-ir-loader: the author wants the sound unchanged.** Three things were added, all at the author's request and none changing the ported sound: the master volume at the end, the Mod block (chorus / flanger) and the Limiter block. Mod and Limiter pass their input bit for bit while they are off. A change to any gain, level or order here needs the author's say first.
 
 ## Overview
 
@@ -41,6 +41,8 @@ REVERB     stereo
 + DRUMS and BASS                        added here, never through the guitar's effects
   ▼
 × master volume                         the last gain
+  ▼
+LIMITER    brickwall, optional          on everything; nothing above its ceiling
   ▼
 clip to full scale (counted)
 ──────────────────────────────────────────────────────────────────────────
@@ -124,6 +126,27 @@ An effect that is off and has rung out is idle: it costs no CPU and passes its i
 ### Master volume (`master`, global)
 The last gain, on everything: guitar, effects, drums and bass. From silent (its lowest step) to 0 dB; at 0 dB the samples are unchanged. Not in presets. Added on 13 Nov 2026 at the author's request; it is the app's slider beside the meters.
 
+### Limiter (`lim`, global)
+`dsp/fx/Limiter.h`. New in this project (13 Nov 2026). The last stage, after the master volume, on guitar, effects, drums and bass together: a brickwall peak limiter, so that nothing goes to the DAC above its ceiling. Not in presets; off by default.
+
+| Setting | Does |
+| --- | --- |
+| `lim ceil` | The ceiling, −12 to −0.5 dB (default −1 dB). No sample comes out above it. |
+| `lim rel` | Release, 10 to 1000 ms (default 100): how fast the gain comes back after a peak |
+| `lim look` | Lookahead: the gain glides down over the millisecond before a peak instead of dropping at it. **Adds 1 ms of latency while the limiter is on** (the one exception to the no-latency rule, chosen by this switch). |
+
+How it stays transparent:
+- **Under the ceiling it does nothing.** Without lookahead the samples pass bit for bit; with lookahead they pass bit for bit, 1 ms later.
+- **Both sides get the same gain**, so the stereo image does not move.
+- **A hold of 10 ms**, renewed by every further peak of about the same height, keeps the gain still between the half-waves of a note. A steady tone 6 dB over the ceiling comes out as the same tone, quieter: distortion below −60 dB in the host test, at 82 Hz and at 1 kHz, with and without lookahead.
+- **Without lookahead** the gain drops at the very sample that would go over: exact, but sudden. Clean on occasional peaks; when driven hard, the lookahead is cleaner.
+- Switching the lookahead changes the delay, so the output dips to silence and back within 5 ms instead of jumping.
+
+Limits to know:
+- It limits sample peaks, not the peaks between samples (that needs oversampling, which the CPU budget does not allow). That is why the default ceiling is −1 dB and not 0.
+- It is protection, not a loudness tool: there is no make-up gain.
+- Measured on the unit (13 Nov 2026) with a tone 5 dB over the ceiling: the output read exactly the ceiling (−12.0 and −9.0 dBFS), 0 clipped samples, in both modes.
+
 ### Output
 Samples beyond full scale are clipped and counted (the app's CLIP label, `s` in the shell), then converted to 24 bits.
 
@@ -136,10 +159,11 @@ Samples beyond full scale are clipped and counted (the app's CLIP label, `s` in 
 | Output gain | `g` | global | after the cab |
 | Preset level | `pvol` | preset | after the cab, same gain as `g` |
 | Drum, bass volume | `drum vol`, `bass vol` | global | inside the drum machine |
-| Master volume | `master` | global | last, before the DAC |
+| Master volume | `master` | global | the last gain |
+| Limiter | `lim ceil` | global | after the master: only ever turns down, and only above its ceiling |
 
 - A high-gain model with a resonant IR can peak near or above 0 dBFS after the cab at `amp out` 0 dB. Between blocks that is harmless (float); the output gain's default of −6 dB is the headroom before the DAC.
-- **Block meters:** the chain keeps the peak at the output of amp, gate, cab (after the output gain and preset level), doubler, mod, delay and reverb (`takeStagePeak`). The app shows them on the blocks' tiles: green, yellow from −6 dBFS, red from −1 dBFS. An idle effect reports the level before it.
+- **Block meters:** the chain keeps the peak at the output of amp, gate, cab (after the output gain and preset level), doubler, mod, delay, reverb and limiter (`takeStagePeak`); the limiter also reports how far it is turning down. The app shows them on the blocks' tiles: green, yellow from −6 dBFS, red from −1 dBFS. An idle effect reports the level before it.
 - **Checking levels without a guitar:** `sig 220 -20` in the shell replaces the guitar with a sine (`sig 0` ends it). Turn the master down first: a high-gain model makes any input loud.
 
 ## Tuner
@@ -154,6 +178,7 @@ Measured on the board, 32-sample blocks (budget: worst case at or below 80 % of 
 | Amp (network, DC blocker, tone) | 32.9 % | 13 Nov 2026 |
 | Doubler | 1.1 % | 13 Nov 2026 |
 | Mod (chorus or flanger) | 2.3 % | 13 Nov 2026 |
+| Limiter: on and idle / limiting / limiting with lookahead | 0.6 % / 1.1 % / 1.9 % | 13 Nov 2026 |
 | Delay | 4.7 % | 13 Nov 2026 |
 | Reverb, hall | 8.4 % | 13 Nov 2026 |
 | Drums and bass, rock at 100 BPM | 4.0 % avg | 13 Nov 2026 |
@@ -168,10 +193,11 @@ Measured on the board, 32-sample blocks (budget: worst case at or below 80 % of 
 | Cab spectra and history | DTCM |
 | Doubler | 8 KB, OCRAM |
 | Mod | 16 KB, OCRAM |
+| Limiter | 1.3 KB, DTCM |
 | Delay | 144 KB DTCM + 144 KB OCRAM |
 | Reverb | 148 KB, OCRAM |
 | Drum kits | flash |
 
-With everything on, the worst block now touches the 80 % budget (by subtraction it was about 78 % before the Mod block; that was not measured); no overruns were seen. The drums' busiest moments set that maximum.
+The everything-on figure above was measured before the limiter existed; with the limiter working as well, expect 1 to 2 % more (not measured together). With everything on, the worst block now touches the 80 % budget (by subtraction it was about 78 % before the Mod block; that was not measured); no overruns were seen. The drums' busiest moments set that maximum.
 
-Latency, analog in to analog out: about **2.2 ms** (ADC filter 0.36, two blocks 1.33, FIFOs 0.04, DAC filter 0.42; datasheet figures, not measured). Nothing in the chain adds latency: no lookahead, no oversampling, no FFT larger than the block. Details and the 16-sample experiment: [design/HLD.md](design/HLD.md) §2.
+Latency, analog in to analog out: about **2.2 ms**, or 3.2 ms while the limiter runs with lookahead (ADC filter 0.36, two blocks 1.33, FIFOs 0.04, DAC filter 0.42; datasheet figures, not measured). Nothing else in the chain adds latency: no lookahead, no oversampling, no FFT larger than the block. Details and the 16-sample experiment: [design/HLD.md](design/HLD.md) §2.

@@ -18,7 +18,8 @@
 //   dL, dR -> 80s reverb, hall or gated (stereo, dry/wet)      -> out L / R
 //   + drum machine and bass (stereo, added to the outputs, never through
 //     the effects)
-//   -> master volume (the last gain) -> clip to full scale -> out L / R
+//   -> master volume (the last gain) -> limiter (optional, see dsp/fx/Limiter.h)
+//   -> clip to full scale -> out L / R
 //
 // The tuner taps the input (decimated to 24 kHz, see dsp/fx/PitchDetect.h) and
 // mutes the guitar, before the delay and reverb so their tails ring out.
@@ -40,6 +41,7 @@
 #include <dsp/drums/DrumMachine.h>
 #include <dsp/fx/Doubler.h>
 #include <dsp/fx/FxStage.h>
+#include <dsp/fx/Limiter.h>
 #include <dsp/fx/Modulation.h>
 #include <dsp/fx/NoiseGate.h>
 #include <dsp/fx/Reverb80.h>
@@ -69,6 +71,7 @@ class AudioChain {
         reverb_(kSampleRate),
         doubler_(kSampleRate),
         mod_(kSampleRate),
+        limiter_(kSampleRate),
         drums_(kSampleRate) {
     tunerLp_.setLowpass(4000.0f, kSampleRate);
   }
@@ -88,6 +91,9 @@ class AudioChain {
   dsp::Reverb80& reverb() { return reverb_.fx(); }
   dsp::Doubler& doubler() { return doubler_; }
   dsp::Modulation& mod() { return mod_; }
+  dsp::Limiter& limiter() { return limiter_; }
+  // The lowest gain the limiter applied since the last call (1 = it did nothing).
+  float takeLimiterGain() { return limiter_.takeMinGain(); }
   dsp::DrumMachine& drums() { return drums_; }
 
   // The output gain plus the preset's level: applied after the cab, before the doubler,
@@ -135,7 +141,7 @@ class AudioChain {
   // The peak at a block's output since the last call, as takeInputPeak(). Above 1.0 is over
   // full scale: fine between blocks (the chain is float), but it would clip at the output.
   // In the order the app link sends them (PROTOCOL.md, METERS): new ones go at the end.
-  enum Stage { kStageAmp, kStageGate, kStageCab, kStageDoubler, kStageDelay, kStageReverb, kStageMod, kStageCount };
+  enum Stage { kStageAmp, kStageGate, kStageCab, kStageDoubler, kStageDelay, kStageReverb, kStageMod, kStageLimiter, kStageCount };
   float takeStagePeak(int stage) { float p = stagePeak_[stage]; stagePeak_[stage] = 0.0f; return p; }
   // CPU load of this object, in percent of one core, and the shares of it
   // spent in the amp, the delay, the reverb and the drums.
@@ -146,6 +152,7 @@ class AudioChain {
   float reverbCpuPercent() const { return cyclesToPercent(reverb_.cyclesAvg()); }
   float doublerCpuPercent() const { return cyclesToPercent(doublerCyclesAvg_); }
   float modCpuPercent() const { return cyclesToPercent(modCyclesAvg_); }
+  float limiterCpuPercent() const { return cyclesToPercent(limCyclesAvg_); }
   float drumCpuPercent() const { return cyclesToPercent(drumCyclesAvg_); }
   void resetCpuMax() { cyclesMax_ = 0; }
 
@@ -260,14 +267,34 @@ class AudioChain {
     uint32_t clips = 0;
     const float m0 = masterCur_, m1 = ramp(m0, masterTarget_);  // 20 ms between silent and full
     masterCur_ = m1;
-    if (!doubled && !modded && !delayed && !reverbed && !drums) {
-      // Effects and drums idle: the dry signal goes to both outputs.
-      toOutput(y, nullptr, m0, m1, outL, opk, clips);
-      memcpy(outR, outL, sizeof(float) * B);
+    const bool mono = !doubled && !modded && !delayed && !reverbed && !drums;
+    if (!limiter_.on() && !limiter_.busy()) {
+      if (mono) {
+        // Effects and drums idle: the dry signal goes to both outputs.
+        toOutput(y, nullptr, m0, m1, outL, opk, clips);
+        memcpy(outR, outL, sizeof(float) * B);
+      } else {
+        toOutput(fl, addL, m0, m1, outL, opk, clips);
+        toOutput(fr, addR, m0, m1, outR, opk, clips);
+      }
     } else {
-      toOutput(fl, addL, m0, m1, outL, opk, clips);
-      toOutput(fr, addR, m0, m1, outR, opk, clips);
+      // With the limiter: the mix and the master volume first, unclipped; then the limiter
+      // on both sides together; then the same clip as above (which it leaves nothing for).
+      const uint32_t tl = ARM_DWT_CYCCNT;
+      float pre = 0.0f;
+      if (mono) {
+        toMix(y, nullptr, m0, m1, outL, pre);
+        memcpy(outR, outL, sizeof(float) * B);
+      } else {
+        toMix(fl, addL, m0, m1, outL, pre);
+        toMix(fr, addR, m0, m1, outR, pre);
+      }
+      limiter_.process(outL, outR, B, pre);
+      clipOutput(outL, opk, clips);
+      clipOutput(outR, opk, clips);
+      limCyclesAvg_ = limCyclesAvg_ + ((float)(ARM_DWT_CYCCNT - tl) - limCyclesAvg_) * 0.01f;
     }
+    notePeak(kStageLimiter, opk);
     outPeak_ = fmaxf(outPeak_, opk);
     clips_ += clips;
 
@@ -313,6 +340,28 @@ class AudioChain {
     }
   }
 
+  // toOutput() in two steps, for when the limiter comes between them: the sum and the
+  // master volume (peak: the largest sample, before any clipping) ...
+  static void toMix(const float* v, const float* add, float m0, float m1, float* out, float& peak) {
+    const float dm = (m1 - m0) / (float)kBlock;
+    for (int i = 0; i < kBlock; i++) {
+      const float s = (add ? v[i] + add[i] : v[i]) * (m0 + dm * (float)(i + 1));
+      peak = fmaxf(peak, fabsf(s));
+      out[i] = s;
+    }
+  }
+  // ... and the clip to full scale, counting the clipped samples.
+  static void clipOutput(float* out, float& peak, uint32_t& clips) {
+    for (int i = 0; i < kBlock; i++) {
+      const float a = fabsf(out[i]);
+      peak = fmaxf(peak, a);
+      if (a > 0.9999999f) {
+        clips++;
+        out[i] = out[i] > 0 ? 0.9999999f : -0.9999999f;
+      }
+    }
+  }
+
   Amp amp_;
   dsp::NoiseGate<kBlock> gate_;
   Engine engine_;
@@ -320,8 +369,9 @@ class AudioChain {
   ReverbStage reverb_;
   dsp::Doubler doubler_;
   dsp::Modulation mod_;
+  dsp::Limiter limiter_;
   dsp::DrumMachine drums_;
-  volatile float drumCyclesAvg_ = 0.0f, doublerCyclesAvg_ = 0.0f, modCyclesAvg_ = 0.0f;
+  volatile float drumCyclesAvg_ = 0.0f, doublerCyclesAvg_ = 0.0f, modCyclesAvg_ = 0.0f, limCyclesAvg_ = 0.0f;
   volatile bool tunerOn_ = false;
   float* tunerRing_ = nullptr;
   volatile float tunerTestStep_ = 0.0f;  // cycles per sample; 0 = the input

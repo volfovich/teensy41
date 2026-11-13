@@ -31,7 +31,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 
 ## Layout
 - `src/main.cpp` – setup and the audio block callback (ADC words -> float -> `AudioChain` -> DAC words)
-- `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> output gain + preset level -> doubler -> mod (chorus / flanger) -> delay -> reverb, + drums and bass -> master volume -> clip
+- `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> output gain + preset level -> doubler -> mod (chorus / flanger) -> delay -> reverb, + drums and bass -> master volume -> limiter (optional) -> clip
 - `src/` (rest) – IR / amp / preset libraries on the SD card, `Params`, `Settings` (EEPROM), `SerialUI`, `AppLink` (the desktop app's binary protocol, on the same serial port as the shell), `MidiControl` (USB MIDI: program change = preset, controllers), `Tuner`, `DrumSongs`
 - `include/config.h` – compile-time settings and hardware constants (guitar channel, ADC full scale, mute pin)
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
@@ -68,14 +68,14 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - All code goes to ITCM (RAM1) by default. `tools/imxrt1062_t41_cold.ld` keeps background code (libc, SdFat, SerialUI, libraries, loaders) in flash. Never add a file with audio-interrupt code to its cold lists.
 - After changing the linker script or the audio path, run `tools/check_hot_code.sh` (after `pio run`): it fails if an audio-path function was linked into flash.
 - The NAM history must be a plain global (DTCM), not `DMAMEM`: OCRAM costs about 4% CPU more.
-- RAM1 code is close to a 32 KB step (ITCM grows in 32 KB blocks, taken from the stack's space): after adding background code, check `pio run`'s "free for local variables" stays near 95 KB (RAM1 code was about 57 KB of the 64 KB step on 13 Nov 2026); if it drops by 32 KB, something background was linked into ITCM (add it to the cold list).
+- RAM1 code is close to a 32 KB step (ITCM grows in 32 KB blocks, taken from the stack's space): after adding background code, check `pio run`'s "free for local variables" stays near 95 KB (RAM1 code was 59 KB of the 64 KB step on 13 Nov 2026: 5 KB left); if it drops by 32 KB, something background was linked into ITCM (add it to the cold list).
 - Load-time-only buffers can go in PSRAM (`EXTMEM`), as the IR resampler table does.
 
 ## DSP conventions
 - Process in `float` internally, samples normalized to [-1, 1). `lib/dsp` must also build on the host.
 - Keep state in the effect object, memory handed in by the caller; no globals in DSP code.
 - Every new algorithm in `lib/dsp` gets a host test in `test/` before hardware testing.
-- No algorithm on the audio path may add latency: no lookahead, no oversampling, no linear-phase filters, no FFT blocks larger than the audio block.
+- No algorithm on the audio path may add latency: no lookahead, no oversampling, no linear-phase filters, no FFT blocks larger than the audio block. The one agreed exception is the limiter's lookahead switch (1 ms, off by default).
 - Warnings: `-Wall` for `src/`; `-Wall -Wextra` for the native tests.
 
 ## PSRAM (8 MB APS6404L, hand-soldered, verified by hw_tests/psram_deep.cpp)

@@ -646,6 +646,7 @@ static void sendMeters() {
   w.u8((chain.amp().active() ? 1 : 0) | (chain.delayActive() ? 2 : 0) | (chain.reverbActive() ? 4 : 0) |
        (chain.drums().playing() ? 8 : 0) | (i2s32::faulted() ? 16 : 0) | (chain.tunerOn() ? 32 : 0));
   for (int stage = 0; stage < AudioChain::kStageCount; stage++) w.f32(chain.takeStagePeak(stage));
+  w.f32(chain.takeLimiterGain());
   chain.resetCpuMax();
   sendFrame(Msg::kMeters, applink::kFlagEvent, 0, w);
 }

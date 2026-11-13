@@ -143,6 +143,10 @@ static void applyParam(int id, int v) {
       chain.mod().set(s[kModType], s[kModRate] / 100.0f, s[kModDepth] / 100.0f, s[kModFeedback] / 100.0f,
                       s[kModMix] / 100.0f, s[kModWidth] / 100.0f);
       break;
+    case kLimOn:
+    case kLimCeiling:
+    case kLimRelease:
+    case kLimLook: chain.limiter().set(s[kLimOn], s[kLimCeiling] * 0.5f, (float)s[kLimRelease], s[kLimLook]); break;
     case kDrumsPlay:
       if (v) dm.start();
       else dm.stop();

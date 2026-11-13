@@ -3,7 +3,7 @@
   // block's controls. Everything is built from the device's settings table and the block
   // definitions shared with the unit's own UI (protocol/blocks.json).
   import { onMount } from "svelte";
-  import { blockActive, blockOn, blockOnValue, blockPeak, buildBlocks, type Block } from "$lib/blocks";
+  import { blockActive, blockOn, blockOnValue, blockPeak, blockReduction, buildBlocks, type Block } from "$lib/blocks";
   import LevelBar from "$lib/controls/LevelBar.svelte";
   import Control from "$lib/controls/Control.svelte";
   import Meter from "$lib/controls/Meter.svelte";
@@ -40,7 +40,21 @@
 
   const fileOf = (b: Block) => (b.def.file === "model" ? device.files.model : b.def.file === "ir" ? device.files.ir : "");
   const stem = (path: string) => baseName(path).replace(/\.(nam|wav)$/i, "").replaceAll("_", " ");
+  // The limiter's gain reduction in dB (0 = none), held for a second so it can be read.
+  let reduction = $state(0);
+  let reductionAt = 0;
+  $effect(() => {
+    const lim = blocks.chain.find((b) => b.def.reduction !== undefined);
+    const g = lim ? blockReduction(lim, meters) : null;
+    const db = g !== null && g > 0 && g < 1 ? -20 * Math.log10(g) : 0;
+    const now = performance.now();
+    if (db >= reduction || now - reductionAt > 1000) {
+      reduction = db;
+      reductionAt = now;
+    }
+  });
   function summary(b: Block): string {
+    if (b.def.reduction !== undefined && reduction >= 0.05) return `−${reduction.toFixed(1)} dB`;
     if (b.def.file) return stem(fileOf(b)) || (b.def.file === "model" ? "No model" : "No IR");
     return b.summary ? formatValue(b.summary, value(b.summary.id, b.summary.default)) : "";
   }
@@ -489,6 +503,7 @@
       {/if}
       <span class="grow"></span>
       {#if peakOf(selected) !== null}<span class="stagecpu">Out</span><LevelBar text peak={peakOf(selected) ?? 0} />{/if}
+      {#if selected.def.reduction !== undefined}<span class="stagecpu" title="How far the limiter is turning the output down at the moment">Reduction {reduction >= 0.05 ? `−${reduction.toFixed(1)}` : "0.0"} dB</span>{/if}
       {#if cpuOf(selected) !== null}<span class="stagecpu" title="This block's share of the processing time">{cpuOf(selected)?.toFixed(1)}% CPU</span>{/if}
       {#if selected.on}
         <button class="onoff" class:on={isOn(selected)} onclick={() => toggle(selected)}>
@@ -520,6 +535,7 @@
     {:else}
       {#if !selected.def.file}<p class="none">This block has no settings of its own.</p>{/if}
     {/each}
+    {#if selected.def.note}<p class="blocknote">{selected.def.note}</p>{/if}
   </section>
 
   </div>
@@ -1048,7 +1064,7 @@
     color: #aab2bf;
   }
   /* A narrow window: seven tiles get tight, so the names shrink to stay clear of the switch. */
-  @media (max-width: 1120px) {
+  @media (max-width: 1200px) {
     .short {
       font-size: 11px;
       letter-spacing: 0.05em;
@@ -1232,6 +1248,13 @@
     border-color: var(--c);
     background: color-mix(in srgb, var(--c) 26%, #22262e);
     color: #fff;
+  }
+  .blocknote {
+    max-width: 640px;
+    margin: 18px 0 0;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #8a92a0;
   }
   .irgraph {
     margin: 2px 0 16px;

@@ -352,7 +352,8 @@ async function startPreview(): Promise<() => void> {
       cpuAmp: find("amp") ? 33.7 : 0, cpuDoubler: find("dbl") ? 1.1 : 0, cpuDelay: find("dl") ? 6.2 : 0,
       cpuReverb: find("rv") ? 9.4 : 0, cpuDrums: find("drum") ? 4.0 : 0,
       // amp, gate, cab, doubler, delay, reverb: the amp adds level, the reverb goes over full scale.
-      stagePeaks: [0.9, 0.9, 0.45, 0.45, 0.5, 1.3].map((p) => p * Math.sqrt(env) + 0.0001),
+      // Amp, gate, cab, doubler, delay, reverb, mod, limiter, then the limiter's lowest gain.
+      stagePeaks: [...[0.9, 0.9, 0.45, 0.45, 0.5, 1.3, 0.47, 0.89].map((p) => p * Math.sqrt(env) + 0.0001), find("lim") && env > 0.6 ? 0.89 / (1.3 * Math.sqrt(env)) : 1],
       ampRunning: !!find("amp"), delayRinging: !!find("dl"), reverbRinging: !!find("rv"), drumsPlaying: !!find("drum"),
     });
   }, 33);

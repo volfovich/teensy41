@@ -90,6 +90,12 @@ static const ParamDef kParams[kValueCount] = {
     {"mod fb",       "Mod feedback",       "Feedback",       0,  100,   0, 1, U::kPercent, nullptr, kPreset},
     {"mod mix",      "Mod mix",            "Mix",            0,  100,  50, 1, U::kPercent, nullptr, kPreset},
     {"mod width",    "Mod width",          "Width",          0,  100,  50, 1, U::kPercent, nullptr, kPreset},
+    // The Limiter block: a brickwall limiter on everything that goes to the DAC, after the
+    // master volume. One setting for all presets.
+    {"lim",          "Limiter",            "On",             0,    1,   0, 1, U::kOnOff,   nullptr, 0},
+    {"lim ceil",     "Limiter ceiling",    "Ceiling",      -24,   -1,  -2, 1, U::kHalfDb,  nullptr, 0},
+    {"lim rel",      "Limiter release",    "Release",       10, 1000, 100, 10, U::kMs,     nullptr, 0},
+    {"lim look",     "Limiter lookahead",  "Lookahead",      0,    1,   0, 1, U::kOnOff,   nullptr, 0},
     // Not saved.
     {"drum",         "Drums",              "Play",           0,    1,   0, 1, U::kOnOff,   nullptr, 0},
     {nullptr,        "Loop from",          "Loop from",      0,  512,   0, 1, U::kNone,    nullptr, 0},

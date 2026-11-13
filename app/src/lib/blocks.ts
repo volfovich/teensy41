@@ -14,6 +14,10 @@ export interface BlockDef {
   summary?: string;
   /** The block's place among the meter frame's block peaks. */
   peak?: number;
+  /** The place, among the same values, of a gain the block reports (the limiter's). */
+  reduction?: number;
+  /** A line of explanation for the block's editor. */
+  note?: string;
   activity?: string;
   sections: { title?: string; settings: string[] }[];
 }
@@ -73,6 +77,11 @@ export function blockOnValue(b: Block, on: boolean): number {
 /** The peak at the block's output (linear, above 1 is over full scale), or null if it is not measured. */
 export function blockPeak(b: Block, m: Meters): number | null {
   return b.def.peak === undefined ? null : (m.stagePeaks[b.def.peak] ?? null);
+}
+
+/** The lowest gain the block applied lately (linear, 1 = none), or null if it reports none. */
+export function blockReduction(b: Block, m: Meters): number | null {
+  return b.def.reduction === undefined ? null : (m.stagePeaks[b.def.reduction] ?? null);
 }
 
 /** Whether the device reports the block as working (an effect's tail still ringing, the drums playing). */
