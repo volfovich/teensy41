@@ -13,7 +13,7 @@ namespace ui {
 //
 // Defaults are the values a blank EEPROM starts with. Ranges whose end depends
 // on the firmware (the delay's longest time, how many styles, kits, songs and
-// bars there are) are narrowed by MenuHost::limits / the firmware's limits.
+// bars there are) are narrowed by the firmware's paramLimits().
 
 static const char* const kReverbModes[] = {"hall", "gated"};
 static const char* const kCrashNames[] = {"off", "2 bars", "4 bars", "8 bars", "16 bars"};
@@ -46,10 +46,7 @@ static const ParamDef kParams[kValueCount] = {
     {"rera",         "Reverb era",         "Era",            0,  100,  40, 1, U::kPercent, nullptr, kPreset},
     {"rgate",        "Reverb gate",        "Gate",         100,  600, 300, 10, U::kMs,     nullptr, kPreset},
     {"g",            "Output gain",        "Out gain",    -120,   48, -12, 1, U::kHalfDb,  nullptr, 0},
-    {"in",           "Line-in level",      "Line-in sens",   0,   15,   0, 1, U::kNone,    nullptr, 0},
-    {"out",          "Line-out level",     "Line-out",      13,   31,  29, 1, U::kNone,    nullptr, 0},
-    {"hp",           "Headphones",         "Headphones",     0,  100,  50, 1, U::kPercent, nullptr, 0},
-    {"b",            "Bypass",             "Bypass",         0,    1,   0, 1, U::kOnOff,   nullptr, kPreset},
+    {"b",            "Cab bypass",         "Bypass",         0,    1,   0, 1, U::kOnOff,   nullptr, kPreset},
     {"drum style",   "Drum style",         "Style",          0,   63,   1, 1, U::kName,    nullptr, 0},
     {"drum kit",     "Drum kit",           "Kit",            0,   63,   1, 1, U::kName,    nullptr, 0},
     {"drum song",    "Drum song",          "Song",           0,  255,   0, 1, U::kName,    nullptr, 0},

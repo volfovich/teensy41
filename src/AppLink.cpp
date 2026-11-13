@@ -1,5 +1,5 @@
-// AppLink.cpp - see AppLink.h. Milestone A1 of APP.md: the session, the settings table, the
-// state, setting a value, and change events.
+// AppLink.cpp - see AppLink.h. Milestones A1 and A2 of APP.md: the session, the settings table,
+// the state, setting a value, change events, and the meter frames.
 #include "AppLink.h"
 
 #include <Arduino.h>
@@ -8,6 +8,7 @@
 #include <applink/Wire.h>
 
 #include "AmpLibrary.h"
+#include "AudioChain.h"
 #include "IRLibrary.h"
 #include "Params.h"
 #include "PresetLibrary.h"
@@ -40,6 +41,10 @@ static int16_t g_sentValue[kValueCount];
 static char g_sentModel[IR_PATH_MAX], g_sentIr[IR_PATH_MAX], g_sentPreset[IR_PATH_MAX];
 static bool g_sentEdited = false, g_sentCard = false;
 static uint32_t g_lastPollMs = 0;
+
+// Meter frames per second the app asked for (SUBSCRIBE; 0 = none), and when the last one went.
+static uint16_t g_meterRate = 0;
+static uint32_t g_lastMeterMs = 0;
 
 static void sendFrame(Msg type, uint8_t flags, uint16_t sequence, const Writer& w) {
   if (!w.ok()) return;  // a reply that did not fit its buffer: a firmware bug, send nothing
@@ -131,6 +136,7 @@ static void onHello(const applink::FrameHeader& h, Reader& r) {
 
   // A new session: the app asks for the state next, so changes are counted from now.
   g_session = true;
+  g_meterRate = 0;
   for (int id = 0; id < kValueCount; id++) g_sentValue[id] = (int16_t)getParam(id);
   rememberFiles();
   Serial.printf("App connected: %s\n", appName);
@@ -174,6 +180,44 @@ static void onSetParam(const applink::FrameHeader& h, Reader& r) {
   reply(h, w);
 }
 
+static void onSubscribe(const applink::FrameHeader& h, Reader& r) {
+  const uint16_t rate = r.u16();
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad SUBSCRIBE");
+  g_meterRate = rate > 60 ? 60 : rate;
+  g_lastMeterMs = millis();
+  chain.takeInputPeak();  // the first frame's peaks start now
+  chain.takeOutputPeak();
+  chain.resetCpuMax();
+  Writer w(g_txPayload, kTxPayload);
+  w.u16(g_meterRate);
+  reply(h, w);
+}
+
+// One METERS event (PROTOCOL.md 4.6). The peaks and the CPU maximum are "since the last
+// frame": they are the same counters the shell's s and m read, so while the app shows its
+// meters those two see only what happened since the app's last frame.
+static void sendMeters() {
+  const i2s32::Stats drv = i2s32::stats();
+  Writer w(g_txPayload, kTxPayload);
+  w.f32(chain.takeInputPeak());
+  w.f32(chain.takeOutputPeak());
+  w.f32(getParam(kGateOn) ? chain.gate().gain() : 1.0f);
+  w.u32(chain.clipCount());
+  w.f32(chain.cpuPercent());
+  w.f32(chain.cpuPercentMax());
+  w.f32(chain.ampCpuPercent());
+  w.f32(chain.doublerCpuPercent());
+  w.f32(chain.delayCpuPercent());
+  w.f32(chain.reverbCpuPercent());
+  w.f32(chain.drumCpuPercent());
+  w.u32(drv.overruns);
+  w.u32(drv.faults);
+  w.u8((chain.amp().active() ? 1 : 0) | (chain.delayActive() ? 2 : 0) | (chain.reverbActive() ? 4 : 0) |
+       (chain.drums().playing() ? 8 : 0) | (i2s32::faulted() ? 16 : 0));
+  chain.resetCpuMax();
+  sendFrame(Msg::kMeters, applink::kFlagEvent, 0, w);
+}
+
 static void handleFrame() {
   const applink::FrameHeader& h = g_parser.header();
   if (h.flags) return;  // only requests come from the app
@@ -186,6 +230,7 @@ static void handleFrame() {
     case Msg::kGetSchema: onGetSchema(h); break;
     case Msg::kGetState: onGetState(h); break;
     case Msg::kSetParam: onSetParam(h, r); break;
+    case Msg::kSubscribe: onSubscribe(h, r); break;
     default: replyError(h, Err::kUnknownMessage, "Not supported by this firmware"); break;
   }
 }
@@ -232,6 +277,10 @@ void serviceAppLink() {
   if (now - g_lastPollMs >= kChangePollMs) {
     g_lastPollMs = now;
     reportChanges();
+  }
+  if (g_meterRate && now - g_lastMeterMs >= 1000u / g_meterRate) {
+    g_lastMeterMs = now;
+    sendMeters();
   }
 }
 

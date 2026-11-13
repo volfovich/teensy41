@@ -57,7 +57,7 @@ int main() {
   for (int id = 0; id < kParamCount; id++) count += inPreset(id);
   CHECK(count == 35, "35 settings in a preset (%d)", count);
   CHECK(inPreset(kAmpIn) && inPreset(kGateType) && inPreset(kPresetLevel) && inPreset(kBypass), "amp, gate, pvol, bypass in");
-  CHECK(!inPreset(kOutGain) && !inPreset(kLineIn) && !inPreset(kDrumTempo) && !inPreset(kBassOn), "levels, drums, bass out");
+  CHECK(!inPreset(kOutGain) && !inPreset(kDrumTempo) && !inPreset(kBassOn), "levels, drums, bass out");
 
   // Round trip at each end of every range, and the defaults.
   for (int pass = 0; pass < 3; pass++) {

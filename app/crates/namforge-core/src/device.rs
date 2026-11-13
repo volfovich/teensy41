@@ -16,10 +16,12 @@ const USB_VID: u16 = 0x16C0;
 const USB_PID: u16 = 0x0489;
 
 /// The serial port's read timeout: how long one wait for events lasts.
-const READ_TIMEOUT: Duration = Duration::from_millis(20);
+const READ_TIMEOUT: Duration = Duration::from_millis(10);
 /// The device ends a session after 5 s without a frame; a full state every 2 s keeps it open
 /// and corrects anything an event missed.
 const KEEPALIVE: Duration = Duration::from_millis(2000);
+/// Meter frames per second asked of the device.
+const METER_RATE: u16 = 30;
 const RETRY: Duration = Duration::from_millis(1000);
 
 enum Command {
@@ -119,6 +121,12 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
     emit(Event::Connected { info });
     match s.schema() {
         Ok(settings) => emit(Event::Schema { settings }),
+        Err(e) => return lost(e),
+    }
+
+    // Firmware before meters refuses this; the app then simply shows none.
+    match s.subscribe(METER_RATE) {
+        Ok(_) | Err(SessionError::Device { .. }) => {}
         Err(e) => return lost(e),
     }
 

@@ -24,6 +24,8 @@ export default defineConfig(() => ({
           port: 1421,
         }
       : undefined,
+    // The block definitions shared with the firmware's UI live in ../protocol.
+    fs: { allow: [".."] },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],

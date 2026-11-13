@@ -11,4 +11,4 @@ pub mod session;
 pub mod types;
 
 pub use device::{spawn, DeviceHandle};
-pub use types::{DeviceInfo, Event, Files, Setting};
+pub use types::{DeviceInfo, Event, Files, Meters, Setting};

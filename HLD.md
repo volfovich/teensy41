@@ -163,7 +163,7 @@ Porting rules: ported files keep the old project's formatting; only the namespac
 - `AudioChain::process(in, outL, outR)` runs the whole chain for one block. `src/main.cpp`'s callback converts the ADC words to float, calls it, and converts back.
 - `loop()` services the serial UI, the level meter and the delayed EEPROM save. File loading (IRs, models, presets, MIDI drum files) runs here; the audio never stops for it.
 - Settings live in one table (`lib/params` `ParamDefs.cpp`): serial key, name, range, default and unit. The serial commands, the EEPROM record and the preset files all read it. `Params.cpp` says what each setting does.
-- The table is identical to teensy-ir-loader's, so presets and the EEPROM layout are interchangeable. Three of its settings (`in`, `out`, `hp`) were codec levels and do nothing on this hardware.
+- The table is teensy-ir-loader's without its three codec levels (`in`, `out`, `hp`: line-in, line-out and headphone level). The PCM1808 and PCM5102A have no gain settings, so they were removed on 13 Nov 2026. Preset files stay interchangeable, because those three were never part of a preset. The EEPROM record has a new layout; the old one is converted once at boot.
 - Cold code is kept out of RAM1 by `tools/imxrt1062_t41_cold.ld`; `tools/check_hot_code.sh` verifies that no audio-path function was linked into flash. This matters: before the rule was tightened, the NAM inner loops had landed in flash.
 
 ## 5. Signal chain

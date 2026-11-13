@@ -11,6 +11,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Flash: `pio run -t upload` (Teensy Loader GUI; press the board's button if it doesn't auto-reboot)
 - Serial monitor / command shell: `pio device monitor` (type `?` for commands, `s` for status)
 - Check the desktop app's link protocol on the device (close the serial monitor first): `~/.platformio/penv/bin/python tools/applink_check.py`
+- After changing the settings table: refresh the app's browser-preview data with `tools/applink_snapshot.py` (see `app/README.md`) and add new settings to `protocol/blocks.json`
 - Check that no audio code was linked into flash: `tools/check_hot_code.sh` (after `pio run`)
 - Host unit tests for portable DSP: `pio test -e native`
 - I2S driver self-test (bare board, jumper pin 7 -> pin 8; replaces app firmware until you re-upload):
@@ -31,7 +32,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
 - `lib/dsp/` – **portable float DSP** (namespace `dsp`, no Arduino/Teensy includes), unit-tested on the host: `nam/`, `conv/`, `fx/`, `drums/`
 - `lib/params/` – the settings table (`ParamDefs`) and preset file format. Portable.
-- `lib/applink/` – the desktop app's link protocol on the firmware side (frames, payload fields, message numbers). Portable. Reference: `protocol/PROTOCOL.md`; shared examples `protocol/test_frames.txt` (regenerate with `python3 protocol/make_test_frames.py`).
+- `lib/applink/` – the desktop app's link protocol on the firmware side (frames, payload fields, message numbers). Portable. Reference: `protocol/PROTOCOL.md`; the chain's blocks as the UIs show them (names, colours, which settings belong where): `protocol/blocks.json`; shared examples `protocol/test_frames.txt` (regenerate with `python3 protocol/make_test_frames.py`).
 - `app/` – the macOS control app, "Volfovich NAM Forge" (plan: `APP.md`, commands: `app/README.md`): Tauri 2, Rust core in `app/crates`, Svelte UI in `app/src`. Only one program can hold the unit's serial port: close the app before flashing or opening the serial monitor.
 - `hw_tests/` – standalone firmware images that test hardware (PSRAM, I2S loopback, NAM benchmarks); each has its own env.
 - `tools/` – cold-code linker script, `check_hot_code.sh`, drum kit and song compilers. `kits/`, `songs/` – drum assets.
@@ -41,7 +42,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Almost everything in `lib/dsp`, `lib/params` and `src/` except `main.cpp`, `AudioChain.*` (adapted), `lib/i2s32` and `dsp/Convert.h` is ported from that project. Its `NAM.md`, `DELAY.md`, `REVERB.md`, `PRESETS.md`, `DRUMS.md` describe the same code.
 - Ported files keep the original formatting (2-space indent, `printf` with floats). Only the namespace (`irdsp` -> `dsp`), include paths (`<dsp/...>`, `<params/...>`) and placement macros (`DSP_COLD`, `DSP_PROGMEM`) changed. Keep edits small so fixes can go back to the old project.
 - The ported test suites run the original checks inside one Unity test each (`#define main ported_main`).
-- The settings table is kept identical to the old project's (presets and EEPROM layout are interchangeable). `in`, `out`, `hp` were codec levels and are no-ops here.
+- The settings table is the old project's minus its three codec levels (`in`, `out`, `hp`: line in, line out, headphones), which this hardware does not have. Preset files are still interchangeable (those three were never in presets); the EEPROM record is not (`Settings.cpp` converts the old record once).
 - Not ported and not wanted: the OLED panel, encoder and keys. The planned UI is a 2.8-inch TFT with touch, designed from scratch.
 
 ## Audio facts

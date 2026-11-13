@@ -5,7 +5,9 @@
 // applyParam()).
 //
 // Plain data in flash and Arduino-free, so the host tests use it too.
-// Ported from teensy-ir-loader (lib/oledui/src/ParamDefs.h); include paths changed.
+// Ported from teensy-ir-loader (lib/oledui/src/ParamDefs.h); include paths changed, and the
+// codec's three levels (line in, line out, headphones) removed: the PCM1808 and PCM5102A
+// have no gain settings.
 #pragma once
 
 #include <stdint.h>
@@ -21,7 +23,7 @@ enum Param : uint8_t {
   kReverbMode,  // 0 hall, 1 gated
   kReverbPreDelay, kReverbMod, kReverbEra, kReverbGate,
   kOutGain,  // half-dB steps
-  kLineIn, kLineOut, kHeadphones, kBypass,
+  kBypass,   // the cab IR off (the amp and effects stay)
   kDrumStyle, kDrumKit,  // 0-based
   kDrumSong,             // 0 = off (the style), else 1-based
   kDrumCrash,            // 0 off, 1..4 = every 2, 4, 8, 16 bars
@@ -53,7 +55,7 @@ enum class Unit : uint8_t {
   kOnOff,  // a toggle: 0 / 1, shown OFF / ON
   kPercent, kMs, kHalfDb, kBpm, kBars,
   kDb,     // whole dB
-  kName,   // shown by name: `choices`, or MenuHost::valueText when it has none
+  kName,   // shown by name: `choices`, or the firmware's paramText() when it has none
 };
 
 // ParamDef::flags

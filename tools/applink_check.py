@@ -165,6 +165,18 @@ def main():
     changed = [(Reader(e[3]).u16(), struct.unpack_from("<i", e[3], 2)[0]) for e in events if e[0] == 0x11 and e[1] == 4]
     check((mix, old) in changed, "'mix %d' typed into the shell arrives as a PARAM_CHANGED event" % old)
 
+    # Meter frames: 20 per second for a second, then off.
+    f, _ = link.request(0x50, struct.pack("<H", 20))
+    meters = [e for e in link.poll(1.0) if e[0] == 0x51 and e[1] == 4]
+    ok = f[1] == 1 and Reader(f[3]).u16() == 20 and 15 <= len(meters) <= 22 and all(len(e[3]) == 53 for e in meters)
+    m = struct.unpack("<fffIfffffffIIB", meters[-1][3]) if ok else ()
+    ok = ok and 0 <= m[0] <= 1.5 and 0 <= m[2] <= 1 and 1 < m[4] < 100 and m[4] <= m[5] + 5
+    check(ok, "SUBSCRIBE 20: %d METERS frames in 1 s; in %.4f out %.4f gate %.2f cpu %.1f%% (max %.1f%%) bits %d"
+          % ((len(meters),) + ((m[0], m[1], m[2], m[4], m[5], m[13]) if m else (0, 0, 0, 0, 0, 0))))
+    f, _ = link.request(0x50, struct.pack("<H", 0))
+    link.poll(0.2)
+    check(f[1] == 1 and not [e for e in link.poll(0.5) if e[0] == 0x51], "SUBSCRIBE 0: the frames stop")
+
     f, _ = link.request(0x7E)
     check(f[1] == 3 and Reader(f[3]).u16() == 1, "unknown message: error UNKNOWN_MESSAGE")
     f, _ = link.request(0x10, b"\x01")

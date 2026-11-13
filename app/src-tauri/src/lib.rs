@@ -43,6 +43,7 @@ impl Snapshot {
                 }
             }
             Event::Files { files } => self.files = files.clone(),
+            Event::Meters { .. } => {}
             Event::Disconnected { reason } => {
                 self.connected = false;
                 self.detail = reason.clone();
@@ -83,6 +84,7 @@ pub fn run() {
                             eprintln!("event: state ({} values, preset {:?})", values.len(), files.preset)
                         }
                         Event::Schema { settings } => eprintln!("event: schema ({} settings)", settings.len()),
+                        Event::Meters { .. } => {}
                         other => eprintln!("event: {other:?}"),
                     }
                 }

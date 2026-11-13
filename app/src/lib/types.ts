@@ -36,6 +36,28 @@ export interface Files {
   card: boolean;
 }
 
+/** One meter frame (PROTOCOL.md 4.6). Peaks are linear, 1.0 = full scale. */
+export interface Meters {
+  inputPeak: number;
+  outputPeak: number;
+  gateGain: number;
+  clipped: number;
+  cpu: number;
+  cpuMax: number;
+  cpuAmp: number;
+  cpuDoubler: number;
+  cpuDelay: number;
+  cpuReverb: number;
+  cpuDrums: number;
+  overruns: number;
+  overloadMutes: number;
+  ampRunning: boolean;
+  delayRinging: boolean;
+  reverbRinging: boolean;
+  drumsPlaying: boolean;
+  muted: boolean;
+}
+
 export interface Snapshot {
   connected: boolean;
   detail: string;
@@ -52,6 +74,7 @@ export type DeviceEvent =
   | { kind: "state"; values: number[]; files: Files }
   | { kind: "param"; id: number; value: number }
   | { kind: "files"; files: Files }
+  | { kind: "meters"; meters: Meters }
   | { kind: "disconnected"; reason: string };
 
 // A setting's unit (protocol/PROTOCOL.md section 6).

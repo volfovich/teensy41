@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 use namforge_core::{Event, Setting};
 
+static METER_FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let seconds: u64 = args.first().and_then(|s| s.parse().ok()).unwrap_or(10);
@@ -73,6 +75,18 @@ fn main() {
                 "files: model {} | ir {} | preset {}{}",
                 files.model, files.ir, files.preset, if files.edited { " (edited)" } else { "" }
             ),
+            Event::Meters { meters: m } => {
+                // About one line a second out of 30 frames.
+                let n = METER_FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n % 30 == 0 {
+                    println!(
+                        "meters: in {:.1} dBFS, out {:.1} dBFS, gate {:.2}, cpu {:.1}% (max {:.1}%), amp {:.1}%",
+                        20.0 * m.input_peak.max(1e-6).log10(),
+                        20.0 * m.output_peak.max(1e-6).log10(),
+                        m.gate_gain, m.cpu, m.cpu_max, m.cpu_amp
+                    );
+                }
+            }
             Event::Disconnected { reason } => println!("disconnected: {reason}"),
         }
     }

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use namforge_link::{encode_frame, flags, msg, ErrorCode, Fed, Frame, FrameParser, Reader, WireError, Writer};
 
-use crate::types::{DeviceInfo, Event, Files, Setting};
+use crate::types::{DeviceInfo, Event, Files, Meters, Setting};
 
 /// The app's name as sent in `HELLO`.
 pub const APP_ID: &str = concat!("NAM Forge ", env!("CARGO_PKG_VERSION"));
@@ -190,6 +190,14 @@ impl<T: Read + Write> Session<T> {
         .map_err(|problem| SessionError::Malformed { request: msg::GET_STATE, problem })
     }
 
+    /// Asks for meter frames at `rate` per second (0 = none); returns the rate in force.
+    pub fn subscribe(&mut self, rate: u16) -> Result<u16, SessionError> {
+        let mut w = Writer::new();
+        w.u16(rate);
+        let f = self.request(msg::SUBSCRIBE, &w.finish())?;
+        Reader::new(&f.payload).u16().map_err(|problem| SessionError::Malformed { request: msg::SUBSCRIBE, problem })
+    }
+
     /// Sets a value and returns the one now in force (the device clamps to the setting's range).
     pub fn set_param(&mut self, id: u16, value: i32) -> Result<i32, SessionError> {
         let mut w = Writer::new();
@@ -206,6 +214,32 @@ impl<T: Read + Write> Session<T> {
     }
 }
 
+fn read_meters(r: &mut Reader<'_>) -> Result<Meters, WireError> {
+    let mut m = Meters {
+        input_peak: r.f32()?,
+        output_peak: r.f32()?,
+        gate_gain: r.f32()?,
+        clipped: r.u32()?,
+        cpu: r.f32()?,
+        cpu_max: r.f32()?,
+        cpu_amp: r.f32()?,
+        cpu_doubler: r.f32()?,
+        cpu_delay: r.f32()?,
+        cpu_reverb: r.f32()?,
+        cpu_drums: r.f32()?,
+        overruns: r.u32()?,
+        overload_mutes: r.u32()?,
+        ..Meters::default()
+    };
+    let bits = r.u8()?;
+    m.amp_running = bits & 1 != 0;
+    m.delay_ringing = bits & 2 != 0;
+    m.reverb_ringing = bits & 4 != 0;
+    m.drums_playing = bits & 8 != 0;
+    m.muted = bits & 16 != 0;
+    Ok(m)
+}
+
 fn read_files(r: &mut Reader<'_>) -> Result<Files, WireError> {
     Ok(Files { model: r.str()?, ir: r.str()?, preset: r.str()?, edited: r.bool()?, card: r.bool()? })
 }
@@ -216,6 +250,7 @@ fn decode_event(f: &Frame) -> Option<Event> {
     match f.msg_type {
         msg::PARAM_CHANGED => Some(Event::Param { id: r.u16().ok()?, value: r.i32().ok()? }),
         msg::STATE_CHANGED => Some(Event::Files { files: read_files(&mut r).ok()? }),
+        msg::METERS => Some(Event::Meters { meters: read_meters(&mut r).ok()? }),
         _ => None,
     }
 }
@@ -382,6 +417,28 @@ mod tests {
         assert!(drain(&mut s).is_empty());
         s.io.event_param(2, 1);
         assert_eq!(drain(&mut s), [Event::Param { id: 2, value: 1 }]);
+    }
+
+    #[test]
+    fn meter_frames_become_events() {
+        let mut dev = FakeUnit::new();
+        let mut w = Writer::new();
+        w.f32(0.5).f32(0.25).f32(1.0).u32(3);
+        for cpu in [56.0f32, 57.5, 32.0, 1.0, 6.0, 9.0, 0.0] {
+            w.f32(cpu);
+        }
+        w.u32(2).u32(1).u8(0b0_1101);
+        dev.send(msg::METERS, flags::EVENT, 0, w.finish());
+        let mut s = Session::new(dev);
+        let mut events = Vec::new();
+        for _ in 0..40 {
+            events.extend(s.events().unwrap());
+        }
+        let [Event::Meters { meters: m }] = &events[..] else { panic!("{events:?}") };
+        assert_eq!((m.input_peak, m.output_peak, m.gate_gain, m.clipped), (0.5, 0.25, 1.0, 3));
+        assert_eq!((m.cpu, m.cpu_max, m.cpu_amp, m.cpu_drums), (56.0, 57.5, 32.0, 0.0));
+        assert_eq!((m.overruns, m.overload_mutes), (2, 1));
+        assert!(m.amp_running && !m.delay_ringing && m.reverb_ringing && m.drums_playing && !m.muted);
     }
 
     #[test]

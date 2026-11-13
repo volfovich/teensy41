@@ -1,6 +1,6 @@
 # Volfovich NAM Forge: Desktop Control App Plan
 
-Nov 13, 2026 · Status: A0 and A1 done. The app builds, connects to the unit by itself and edits every setting from a plain list; changes go both ways. Not yet looked at by a person: the window was only launched and its link checked from a terminal. Next: A2, the chain view.
+Nov 13, 2026 · Status: A0, A1 and A2 done. The app connects to the unit by itself and shows the main screen: the chain as blocks, the drums lane, the selected block's knobs, input and output meters and CPU. Checked so far: the link against the real unit, and the screen as rendered in a browser with saved data; the real window has not yet been used by a person, so how the knobs feel and sound is untested. The library drawer, preset buttons and file loading are not in yet. Next: A3, presets.
 
 **Volfovich NAM Forge** (short name in the window title and the Dock: **NAM Forge**) is a macOS app that controls the guitar DSP unit over USB: edit the sound on a Quad Cortex style screen, manage presets, and send NAM models and IRs straight to the device.
 

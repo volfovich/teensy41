@@ -1,8 +1,9 @@
 // The window's copy of the device: filled from the Rust side's snapshot and kept current by
 // its events. The device owns the state; the UI shows what it reports.
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import type { DeviceEvent, Snapshot } from "./types";
+//
+// In a plain browser (npm run dev, without Tauri) there is no device: the window then shows a
+// saved copy of the unit's state with moving meters, for working on the UI.
+import type { DeviceEvent, Meters, Snapshot } from "./types";
 
 const empty: Snapshot = {
   connected: false,
@@ -13,7 +14,26 @@ const empty: Snapshot = {
   files: { model: "", ir: "", preset: "", edited: false, card: false },
 };
 
+const noMeters: Meters = {
+  inputPeak: 0, outputPeak: 0, gateGain: 1, clipped: 0,
+  cpu: 0, cpuMax: 0, cpuAmp: 0, cpuDoubler: 0, cpuDelay: 0, cpuReverb: 0, cpuDrums: 0,
+  overruns: 0, overloadMutes: 0,
+  ampRunning: false, delayRinging: false, reverbRinging: false, drumsPlaying: false, muted: false,
+};
+
 export const device = $state<Snapshot>({ ...empty });
+export const meters = $state<Meters>({ ...noMeters });
+/** True when the window runs without Tauri and shows saved data. */
+export const preview = $state({ on: false });
+
+const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+// A control that is being moved shows the user's value, not the device's slightly older
+// answers: for this long after the last local change, reports for that setting are ignored.
+// The periodic full state corrects anything that was missed (a value the device clamped).
+const HOLD_MS = 400;
+const touched = new Map<number, number>();
+const held = (id: number) => performance.now() - (touched.get(id) ?? -1e9) < HOLD_MS;
 
 function apply(e: DeviceEvent) {
   switch (e.kind) {
@@ -30,32 +50,83 @@ function apply(e: DeviceEvent) {
       device.settings = e.settings;
       break;
     case "state":
-      device.values = e.values;
+      device.values = e.values.map((v, id) => (held(id) ? (device.values[id] ?? v) : v));
       device.files = e.files;
       break;
     case "param":
-      device.values[e.id] = e.value;
+      if (!held(e.id)) device.values[e.id] = e.value;
       break;
     case "files":
       device.files = e.files;
       break;
+    case "meters":
+      Object.assign(meters, e.meters);
+      break;
     case "disconnected":
       device.connected = false;
       device.detail = e.reason;
+      Object.assign(meters, noMeters);
       break;
   }
 }
 
 /** Call once when the window opens. Returns a function that stops listening. */
 export async function connectDevice(): Promise<() => void> {
+  if (!inTauri) return startPreview();
+  const { listen } = await import("@tauri-apps/api/event");
+  const { invoke } = await import("@tauri-apps/api/core");
   // Listen first, then take the snapshot, so nothing falls between the two.
   const unlisten = await listen<DeviceEvent>("device", (msg) => apply(msg.payload));
   Object.assign(device, await invoke<Snapshot>("snapshot"));
   return unlisten;
 }
 
+// Values waiting to go out: the newest per setting, sent once per display frame (about 60
+// times a second), so a dragged knob does not queue hundreds of messages.
+const pending = new Map<number, number>();
+let flushQueued = false;
+
+function flush() {
+  flushQueued = false;
+  const batch = [...pending];
+  pending.clear();
+  if (!inTauri) return;
+  void import("@tauri-apps/api/core").then(({ invoke }) => {
+    for (const [id, value] of batch) void invoke("set_param", { id, value });
+  });
+}
+
 /** Asks the device to change a setting. The value it applies comes back as an event. */
 export function setParam(id: number, value: number) {
-  device.values[id] = value; // show it at once; the device's answer corrects it if needed
-  void invoke("set_param", { id, value });
+  if (device.values[id] === value) return;
+  device.values[id] = value; // show it at once
+  touched.set(id, performance.now());
+  pending.set(id, value);
+  if (!flushQueued) {
+    flushQueued = true;
+    requestAnimationFrame(flush);
+  }
+}
+
+async function startPreview(): Promise<() => void> {
+  const snapshot = (await import("./demo-snapshot.json")).default as Snapshot;
+  Object.assign(device, structuredClone(snapshot));
+  preview.on = true;
+  const t0 = performance.now();
+  const timer = setInterval(() => {
+    const t = (performance.now() - t0) / 1000;
+    // A note every 1.6 s that dies away.
+    const env = Math.exp(-3 * (t % 1.6));
+    const find = (key: string) => device.values[device.settings.find((s) => s.key === key)?.id ?? -1] ?? 0;
+    Object.assign(meters, {
+      inputPeak: 0.25 * env + 0.0001,
+      outputPeak: 0.5 * Math.sqrt(env) + 0.0001,
+      gateGain: env > 0.02 ? 1 : 0,
+      cpu: 56.2 + Math.sin(t) * 0.4, cpuMax: 57.4,
+      cpuAmp: find("amp") ? 33.7 : 0, cpuDoubler: find("dbl") ? 1.1 : 0, cpuDelay: find("dl") ? 6.2 : 0,
+      cpuReverb: find("rv") ? 9.4 : 0, cpuDrums: find("drum") ? 4.0 : 0,
+      ampRunning: !!find("amp"), delayRinging: !!find("dl"), reverbRinging: !!find("rv"), drumsPlaying: !!find("drum"),
+    });
+  }, 33);
+  return () => clearInterval(timer);
 }

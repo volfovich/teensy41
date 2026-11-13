@@ -8,141 +8,46 @@
 
 Settings g_settings;
 
-static const uint32_t kSettingsMagic = 0x49524C52;  // "IRLR": the preset's path, values by ui::Param
+static const uint32_t kSettingsMagic = 0x4E464731;  // "NFG1": the paths, then values by ui::Param
+static uint32_t g_saveAt = 0;  // millis() when a pending save is due (0 = none)
 
-// The record before presets ("IRLQ", up to 2026-11-10): the same without
-// presetPath, read once to carry its settings over.
-static const uint32_t kNoPresetMagic = 0x49524C51;
-struct NoPresetSettings {
+// The record up to 2026-11-13 ("IRLR", teensy-ir-loader's layout): the same with three more
+// values after the output gain, the SGTL5000 codec's line-in, line-out and headphone levels.
+// This hardware has no such settings; the record is read once to carry the others over.
+static const uint32_t kCodecMagic = 0x49524C52;
+constexpr int kCodecFirst = ui::kOutGain + 1, kCodecValues = 3;
+struct CodecSettings {
   uint32_t magic;
   uint16_t count;
   uint16_t reserved;
   char irPath[IR_PATH_MAX];
   char ampPath[IR_PATH_MAX];
-  int16_t v[ui::kParamCount];  // count of them were written
-};
-static uint32_t g_saveAt = 0;  // millis() when a pending save is due (0 = none)
-
-// The record before the amp model ("IRLP", up to 2026-10-29): the same
-// without ampPath, read once to carry its settings over.
-static const uint32_t kNoAmpMagic = 0x49524C50;
-struct NoAmpSettings {
-  uint32_t magic;
-  uint16_t count;
-  uint16_t reserved;
-  char irPath[IR_PATH_MAX];
-  int16_t v[ui::kParamCount];  // count of them were written
+  char presetPath[IR_PATH_MAX];
+  int16_t v[ui::kParamCount + kCodecValues];  // count of them were written
 };
 
-// The record of the firmware before the parameter table ("IRLB", up to
-// 2026-10-29), read once to carry its settings over.
-static const uint32_t kLegacyMagic = 0x49524C42;
-struct LegacySettings {
-  uint32_t magic;
-  char irPath[IR_PATH_MAX];
-  float outGainDb, hpVolume;
-  uint8_t lineIn, lineOut, bypass;
-  uint8_t reverbOn, reverbMix, reverbSize, reverbTone;
-  uint8_t delayOn, delayMix, delayFeedback, delayTone, delayMod;
-  uint16_t delayTimeMs;
-  uint8_t delayType, delayDuck, delayDrive, delayEra;
-  uint8_t drumStyle, drumVolume, drumCountIn, trainerOn, trainerStep, trainerEvery;
-  uint16_t drumTempo, trainerTarget;
-  uint8_t drumKit, drumCrash;
-  uint8_t reverbType, reverbMode, reverbPreDelay, reverbMod, reverbEra;
-  uint16_t reverbGateMs;
-  uint8_t drumSong, drumComp;
-  uint8_t bassOn, bassVolume, bassKey, bassTone;
-};
-
-static void fromLegacy(const LegacySettings& o) {
-  using namespace ui;
-  int16_t* v = g_settings.v;
-  memcpy(g_settings.irPath, o.irPath, IR_PATH_MAX);
-  memset(g_settings.ampPath, 0, IR_PATH_MAX);
-  memset(g_settings.presetPath, 0, IR_PATH_MAX);
-  v[kDelayOn] = o.delayOn;
-  v[kDelayMix] = o.delayMix;
-  v[kDelayTime] = o.delayTimeMs;
-  v[kDelayRepeats] = o.delayFeedback;
-  v[kDelayTone] = o.delayTone;
-  v[kDelayMod] = o.delayMod;
-  v[kDelayDuck] = o.delayDuck;
-  v[kDelayDrive] = o.delayDrive;
-  v[kDelayEra] = o.delayEra;
-  v[kReverbOn] = o.reverbOn;
-  v[kReverbMix] = o.reverbMix;
-  v[kReverbSize] = o.reverbSize;
-  v[kReverbTone] = o.reverbTone;
-  v[kReverbMode] = o.reverbMode;
-  v[kReverbPreDelay] = o.reverbPreDelay;
-  v[kReverbMod] = o.reverbMod;
-  v[kReverbEra] = o.reverbEra;
-  v[kReverbGate] = o.reverbGateMs;
-  v[kOutGain] = (int16_t)lroundf(o.outGainDb * 2.0f);
-  v[kLineIn] = o.lineIn;
-  v[kLineOut] = o.lineOut;
-  v[kHeadphones] = (int16_t)lroundf(o.hpVolume * 100.0f);
-  v[kBypass] = o.bypass;
-  v[kDrumStyle] = o.drumStyle;
-  v[kDrumKit] = o.drumKit;
-  v[kDrumSong] = o.drumSong;
-  v[kDrumCrash] = o.drumCrash >= 16 ? 4 : (o.drumCrash >= 8 ? 3 : (o.drumCrash >= 4 ? 2 : (o.drumCrash ? 1 : 0)));
-  v[kDrumTempo] = o.drumTempo;
-  v[kDrumVolume] = o.drumVolume;
-  v[kDrumComp] = o.drumComp;
-  v[kDrumCountIn] = o.drumCountIn;
-  v[kTrainerOn] = o.trainerOn;
-  v[kTrainerStep] = o.trainerStep;
-  v[kTrainerEvery] = o.trainerEvery;
-  v[kTrainerTarget] = o.trainerTarget;
-  v[kBassOn] = o.bassOn;
-  v[kBassVolume] = o.bassVolume;
-  v[kBassKey] = o.bassKey;
-  v[kBassTone] = o.bassTone;
-  g_settings.count = kAmpOn;  // the settings it had; the amp's get their defaults
+static void fromCodecRecord() {
+  static CodecSettings old;  // static: not on the stack
+  EEPROM.get(0, old);
+  memset(&g_settings, 0, sizeof(g_settings));
+  memcpy(g_settings.irPath, old.irPath, IR_PATH_MAX);
+  memcpy(g_settings.ampPath, old.ampPath, IR_PATH_MAX);
+  memcpy(g_settings.presetPath, old.presetPath, IR_PATH_MAX);
+  const int had = old.count < ui::kParamCount + kCodecValues ? old.count : ui::kParamCount + kCodecValues;
+  int n = 0;
+  for (int i = 0; i < had; i++)
+    if (i < kCodecFirst || i >= kCodecFirst + kCodecValues) g_settings.v[n++] = old.v[i];
+  g_settings.count = n;
+  g_settings.magic = kSettingsMagic;
+  scheduleSave();
 }
 
 void loadSettings() {
   EEPROM.get(0, g_settings);
-  if (g_settings.magic == kNoPresetMagic) {
-    NoPresetSettings old;
-    EEPROM.get(0, old);
-    memset(&g_settings, 0, sizeof(g_settings));
-    memcpy(g_settings.irPath, old.irPath, IR_PATH_MAX);
-    memcpy(g_settings.ampPath, old.ampPath, IR_PATH_MAX);
-    g_settings.count = old.count < ui::kParamCount ? old.count : ui::kParamCount;
-    memcpy(g_settings.v, old.v, sizeof(int16_t) * g_settings.count);
-    g_settings.magic = kSettingsMagic;
-    scheduleSave();
-  } else if (g_settings.magic == kNoAmpMagic) {
-    NoAmpSettings old;
-    EEPROM.get(0, old);
-    memset(&g_settings, 0, sizeof(g_settings));
-    memcpy(g_settings.irPath, old.irPath, IR_PATH_MAX);
-    g_settings.count = old.count < ui::kParamCount ? old.count : ui::kParamCount;
-    memcpy(g_settings.v, old.v, sizeof(int16_t) * g_settings.count);
-    g_settings.magic = kSettingsMagic;
-    scheduleSave();
-  } else if (g_settings.magic == kLegacyMagic) {
-    LegacySettings old;
-    EEPROM.get(0, old);
-    fromLegacy(old);
-    g_settings.magic = kSettingsMagic;
-    scheduleSave();
-  }
+  if (g_settings.magic == kCodecMagic) fromCodecRecord();
   if (g_settings.magic != kSettingsMagic) {
     memset(&g_settings, 0, sizeof(g_settings));
     g_settings.magic = kSettingsMagic;
-  }
-  // Before the gate had its own on/off (2026-11-06), its threshold's
-  // minimum, -91 dB, meant off.
-  if (g_settings.count > ui::kGateThr && g_settings.count <= ui::kGateOn) {
-    const bool off = g_settings.v[ui::kGateThr] <= -91;
-    g_settings.v[ui::kGateOn] = off ? 0 : 1;
-    if (off) g_settings.v[ui::kGateThr] = ui::paramDef(ui::kGateThr).def;
-    g_settings.count = ui::kGateOn + 1;
-    scheduleSave();
   }
   // Values the record doesn't have, or that are out of range, get their
   // defaults. (The song list isn't read yet: a song that has gone from the

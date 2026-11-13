@@ -50,6 +50,33 @@ pub struct Files {
     pub card: bool,
 }
 
+/// One `METERS` frame (PROTOCOL.md 4.6). Peaks are linear (1.0 = full scale) and, like
+/// `cpu_max`, cover the time since the previous frame.
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Meters {
+    pub input_peak: f32,
+    pub output_peak: f32,
+    /// The noise gate's gain, 0 (closed) to 1 (open).
+    pub gate_gain: f32,
+    pub clipped: u32,
+    /// Percent of the block period, whole chain.
+    pub cpu: f32,
+    pub cpu_max: f32,
+    pub cpu_amp: f32,
+    pub cpu_doubler: f32,
+    pub cpu_delay: f32,
+    pub cpu_reverb: f32,
+    pub cpu_drums: f32,
+    pub overruns: u32,
+    pub overload_mutes: u32,
+    pub amp_running: bool,
+    pub delay_ringing: bool,
+    pub reverb_ringing: bool,
+    pub drums_playing: bool,
+    pub muted: bool,
+}
+
 /// Everything the device side reports to the UI.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -62,6 +89,7 @@ pub enum Event {
     State { values: Vec<i16>, files: Files },
     Param { id: u16, value: i32 },
     Files { files: Files },
+    Meters { meters: Meters },
     /// The session ended; the device side starts searching again.
     Disconnected { reason: String },
 }

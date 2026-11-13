@@ -1,0 +1,42 @@
+{
+  "comment": "The blocks of the signal chain as both UIs show them (APP.md 3.5): order, names, colours, and which settings belong to each. Settings are named by their serial key (lib/params ParamDefs.cpp); '@Name' names a setting that has no key. 'on' is the block's switch; 'onInverted' means the setting is a bypass. 'file' is the loaded file the block shows: 'model' or 'ir'. 'summary' is the setting whose value the block's tile shows. 'activity' is the METERS bit that shows the block is working. A setting no block names is shown under 'Other', so nothing can go missing.",
+  "blocks": [
+    {
+      "id": "amp", "name": "Amp", "short": "AMP", "colour": "#ff8a3d", "on": "amp", "file": "model", "activity": "ampRunning",
+      "sections": [{ "settings": ["amp in", "amp bass", "amp mid", "amp treble", "amp presence", "amp out", "amp cal"] }]
+    },
+    {
+      "id": "gate", "summary": "gate thr", "name": "Noise gate", "short": "GATE", "colour": "#8bd450", "on": "gate",
+      "sections": [{ "settings": ["gate thr", "gate rel", "gate type"] }]
+    },
+    {
+      "id": "cab", "name": "Cab", "short": "CAB", "colour": "#d4a85f", "on": "b", "onInverted": true, "file": "ir",
+      "sections": []
+    },
+    {
+      "id": "doubler", "summary": "dbl time", "name": "Doubler", "short": "DBL", "colour": "#3fc8d8", "on": "dbl",
+      "sections": [{ "settings": ["dbl time", "dbl width"] }]
+    },
+    {
+      "id": "delay", "summary": "dtime", "name": "Delay", "short": "DELAY", "colour": "#5b8cff", "on": "dl", "activity": "delayRinging",
+      "sections": [{ "settings": ["dmix", "dtime", "dfb", "dtone", "dmod", "dduck", "ddrive", "dera"] }]
+    },
+    {
+      "id": "reverb", "summary": "rmode", "name": "Reverb", "short": "REVERB", "colour": "#b07cff", "on": "rv", "activity": "reverbRinging",
+      "sections": [{ "settings": ["mix", "size", "tone", "rpre", "rmod", "rera", "rgate", "rmode"] }]
+    },
+    {
+      "id": "output", "summary": "g", "name": "Output", "short": "OUT", "colour": "#aab2bf",
+      "sections": [{ "settings": ["g", "pvol"] }]
+    }
+  ],
+  "lane": {
+    "id": "drums", "summary": "bpm", "name": "Drums and bass", "short": "DRUMS + BASS", "colour": "#ff5c7a", "on": "drum", "activity": "drumsPlaying",
+    "sections": [
+      { "title": "Drums", "settings": ["bpm", "drum style", "drum kit", "drum song", "drum vol", "drum comp", "drum crash", "drum count", "@Loop from", "@Loop to"] },
+      { "title": "Speed trainer", "settings": ["drum train", "train step", "train every", "train target"] },
+      { "title": "Bass", "settings": ["bass", "bass vol", "bass key", "bass tone"] }
+    ]
+  },
+  "meters": { "floorDb": -60, "warnDb": -12, "hotDb": -3, "ok": "#3ddc84", "warn": "#ffc247", "hot": "#ff4d4d" }
+}

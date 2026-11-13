@@ -87,12 +87,6 @@ static void applyParam(int id, int v) {
     case kReverbGate: r.setGateMs(v); break;
     case kOutGain:
     case kPresetLevel: chain.setOutputGainDb((s[kOutGain] + s[kPresetLevel]) * 0.5f); break;
-    // The codec's levels in teensy-ir-loader. This hardware's converters have
-    // no gain settings, so the three do nothing; they stay in the table so
-    // the EEPROM record and preset files are the same on both.
-    case kLineIn:
-    case kLineOut:
-    case kHeadphones: break;
     case kBypass: chain.setBypass(v); break;
     case kDrumStyle: dm.setStyle(v); break;
     case kDrumKit: dm.setKit(&dsp::drumKit(v)); break;
