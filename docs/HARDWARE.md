@@ -2,6 +2,8 @@
 
 Nov 12, 2026 · @Jacob
 
+> **Note (13 Nov 2026):** this is the hardware document as first written, kept for the wiring, the boards' jumpers and the bring-up checklist. Since then: the firmware runs at **48 kHz only** with its own I2S driver (`lib/i2s32`), so the Teensy4i2s starter code in "Software: keeping 24 bits" is history; the guitar goes into the ADC's **right** channel. The review of this document is in [`design/HLD.md`](design/HLD.md) §1, the firmware in [`FIRMWARE.md`](FIRMWARE.md), open hardware work in [`STATUS.md`](STATUS.md).
+
 ## Overview
 
 A Teensy 4.1 sits between a PCM1808 stereo ADC and a PCM5102A stereo DAC and processes audio in real time at 24-bit resolution.
@@ -100,7 +102,7 @@ The header pads FLT, DEMP, XSMT, FMT and A3V3 along the long edge stay unconnect
 
 Each channel gets a 32-bit slot on the wire, and both converters use the top 24 bits of it, so the link is 24-bit without any hardware setting.
 
-| Clock | Ratio | At 44.1 kHz | At 48 kHz |
+| Clock | Ratio | At 44.1 kHz (not used) | At 48 kHz |
 | --- | --- | --- | --- |
 | MCLK (pin 23) | 256 × fs | 11.2896 MHz | 12.288 MHz |
 | BCLK (pin 21) | 64 × fs | 2.8224 MHz | 3.072 MHz |
@@ -179,7 +181,7 @@ For an analog loopback from DAC to ADC, keep the digital level at or below −6 
 ## Open items and limits
 
 - **Jumpers verified by photo only.** The multimeter checks in the checklist are still to do.
-- **Teensy4i2s API names unconfirmed.** The starter code needs checking against the library's own example.
+- ~~Teensy4i2s API names unconfirmed.~~ Closed: confirmed, and the firmware no longer uses that library.
 - **USB 5 V feeds the ADC's analog supply.** It is fine for development; a cleaner 5 V source should lower the noise floor.
 - **No external anti-alias filter or input protection on the ADC.** The chip's internal filter covers normal line sources. A small series resistor and capacitor per input could be added later if RF pickup or over-voltage becomes a problem.
 - **Chip figures are datasheet values quoted from memory**, not measured on these boards.

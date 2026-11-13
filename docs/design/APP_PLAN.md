@@ -1,10 +1,23 @@
 # Volfovich NAM Forge: Desktop Control App Plan
 
-Nov 13, 2026 · Status: A0 to A5 done and part of A6 (app icon, waiting screen, number keys, confirmations before a recall discards edits or an upload replaces a file). The app connects to the unit by itself and shows the main screen: the library (presets, amp models, IRs), the chain as blocks, the drums lane with the styles', kits' and songs' names, the selected block's knobs, input and output meters and CPU, and a tuner. The amp and cab editors show the loaded model's and IR's details. The master volume (silent to 0 dB, global, not in presets, the last gain before the DAC; the ported output gain and the preset's level stay after the cab and are in the Cab block) is a slider beside the meters. Each block's tile shows the level at its output. The Card tab backs the card up to a folder on the Mac and restores from one. Left out for now: an IR's waveform and frequency response, renaming files, card space, and a separate device view (its numbers are in the footer). Checked: every message against the real unit; the screens as rendered in a browser with saved data; the real window's tuner with the unit's test tone (`tuner test 110`). First use by a person (13 Nov) found the output meter's CLIP label stuck on (fixed) and the tuner "not working" (not reproduced: with the test tone the real window shows the right note; open). Not yet checked: the tuner with a guitar, and a preset saved in the app recalled by a MIDI program change.
+Written 13 Nov 2026. **This is the plan, kept as the record of the design.** What is built is described in [`../APP.md`](../APP.md), progress and open items in [`../STATUS.md`](../STATUS.md), the protocol as implemented in [`protocol/PROTOCOL.md`](../../protocol/PROTOCOL.md).
+
+Built so far: milestones A0 to A5 and part of A6, plus backup and restore, the master volume and block level meters (not in the original plan).
+
+**Where the build differs from this plan:**
+- The chain's order is amp, then gate (the sketch in §3.1 had them swapped; corrected below).
+- The library column has the tabs Presets, Amps, IRs and Card; drums are a lane under the chain, there is no search yet.
+- The app's code is laid out as `app/crates/namforge-link`, `app/crates/namforge-core`, `app/src-tauri` and `app/src` (§8 shows an earlier idea). There is no mock-device program: the Rust tests use a stand-in inside `session.rs`, and the UI has a browser preview with saved data.
+- Frames are at most 16 KB in practice (the unit's buffers), not 64 KB.
+- "Quiet mode" for the shell while the app is connected was not built; the shell keeps printing and the app ignores text.
+- Changes made from the shell or MIDI reach the app because the unit compares its state every 30 ms, not through one hook.
+- The settings table's hash and the model limit are sent in `HELLO` but the app does not use them yet.
+- `LOG`, `FILE_RENAME` and `CARD_INFO` are not implemented; an error is a flag on a reply, not a message of its own.
+- The protocol version is in `lib/applink` (`Messages.h`), the firmware version in `include/config.h`.
 
 **Volfovich NAM Forge** (short name in the window title and the Dock: **NAM Forge**) is a macOS app that controls the guitar DSP unit over USB: edit the sound on a Quad Cortex style screen, manage presets, and send NAM models and IRs straight to the device.
 
-Companion to [`HLD.md`](HLD.md) (the firmware). Items marked **(verify)** are assumptions to check before relying on them.
+Companion to [`HLD.md`](HLD.md) (the firmware design). Items marked **(verify)** are assumptions to check before relying on them.
 
 ---
 
@@ -68,7 +81,7 @@ The look is in the spirit of the Quad Cortex and similar units: dark, a signal c
 ├───────────┬──────────────────────────────────────────────────────────────────────┤
 │ LIBRARY   │                                                                      │
 │ Presets   │   ┌──────┐   ┌──────┐   ┌──────┐   ┌──────┐   ┌──────┐   ┌──────┐   │
-│ Amps      │ ─►│ GATE │──►│ AMP  │──►│ CAB  │──►│ DBL  │──►│ DELAY│──►│REVERB│─► │
+│ Amps      │ ─►│ AMP  │──►│ GATE │──►│ CAB  │──►│ DBL  │──►│ DELAY│──►│REVERB│─► │
 │ IRs       │   └──────┘   └──────┘   └──────┘   └──────┘   └──────┘   └──────┘   │
 │ Drums     │                                                                      │
 │           │   ┌───────────────────────────── DRUMS + BASS ─────────────────────┐ │
@@ -157,7 +170,7 @@ The serial port keeps its typed shell. The app's frames share the port and are t
 | --- | --- | --- |
 | Magic | 2 | `F1 D5` |
 | Type | 1 | Message type |
-| Flags | 1 | Bit 0: this is a reply. Bit 1: error reply. |
+| Flags | 1 | Bit 0: this is a reply. Bit 1: error reply. Bit 2: an event (sent without a request). |
 | Sequence | 2 | Set by the sender of a request, echoed in the reply |
 | Length | 4 | Payload bytes, little-endian. At most 64 KB per frame. |
 | Payload | n | Binary, fields little-endian, strings as length + UTF-8 |

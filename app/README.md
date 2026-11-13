@@ -1,6 +1,6 @@
 # Volfovich NAM Forge (desktop app)
 
-The macOS control app for the Teensy guitar DSP unit. Plan: [`../APP.md`](../APP.md). Link protocol: [`../protocol/PROTOCOL.md`](../protocol/PROTOCOL.md).
+The macOS control app for the Teensy guitar DSP unit. How it is built: [`../docs/APP.md`](../docs/APP.md). Plan: [`../docs/design/APP_PLAN.md`](../docs/design/APP_PLAN.md). Link protocol: [`../protocol/PROTOCOL.md`](../protocol/PROTOCOL.md).
 
 ## Layout
 - `crates/namforge-link/` – the protocol: frames, payload fields, message numbers. No I/O.
@@ -29,7 +29,7 @@ Only one program can hold the unit's serial port: close `pio device monitor` bef
 
 `NAMFORGE_LOG=1` makes the app print one line per device event to the terminal. It also prints script errors from the window. `NAMFORGE_TUNER=1` opens the tuner 3 s after the start; with the unit's shell command `tuner test 110` given beforehand (the tuner then hears a 110 Hz sine instead of the guitar) that checks the tuner without a guitar.
 
-## State (milestone A5 of APP.md)
+## Using it (milestone A5 of the plan)
 The app connects by itself and shows the main screen: the library on the unit's card (presets, amp models, IRs), the signal chain as blocks (click to edit, power button or Space to switch), the drums and bass lane, the selected block's controls, input and output meters, CPU and the driver's counters. Every control is built from the unit's own settings table; a setting no block names appears under "Other settings".
 
 Levels after the cab, as in the original firmware: the Cab block has Out gain (global, −60 to +24 dB, kept in the unit's settings) and Level (the preset's own, saved with it). They are one gain right after the cab, before the doubler, delay and reverb; the drums and bass are not affected by it.

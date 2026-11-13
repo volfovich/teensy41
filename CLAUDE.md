@@ -4,7 +4,11 @@ PlatformIO project for real-time guitar processing on a Teensy 4.1 (i.MX RT1062,
 NAM A2-Lite amp models, IR cab loader, effects. 48 kHz / 24-bit end to end, lowest possible latency.
 Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM. No PJRC Audio Library on the audio path.
 
-- Design: `HLD.md` (architecture, budgets, milestones). Hardware: `Teensy 4.1 Audio DSP Platform PCM1808 + PCM5102A Design Doc.md`.
+- Start at `README.md`: it lists every document and which one owns which fact.
+- As built: `docs/SIGNAL_CHAIN.md` (the audio path and every gain), `docs/FIRMWARE.md` (structure, memory), `docs/CONTROL.md` (serial commands, settings table, MIDI map), `docs/APP.md` (the macOS app), `protocol/PROTOCOL.md`.
+- Tracking: `docs/STATUS.md` (what works, what is unchecked, open items), `docs/DECISIONS.md` (choices and reasons). Working rules and recipes: `docs/DEVELOPMENT.md`.
+- Design record: `docs/design/HLD.md` (budgets, benchmarks), `docs/design/APP_PLAN.md` (the app's plan), `docs/HARDWARE.md`.
+- **Keep the documents true:** a change to the chain, a setting, a command, a message or the app's structure updates the document that owns it in the same commit; finished or newly found things go into `docs/STATUS.md`, new choices into `docs/DECISIONS.md`.
 
 ## Commands
 - Build firmware: `pio run`
@@ -21,19 +25,19 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Own NAM A2-Lite engine: on-board correctness check + CPU benchmark (bare board, no audio):
   `pio run -e nam_a2_bench -t upload && pio device monitor -e nam_a2_bench`
 - PSRAM hardware test: `pio run -e psram_test -t upload && pio device monitor -e psram_test`
-- Deep PSRAM inspection (~3 min + endless soak): `pio run -e psram_deep -t upload && pio device monitor -e psram_deep`
+- Deep PSRAM inspection (~4 min + endless soak): `pio run -e psram_deep -t upload && pio device monitor -e psram_deep`
 - Refresh editor IntelliSense after adding libs/flags: `pio run -t compiledb`
 
 ## Layout
 - `src/main.cpp` – setup and the audio block callback (ADC words -> float -> `AudioChain` -> DAC words)
-- `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> doubler -> delay -> reverb, + drums and bass
+- `src/AudioChain.*` – the whole signal chain: amp (NAM A2-Lite) -> gate -> IR convolution -> output gain + preset level -> doubler -> delay -> reverb, + drums and bass -> master volume -> clip
 - `src/` (rest) – IR / amp / preset libraries on the SD card, `Params`, `Settings` (EEPROM), `SerialUI`, `AppLink` (the desktop app's binary protocol, on the same serial port as the shell), `MidiControl` (USB MIDI: program change = preset, controllers), `Tuner`, `DrumSongs`
 - `include/config.h` – compile-time settings and hardware constants (guitar channel, ADC full scale, mute pin)
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
 - `lib/dsp/` – **portable float DSP** (namespace `dsp`, no Arduino/Teensy includes), unit-tested on the host: `nam/`, `conv/`, `fx/`, `drums/`
 - `lib/params/` – the settings table (`ParamDefs`) and preset file format. Portable.
 - `lib/applink/` – the desktop app's link protocol on the firmware side (frames, payload fields, message numbers). Portable. Reference: `protocol/PROTOCOL.md`; the chain's blocks as the UIs show them (names, colours, which settings belong where): `protocol/blocks.json`; shared examples `protocol/test_frames.txt` (regenerate with `python3 protocol/make_test_frames.py`).
-- `app/` – the macOS control app, "Volfovich NAM Forge" (plan: `APP.md`, commands: `app/README.md`): Tauri 2, Rust core in `app/crates`, Svelte UI in `app/src`. Only one program can hold the unit's serial port: close the app before flashing or opening the serial monitor.
+- `app/` – the macOS control app, "Volfovich NAM Forge" (as built: `docs/APP.md`, plan: `docs/design/APP_PLAN.md`, commands: `app/README.md`): Tauri 2, Rust core in `app/crates`, Svelte UI in `app/src`. Only one program can hold the unit's serial port: close the app before flashing or opening the serial monitor.
 - `hw_tests/` – standalone firmware images that test hardware (PSRAM, I2S loopback, NAM benchmarks); each has its own env.
 - `tools/` – cold-code linker script, `check_hot_code.sh`, drum kit and song compilers. `kits/`, `songs/` – drum assets.
 - `test/` – Unity suites, run on the host via the `native` env; fixtures in `test/fixtures/`.
@@ -51,8 +55,8 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - The block callback runs in the RX DMA interrupt at priority 48 (above USB). No `Serial`, `malloc`, `new`, SD access, or blocking calls inside it, and it must finish within one block period (0.67 ms at 32 frames = 400k CPU cycles).
 - Each effect's header states its threading model: setters from `loop()`, `process()` in the interrupt.
 - Watch the serial `s` command: per-stage CPU, driver overruns, FIFO errors, levels. Budget: worst case at or below 80% of the block period. Measured: amp + doubler + delay + reverb 52%, with drums 68% max.
-- Levels: the output gain (`g`, global, -60 to +24 dB, default -6 dB) and the preset's level (`pvol`) are one gain applied after the cab and before the doubler, delay and reverb, exactly as in teensy-ir-loader; the drums and bass are not affected by it. The master volume (`master`, silent to 0 dB, global, default 0 dB = no change) is a separate last gain before the DAC, added on 13 Nov 2026 at the author's request. The rest of the audio path must stay as ported: the author wants the sound unchanged. `AudioChain` keeps the peak at each block's output (`takeStagePeak`) for the app's block meters.
-- Checking levels without a guitar: serial `sig 220 -20` replaces the guitar with a sine at a known level (`sig 0` ends it); read the levels with `s` or the app's block meters. Turn the master down first (`g -40`): a high-gain model makes any input loud.
+- Levels: the output gain (`g`, global, -60 to +24 dB, default -6 dB) and the preset's level (`pvol`) are one gain applied after the cab and before the doubler, delay and reverb, exactly as in teensy-ir-loader; the drums and bass are not affected by it. With the cab bypassed (`b on`) this gain is skipped too (as ported). The master volume (`master`, silent to 0 dB, global, default 0 dB = no change) is a separate last gain before the DAC, added on 13 Nov 2026 at the author's request. The rest of the audio path must stay as ported: the author wants the sound unchanged. `AudioChain` keeps the peak at each block's output (`takeStagePeak`) for the app's block meters.
+- Checking levels without a guitar: serial `sig 220 -20` replaces the guitar with a sine at a known level (`sig 0` ends it); read the levels with `s` or the app's block meters. Turn the master down first (`master -40`): a high-gain model makes any input loud. Put it back afterwards.
 - Overload protection: 16 overruns in a row make the driver go silent and stop calling the callback (`i2s32::faulted()`); `serviceFault()` in `main.cpp` sheds load and resumes after 1 s. Serial `overload` tests it.
 - The guitar input passes a 30 Hz high-pass first (`INPUT_HIGHPASS_HZ`): the SD card puts a sub-20 Hz thump on the ADC about every 1.4 s.
 - Flush-to-zero and default-NaN float modes are enabled by `i2s32::begin()` (FPSCR and FPDSCR).
@@ -80,4 +84,4 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - Throughput ~31 MB/s write / ~33 MB/s read sequential; a random cache-missing 32-bit read costs ~0.9 us.
   At 48 kHz that's fine for a few block-wise delay taps, but don't do scattered per-sample PSRAM reads in many voices.
   Prefer copying a block between PSRAM and an internal-RAM scratch buffer with memcpy.
-- `-Wextra`/`-Wdouble-promotion` apply to our code only; `scripts/system_headers.py` makes framework headers -isystem.
+- Warnings apply to our code only; `scripts/system_headers.py` makes framework headers -isystem.

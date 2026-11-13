@@ -2,7 +2,7 @@
 
 Version 1 · The single reference for both sides: the firmware (`lib/applink`, `src/AppLink.cpp`) and the app (`app/crates/namforge-link`).
 
-The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO`, `IR_INFO`, `FILE_GET` and `DIR_LIST` too. Not implemented yet: `FILE_RENAME`, `CARD_INFO`. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
+The plan this belongs to is [`docs/design/APP_PLAN.md`](../docs/design/APP_PLAN.md); the app as built is in [`docs/APP.md`](../docs/APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO`, `IR_INFO`, `FILE_GET` and `DIR_LIST` too. Not implemented yet, on either side: `FILE_RENAME`, `CARD_INFO`, the `LOG` event, and the `BUSY` error (the numbers are reserved). Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
 
 ---
 
@@ -59,7 +59,7 @@ The device's receive buffer holds a payload of at least 16384 bytes. The app nev
 
 - Every request gets exactly one reply, with the same type and sequence and the Reply flag. The exception is `FILE_GET`, which is answered by a series of `FILE_DATA` replies (§4.5).
 - The app sends one request at a time and waits for its reply. Events may arrive in between.
-- Default timeout 1 s. Loads from the SD card (`MODEL_LOAD`, `IR_LOAD`, `PRESET_RECALL`, `RESCAN`) 5 s.
+- Default timeout 1 s. Loads from the SD card (`MODEL_LOAD`, `IR_LOAD`, `PRESET_RECALL`, `RESCAN`) take longer: the app waits 6 s for them, and 15 s for `FILE_PUT_END`.
 - Sequence numbers start at 1 and wrap from 65535 to 1.
 
 ### 2.5 Shared examples
@@ -207,7 +207,7 @@ A `FILE_PUT_BEGIN` while an upload is open abandons the earlier one. An upload w
 
 ### 4.7 Other (since A1)
 
-**`60 LOG`** (event): `u8` level (0 info, 1 warning, 2 error) · `string` text. What the firmware would have printed: load results, errors, overload messages.
+**`60 LOG`** (event, **not implemented**): `u8` level (0 info, 1 warning, 2 error) · `string` text. What the firmware would have printed: load results, errors, overload messages.
 
 ## 5. Error codes
 
@@ -218,7 +218,7 @@ A `FILE_PUT_BEGIN` while an upload is open abandons the earlier one. An upload w
 | 3 | `NOT_FOUND` | No such preset, model, IR or file |
 | 4 | `NO_CARD` | The SD card is missing |
 | 5 | `BAD_PATH` | A path outside the allowed folders, or too long |
-| 6 | `BUSY` | A load or a transfer is already running |
+| 6 | `BUSY` | A load or a transfer is already running (reserved: the firmware never sends it) |
 | 7 | `IO` | The SD card reported an error |
 | 8 | `CHECKSUM` | An uploaded file's size or CRC did not match |
 | 9 | `FULL` | The list is at its limit, or the card is full |
