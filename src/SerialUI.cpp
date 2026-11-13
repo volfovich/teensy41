@@ -2,6 +2,7 @@
 #include "SerialUI.h"
 
 #include <Arduino.h>
+#include <SD.h>
 
 #include <initializer_list>
 
@@ -452,6 +453,8 @@ static int findParam(const char* cmd, const char* arg, const char** value) {
   return -1;
 }
 
+void captureInput();  // main.cpp
+
 static void handleCommand(char* line) {
   while (*line == ' ') line++;
   for (char* e = line + strlen(line); e > line && e[-1] == ' ';) *--e = 0;
@@ -460,6 +463,8 @@ static void handleCommand(char* line) {
 
   if (isdigit((unsigned char)line[0])) {
     if (!loadIRIndex(atoi(line) - 1)) Serial.println("No such IR number (type 'l').");
+  } else if (!strcmp(line, "cap")) {
+    captureInput();
   } else if (!strcmp(line, "l")) {
     printList();
   } else if (!strcmp(line, "n")) {

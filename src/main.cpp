@@ -23,6 +23,7 @@
 //   Tuner       the tuner (pitch from the input while it is open)
 #include <Arduino.h>
 #include <I2s32.h>
+#include <dsp/Blocks.h>
 #include <dsp/Convert.h>
 
 #include "AmpLibrary.h"
@@ -34,10 +35,36 @@
 #include "Settings.h"
 #include "config.h"
 
+// Debug capture of the raw guitar input (serial command "cap"): 3 s into the PSRAM, then
+// sent over USB as raw floats. For looking at noise and interference at the ADC.
+static constexpr uint32_t kCaptureFrames = 3 * 48000;
+EXTMEM static float g_capture[kCaptureFrames];
+static volatile uint32_t g_captureLeft = 0;
+
+void captureInput() {
+  g_captureLeft = kCaptureFrames;
+  while (g_captureLeft) delay(1);
+  Serial.printf("CAPTURE %lu\n", (unsigned long)kCaptureFrames);
+  Serial.write((const uint8_t*)g_capture, sizeof(g_capture));
+  Serial.println("\nCAPTURE END");
+}
+
+// The input high-pass (INPUT_HIGHPASS_HZ in config.h): removes sub-audio thumps that reach
+// the ADC through its supply before they can open the gate or drive the amp model.
+static dsp::Biquad g_inputHp;
+
 FASTRUN static void audioCallback(const int32_t* rx, int32_t* tx, size_t frames) {
   float inL[kBlock], inR[kBlock], outL[kBlock], outR[kBlock];
   dsp::int24InToFloat(rx, inL, inR, frames);
-  chain.process(GUITAR_ON_RIGHT_CHANNEL ? inR : inL, outL, outR);
+  float* const guitar = GUITAR_ON_RIGHT_CHANNEL ? inR : inL;
+  if (g_captureLeft >= frames) {
+    memcpy(g_capture + (kCaptureFrames - g_captureLeft), guitar, frames * sizeof(float));  // before the high-pass
+    g_captureLeft = g_captureLeft - frames;
+  } else {
+    g_captureLeft = 0;
+  }
+  for (size_t i = 0; i < frames; i++) guitar[i] = g_inputHp.process(guitar[i]);
+  chain.process(guitar, outL, outR);
   dsp::floatToInt24Out(outL, outR, tx, frames);
 }
 
@@ -46,6 +73,7 @@ void setup() {
   // The chain gets its memory and the saved settings, then the audio starts: the passthrough
   // runs from here on, even before an IR or a model is loaded.
   audioBegin();
+  g_inputHp.setHighpass(INPUT_HIGHPASS_HZ, kSampleRate);
   i2s32::Config cfg;
   cfg.callback = audioCallback;
   cfg.mutePin = DAC_MUTE_PIN;

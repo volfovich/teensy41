@@ -92,6 +92,13 @@ constexpr float kSampleRate = (float)i2s32::kSampleRate;
 // analog supply (datasheet value, not yet measured on this board). The amp's
 // input calibration starts from it (AmpLibrary.h).
 #define ADC_FULL_SCALE_DBU 2.7f
+// High-pass on the guitar input, before everything else (2nd order, Hz).
+// The SD card in the Teensy's slot draws a pulse of current about every 1.4 s
+// whatever state it is in, and that reaches the ADC as a thump below 20 Hz at
+// -66 dBFS, enough to open the gate into a high-gain model. Measured: 40 Hz
+// leaves -82 dBFS (the noise floor is -84) and costs 0.2 dB at a guitar's low
+// E, 0.7 dB at a 7-string's low B.
+#define INPUT_HIGHPASS_HZ 40.0f
 // GPIO wired to the PCM5102A's XSMT pad (high = un-muted), or -1: the pad is
 // soldered high for now (HLD.md section 1, item 1b).
 #define DAC_MUTE_PIN -1

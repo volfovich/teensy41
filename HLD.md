@@ -156,7 +156,8 @@ Porting rules: ported files keep the old project's formatting; only the namespac
 ## 5. Signal chain
 
 ```
-ADC R ─► amp (NAM A2-Lite, optional: DC blocker, tone stack)
+ADC R ─► 40 Hz high-pass (src/main.cpp, removes supply thumps)
+      ─► amp (NAM A2-Lite, optional: DC blocker, tone stack)
       ─► noise gate (listens to the input, gates after the amp)
       ─► IR convolution (cab) ─► bypass blend × output gain          mono
       ─► doubler ─► studio 80s delay ─► 80s reverb (hall / gated)     stereo
@@ -379,6 +380,7 @@ Next steps, in order:
 | SD paths are ported but untested on this board (built-in SDIO instead of SPI) | IR, model and preset loading may need fixes | First thing to test with a card |
 | No Hi-Z input and no input gain | Dull, quiet guitar; calibration off by the unknown loss | Build the buffer; set `INPUT_PAD_DB` |
 | ADC full-scale level is a datasheet figure | Amp drive level off by a few dB | Measure with a known signal; adjust `ADC_FULL_SCALE_DBU` |
+| The SD card disturbs the ADC: a thump below 20 Hz at −66 dBFS about every 1.4 s, in every card state (selected, stand-by, idle, controller clock off). Likely the card's current pulses on the supply. | Opened the gate into high-gain models: audible bursts | **Fixed in firmware** by a 40 Hz 2nd-order high-pass on the input (`INPUT_HIGHPASS_HZ`): 15 s idle with the card in now peaks at −84 dBFS. The cause is still there; a cleaner ADC supply would remove it at the source. Serial `cap` records 3 s of raw input for this kind of check. |
 | DAC cannot be muted by firmware (XSMT rework deferred) | Buzz on a firmware crash; possible pop on boot or flash | Volume down before flashing or resetting |
 | A hot function linked into flash | Large, silent CPU increase | `tools/check_hot_code.sh` after linker-script or audio-path changes |
 | Engine speed depends on the compiler's register allocation | CPU could change with a toolchain update | Re-run `env:nam_a2_bench` after toolchain changes |
