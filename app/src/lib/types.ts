@@ -89,6 +89,35 @@ export interface Transfer {
   error: string;
 }
 
+/** The loaded model's own description and the gains the unit applies. null: the file has no such number. */
+export interface ModelInfo {
+  name: string;
+  gearMake: string;
+  gearModel: string;
+  gearType: string;
+  toneType: string;
+  sampleRate: number;
+  loudness: number | null;
+  inputLevelDbu: number | null;
+  outputLevelDbu: number | null;
+  /** dB added at the amp's input; null: calibration is off. */
+  calibrationDb: number | null;
+  /** dB added at the amp's output so that every model is about as loud. */
+  levelDb: number;
+}
+
+/** The loaded IR's file format and what the unit made of it. */
+export interface IrInfo {
+  sampleRate: number;
+  channels: number;
+  bits: number;
+  frames: number;
+  length: number;
+  resampled: boolean;
+  cut: boolean;
+  gain: number;
+}
+
 export interface Snapshot {
   connected: boolean;
   detail: string;
@@ -99,6 +128,8 @@ export interface Snapshot {
   presets: Preset[];
   models: FileEntry[];
   irs: FileEntry[];
+  modelInfo: ModelInfo | null;
+  irInfo: IrInfo | null;
 }
 
 export type DeviceEvent =
@@ -114,6 +145,8 @@ export type DeviceEvent =
   | ({ kind: "tuner" } & TunerReading)
   | { kind: "models"; files: FileEntry[] }
   | { kind: "irs"; files: FileEntry[] }
+  | { kind: "modelInfo"; info: ModelInfo | null }
+  | { kind: "irInfo"; info: IrInfo | null }
   | ({ kind: "transfer" } & Transfer)
   | { kind: "refused"; message: string }
   | { kind: "disconnected"; reason: string };

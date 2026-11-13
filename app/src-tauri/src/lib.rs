@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use namforge_core::{DeviceHandle, DeviceInfo, Event, FileEntry, Files, Preset, Setting};
+use namforge_core::{DeviceHandle, DeviceInfo, Event, FileEntry, Files, IrInfo, ModelInfo, Preset, Setting};
 use tauri_plugin_dialog::DialogExt;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
@@ -22,6 +22,8 @@ struct Snapshot {
     presets: Vec<Preset>,
     models: Vec<FileEntry>,
     irs: Vec<FileEntry>,
+    model_info: Option<ModelInfo>,
+    ir_info: Option<IrInfo>,
 }
 
 impl Snapshot {
@@ -50,6 +52,8 @@ impl Snapshot {
             Event::Presets { presets } => self.presets = presets.clone(),
             Event::Models { files } => self.models = files.clone(),
             Event::Irs { files } => self.irs = files.clone(),
+            Event::ModelInfo { info } => self.model_info = info.clone(),
+            Event::IrInfo { info } => self.ir_info = info.clone(),
             Event::Meters { .. } | Event::Tuner { .. } | Event::PresetsChanged | Event::Refused { .. } | Event::Transfer { .. } => {}
             Event::Disconnected { reason } => {
                 self.connected = false;

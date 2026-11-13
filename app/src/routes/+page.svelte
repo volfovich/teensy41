@@ -9,6 +9,7 @@
   import { cancelOffer, cardFile, connectDevice, device, dropping, meters, notice, offered, pickFiles, presetAction, preview, sendFiles, setParam, setTuner, transfer } from "$lib/device.svelte";
   import Tuner from "$lib/Tuner.svelte";
   import { baseName, formatValue } from "$lib/format";
+  import type { Setting } from "$lib/types";
 
   onMount(() => {
     let stop = () => {};
@@ -40,6 +41,50 @@
     if (b.def.file) return stem(fileOf(b)) || (b.def.file === "model" ? "No model" : "No IR");
     return b.summary ? formatValue(b.summary, value(b.summary.id, b.summary.default)) : "";
   }
+
+  // The master volume's lowest step is silence.
+  const masterText = (m: Setting, v: number) => (v <= m.min ? "Silent" : formatValue(m, v));
+
+  // The loaded model's and IR's details, as short facts for the editor.
+  const signed = (db: number) => `${db > 0 ? "+" : ""}${db.toFixed(1)} dB`;
+  const words = (text: string) => text.replaceAll("_", " ");
+  const modelFacts = $derived.by(() => {
+    const m = device.modelInfo;
+    if (!m) return [];
+    const gear = m.gearMake === m.gearModel ? m.gearMake : [m.gearMake, m.gearModel].filter(Boolean).join(" ");
+    const out: [string, string, string][] = [];
+    if (m.name) out.push(["Name", m.name, ""]);
+    if (gear) out.push(["Gear", gear, "What was captured, as the file says"]);
+    if (m.gearType || m.toneType) out.push(["Type", [m.gearType, m.toneType].filter(Boolean).map(words).join(", "), ""]);
+    out.push([
+      "Loudness",
+      m.loudness === null ? "not in the file" : `${m.loudness.toFixed(1)} dB, levelled ${signed(m.levelDb)}`,
+      "The model's own loudness, and the gain the unit adds at the amp's output so that every model is about as loud",
+    ]);
+    out.push([
+      "Input",
+      m.calibrationDb === null
+        ? "calibration off"
+        : `${m.inputLevelDbu === null ? "not calibrated, taken as +12 dBu" : `captured at ${m.inputLevelDbu.toFixed(1)} dBu`}, ${signed(m.calibrationDb)}`,
+      "The level the capture was made at, and the gain the unit adds at the amp's input so the model is driven as the real amp was",
+    ]);
+    if (Math.abs(m.sampleRate - 48000) > 1) out.push(["Rate", `${m.sampleRate.toFixed(0)} Hz: the unit runs at 48000 Hz, so its tone is shifted`, ""]);
+    return out;
+  });
+  const irFacts = $derived.by(() => {
+    const r = device.irInfo;
+    if (!r) return [];
+    const rate = device.info?.sampleRate ?? 48000;
+    const out: [string, string, string][] = [
+      ["File", `${r.sampleRate / 1000} kHz, ${r.channels === 1 ? "mono" : r.channels === 2 ? "stereo" : `${r.channels} channels`}, ${r.bits}-bit, ${((1000 * r.frames) / r.sampleRate).toFixed(0)} ms`, ""],
+      ["In use", `${r.length} samples (${((1000 * r.length) / rate).toFixed(0)} ms)`, "What the unit convolves with, after removing silence at the start and the inaudible end"],
+    ];
+    const done = [r.resampled ? `resampled to ${rate / 1000} kHz` : "", r.channels > 1 ? "first channel only" : "", r.cut ? "cut at the unit's longest length" : ""].filter(Boolean);
+    if (done.length) out.push(["Changed", done.join(", "), ""]);
+    out.push(["Level", signed(20 * Math.log10(Math.max(r.gain, 1e-6))), "The gain the unit applies so that all IRs are about as loud"]);
+    return out;
+  });
+  const factsOf = (b: Block) => (b.def.file === "model" ? modelFacts : b.def.file === "ir" ? irFacts : []);
 
   const cpuOf = (b: Block): number | null =>
     ({ amp: meters.cpuAmp, doubler: meters.cpuDoubler, delay: meters.cpuDelay, reverb: meters.cpuReverb, drums: meters.cpuDrums })[b.def.id] ?? null;
@@ -212,19 +257,19 @@
       {#if blocks.master}
         {@const m = blocks.master}
         {@const v = value(m.id, m.default)}
-        <label class="master" title="Master volume: one setting for all presets, kept by the unit and not saved in presets. Right-click for the default.">
+        <label class="master" title="Master volume: from silent to 0 dB, the unit's full output level. One setting for all presets, kept by the unit and not saved in presets. Right-click for the default.">
           <span>MASTER</span>
           <input
             type="range"
-            min={Math.max(m.min, -80)}
+            min={m.min}
             max={m.max}
             step="1"
             value={v}
-            aria-valuetext={formatValue(m, v)}
+            aria-valuetext={masterText(m, v)}
             oninput={(e) => setParam(m.id, Number(e.currentTarget.value))}
             oncontextmenu={(e) => (e.preventDefault(), setParam(m.id, m.default))}
           />
-          <b>{formatValue(m, v)}</b>
+          <b>{masterText(m, v)}</b>
         </label>
       {/if}
     </div>
@@ -384,6 +429,13 @@
         </button>
       {/if}
     </div>
+    {#if factsOf(selected).length && fileOf(selected)}
+      <dl class="facts">
+        {#each factsOf(selected) as [label, text, hint]}
+          <div title={hint}><dt>{label}</dt><dd>{text}</dd></div>
+        {/each}
+      </dl>
+    {/if}
     {#each selected.sections as sec (sec.title)}
       <div class="section">
         {#if sec.title}<h3>{sec.title}</h3>{/if}
@@ -394,7 +446,7 @@
         </div>
       </div>
     {:else}
-      <p class="none">{selected.def.file === "ir" ? "The cab is the IR alone: choose it under IRs in the library on the left." : "This block has no settings of its own."}</p>
+      {#if !selected.def.file}<p class="none">This block has no settings of its own.</p>{/if}
     {/each}
   </section>
 
@@ -1049,6 +1101,31 @@
     border-color: var(--c);
     background: color-mix(in srgb, var(--c) 26%, #22262e);
     color: #fff;
+  }
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 26px;
+    margin: 0 0 16px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    background: #14171c;
+  }
+  .facts div {
+    display: flex;
+    gap: 7px;
+    align-items: baseline;
+  }
+  .facts dt {
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8a92a0;
+  }
+  .facts dd {
+    margin: 0;
+    color: #e6e8ec;
+    font-variant-numeric: tabular-nums;
   }
   .section + .section {
     margin-top: 14px;

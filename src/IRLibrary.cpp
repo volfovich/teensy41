@@ -35,6 +35,9 @@ DMAMEM static char g_files[IR_MAX_FILES][IR_PATH_MAX];
 static int g_numFiles = 0;
 static int g_current = -1;
 static bool g_sdOk = false;
+static dsp::IRPrepResult g_info;  // of the IR that is loaded
+
+const dsp::IRPrepResult& irInfo() { return g_info; }
 
 bool irSdOk() { return g_sdOk; }
 int irCount() { return g_numFiles; }
@@ -137,6 +140,7 @@ bool loadIRIndex(int idx, bool save) {
   uint32_t ms = millis() - t0;
 
   g_current = idx;
+  g_info = res;
   if (save) saveCurrentIR();
 
   Serial.printf("[%d/%d] %s\n", idx + 1, g_numFiles, path);

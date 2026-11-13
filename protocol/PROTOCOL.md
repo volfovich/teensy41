@@ -2,7 +2,7 @@
 
 Version 1 · The single reference for both sides: the firmware (`lib/applink`, `src/AppLink.cpp`) and the app (`app/crates/namforge-link`).
 
-The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. Not implemented yet: `MODEL_INFO`, `IR_INFO`, `FILE_GET`, `FILE_RENAME`, `DIR_LIST`, `CARD_INFO`. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
+The plan this belongs to is [`APP.md`](../APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO` and `IR_INFO` too. Not implemented yet: `FILE_GET`, `FILE_RENAME`, `DIR_LIST`, `CARD_INFO`. Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
 
 ---
 
@@ -149,7 +149,7 @@ Names are exact ("03 Lead"). A recall loads the model and the IR before it repli
 |---|---|---|
 | `30 MODEL_LIST` | (empty) | list of: `string` path · `u32` size in bytes · `u32` modified time (seconds since 1970, 0 if unknown) |
 | `31 MODEL_LOAD` | `string` path | (empty); `STATE_CHANGED` follows |
-| `32 MODEL_INFO` | (empty): the loaded model | `string` name · `string` gear make · `string` gear model · `string` gear type · `string` tone type · `f32` sample rate · `f32` loudness · `f32` input level in dBu · `f32` output level in dBu (NaN where the file has none) · `f32` calibration gain applied in dB · `f32` levelling gain applied in dB |
+| `32 MODEL_INFO` | (empty): the loaded model | `string` name · `string` gear make · `string` gear model · `string` gear type · `string` tone type · `f32` sample rate · `f32` loudness · `f32` input level in dBu · `f32` output level in dBu (NaN where the file has none) · `f32` calibration gain applied in dB (NaN: calibration is off) · `f32` levelling gain applied in dB. Error `NOT_FOUND` when none is loaded. |
 | `38 IR_LIST` | (empty) | as `MODEL_LIST` |
 | `39 IR_LOAD` | `string` path | (empty); `STATE_CHANGED` follows |
 | `3A IR_INFO` | (empty): the loaded IR | `u32` source sample rate · `u16` channels · `u16` bits per sample · `u32` frames in the file · `u32` length in use, in samples · `bool` resampled · `bool` cut at the maximum length · `f32` normalisation gain |

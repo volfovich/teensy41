@@ -199,10 +199,19 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
 
     let mut last_state = Instant::now() - KEEPALIVE;
     let mut card: Option<bool> = None;
+    // The model and IR whose details the UI has, and the amp's calibration switch, which changes them.
+    let mut detailed = Detailed::default();
     loop {
         if last_state.elapsed() >= KEEPALIVE {
             match s.state() {
-                Ok((values, files)) => emit(Event::State { values, files }),
+                Ok((values, files)) => {
+                    // Every time: the amp's calibration switch changes the model's gains.
+                    detailed.model = None;
+                    if let Err(e) = details(&mut s, &files, &mut detailed, emit) {
+                        return lost(e);
+                    }
+                    emit(Event::State { values, files })
+                }
                 Err(e) => return lost(e),
             }
             last_state = Instant::now();
@@ -269,6 +278,9 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
                 for event in events {
                     // A card put in or taken out: its files are different ones.
                     if let Event::Files { files } = &event {
+                        if let Err(e) = details(&mut s, files, &mut detailed, emit) {
+                            return lost(e);
+                        }
                         if card.replace(files.card) == Some(!files.card) {
                             if let Err(e) = file_lists(&mut s, emit) {
                                 return lost(e);
@@ -289,6 +301,36 @@ fn serve(mut s: Session<Box<dyn SerialPort>>, port: &str, commands: &Receiver<Co
             Err(e) => return lost(e),
         }
     }
+}
+
+/// Fetches the details of the loaded model and IR when a different one is loaded.
+fn details(
+    s: &mut Session<Box<dyn SerialPort>>,
+    files: &crate::types::Files,
+    known: &mut Detailed,
+    emit: &impl Fn(Event),
+) -> Result<(), SessionError> {
+    if known.model.as_deref() != Some(files.model.as_str()) {
+        known.model = Some(files.model.clone());
+        let info = s.model_info()?;
+        if known.model_info.as_ref() != Some(&info) {
+            known.model_info = Some(info.clone());
+            emit(Event::ModelInfo { info });
+        }
+    }
+    if known.ir.as_deref() != Some(files.ir.as_str()) {
+        known.ir = Some(files.ir.clone());
+        emit(Event::IrInfo { info: s.ir_info()? });
+    }
+    Ok(())
+}
+
+/// The model and IR whose details the UI has been sent.
+#[derive(Default)]
+struct Detailed {
+    model: Option<String>,
+    ir: Option<String>,
+    model_info: Option<Option<crate::types::ModelInfo>>,
 }
 
 /// Fetches the model and IR lists. Firmware before file support refuses; the lists stay empty.

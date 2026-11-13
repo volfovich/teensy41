@@ -126,6 +126,8 @@ fn main() {
                 println!("presets: {}", presets.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", "))
             }
             Event::PresetsChanged => {}
+            Event::ModelInfo { info } => println!("model info: {info:?}"),
+            Event::IrInfo { info } => println!("IR info: {info:?}"),
             Event::Tuner { valid, hz, note, octave, cents } => {
                 if valid {
                     println!("tuner: {}{octave} {cents:+.1} cents, {hz:.2} Hz", ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"][note as usize % 12])

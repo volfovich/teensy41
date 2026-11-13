@@ -31,7 +31,7 @@ Only one program can hold the unit's serial port: close `pio device monitor` bef
 ## State (milestone A5 of APP.md)
 The app connects by itself and shows the main screen: the library on the unit's card (presets, amp models, IRs), the signal chain as blocks (click to edit, power button or Space to switch), the drums and bass lane, the selected block's controls, input and output meters, CPU and the driver's counters. Every control is built from the unit's own settings table; a setting no block names appears under "Other settings".
 
-The master volume is the slider beside the meters: one setting for all presets, kept in the unit's own settings (EEPROM), not in presets, so moving it never marks a preset as edited. The Output block's Level is the preset's own level and is saved with it.
+The master volume is the slider beside the meters, from silent (its lowest step) to 0 dB, the DAC's full level; there is no gain above that, because the converter has no analog volume and more digital gain would only clip. It is one setting for all presets, kept in the unit's own settings (EEPROM), not in presets, so moving it never marks a preset as edited. The Output block's Level is the preset's own level and is saved with it.
 
 Knobs: drag up and down, Shift for fine steps, scroll or arrow keys, double-click to type a value, right-click for the default.
 
@@ -41,7 +41,9 @@ Amps and IRs: click one to load it. "Add files…" or dropping files on the wind
 
 Tuner: the header's Tuner button or the T key; Esc closes it. The guitar is muted while it is open, and the unit closes it by itself if the app goes away.
 
-Not in yet: model and IR details, a drum song editor. Keys: 1 to 7 open the chain's blocks and 8 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner.
+The amp and cab editors show what the loaded file is: the model's gear, loudness and input calibration with the gains the unit applies, and the IR's format, the length in use and what the unit changed.
+
+Not in yet: an IR's waveform and frequency response, a drum song editor. Keys: 1 to 7 open the chain's blocks and 8 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner.
 
 The icon is drawn in `src-tauri/icons/source/icon.svg`; after changing it, render it to a 1024-pixel PNG and run `npx tauri icon <png>`.
 

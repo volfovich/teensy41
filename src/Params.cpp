@@ -46,6 +46,12 @@ void paramLimits(int id, int* lo, int* hi) {
 void paramText(int id, char* buf, int n) {
   const int v = getParam(id);
   switch (id) {
+    case kOutGain:
+      if (v <= paramDef(id).min) {
+        snprintf(buf, n, "silent");
+        return;
+      }
+      break;
     case kDrumStyle: snprintf(buf, n, "%s", dsp::drumStyle(v).title); return;
     case kDrumKit: snprintf(buf, n, "%s", dsp::drumKit(v).name); return;
     case kDrumSong: snprintf(buf, n, "%s", v ? drumSongTitle(v) : "off"); return;
@@ -86,7 +92,10 @@ static void applyParam(int id, int v) {
     case kReverbEra: r.setEra(v / 100.0f); break;
     case kReverbGate: r.setGateMs(v); break;
     case kOutGain:
-    case kPresetLevel: chain.setOutputGainDb((s[kOutGain] + s[kPresetLevel]) * 0.5f); break;
+    case kPresetLevel:
+      // The master volume at its minimum is silence, whatever the preset's level.
+      chain.setOutputGainDb(s[kOutGain] <= paramDef(kOutGain).min ? -200.0f : (s[kOutGain] + s[kPresetLevel]) * 0.5f);
+      break;
     case kBypass: chain.setBypass(v); break;
     case kDrumStyle: dm.setStyle(v); break;
     case kDrumKit: dm.setKit(&dsp::drumKit(v)); break;

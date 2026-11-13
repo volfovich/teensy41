@@ -97,6 +97,41 @@ pub struct FileEntry {
     pub size: u32,
 }
 
+/// What the loaded amp model's file says about it, and the gains the unit applies (`MODEL_INFO`).
+/// A number the file does not have is `None`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    pub name: String,
+    pub gear_make: String,
+    pub gear_model: String,
+    pub gear_type: String,
+    pub tone_type: String,
+    pub sample_rate: f32,
+    pub loudness: Option<f32>,
+    pub input_level_dbu: Option<f32>,
+    pub output_level_dbu: Option<f32>,
+    /// dB added at the amp's input to match the capture's level; `None`: calibration is off.
+    pub calibration_db: Option<f32>,
+    /// dB added at the amp's output to bring every model to the same loudness.
+    pub level_db: f32,
+}
+
+/// What the loaded IR's file is, and what the unit made of it (`IR_INFO`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IrInfo {
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub bits: u16,
+    pub frames: u32,
+    /// Samples in use at 48 kHz, after trimming and cutting.
+    pub length: u32,
+    pub resampled: bool,
+    pub cut: bool,
+    pub gain: f32,
+}
+
 /// Everything the device side reports to the UI.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -114,6 +149,9 @@ pub enum Event {
     /// A tuner reading. `note` is 0 (C) to 11 (B); `cents` is -50 to +50 from that note.
     Tuner { valid: bool, hz: f32, note: u8, octave: i16, cents: f32 },
     Models { files: Vec<FileEntry> },
+    /// Details of the loaded model and IR; `None` when none is loaded (or the firmware is older).
+    ModelInfo { info: Option<ModelInfo> },
+    IrInfo { info: Option<IrInfo> },
     Irs { files: Vec<FileEntry> },
     /// A file on its way to the unit: `sent` of `total` bytes. `done` with an empty `error` means it
     /// arrived and is in the lists; with an `error`, why it was not sent.

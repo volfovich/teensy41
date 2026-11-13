@@ -45,7 +45,8 @@ static const ParamDef kParams[kValueCount] = {
     {"rmod",         "Reverb modulation",  "Mod",            0,  100,  40, 1, U::kPercent, nullptr, kPreset},
     {"rera",         "Reverb era",         "Era",            0,  100,  40, 1, U::kPercent, nullptr, kPreset},
     {"rgate",        "Reverb gate",        "Gate",         100,  600, 300, 10, U::kMs,     nullptr, kPreset},
-    {"g",            "Output gain",        "Out gain",    -120,   48, -12, 1, U::kHalfDb,  nullptr, 0},
+    // The master volume: 0 dB (the DAC's full level) down to -60 dB; the minimum is silence.
+    {"g",            "Master volume",      "Master",      -120,    0, -12, 1, U::kHalfDb,  nullptr, 0},
     {"b",            "Cab bypass",         "Bypass",         0,    1,   0, 1, U::kOnOff,   nullptr, kPreset},
     {"drum style",   "Drum style",         "Style",          0,   63,   1, 1, U::kName,    nullptr, 0},
     {"drum kit",     "Drum kit",           "Kit",            0,   63,   1, 1, U::kName,    nullptr, 0},

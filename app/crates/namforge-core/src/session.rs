@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use namforge_link::{encode_frame, flags, msg, ErrorCode, Fed, Frame, FrameParser, Reader, WireError, Writer};
 
-use crate::types::{DeviceInfo, Event, FileEntry, Files, Meters, Preset, Setting};
+use crate::types::{DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};
 
 /// The app's name as sent in `HELLO`.
 pub const APP_ID: &str = concat!("NAM Forge ", env!("CARGO_PKG_VERSION"));
@@ -236,6 +236,58 @@ impl<T: Read + Write> Session<T> {
             Ok(list)
         })()
         .map_err(|problem| SessionError::Malformed { request: msg_type, problem })
+    }
+
+    /// The loaded model's details; `None` when no model is loaded or the firmware has no such request.
+    pub fn model_info(&mut self) -> Result<Option<ModelInfo>, SessionError> {
+        let f = match self.request(msg::MODEL_INFO, &[]) {
+            Ok(f) => f,
+            Err(SessionError::Device { .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let known = |v: f32| (!v.is_nan()).then_some(v);
+        (|| -> Result<ModelInfo, WireError> {
+            let mut r = Reader::new(&f.payload);
+            Ok(ModelInfo {
+                name: r.str()?,
+                gear_make: r.str()?,
+                gear_model: r.str()?,
+                gear_type: r.str()?,
+                tone_type: r.str()?,
+                sample_rate: r.f32()?,
+                loudness: known(r.f32()?),
+                input_level_dbu: known(r.f32()?),
+                output_level_dbu: known(r.f32()?),
+                calibration_db: known(r.f32()?),
+                level_db: r.f32()?,
+            })
+        })()
+        .map(Some)
+        .map_err(|problem| SessionError::Malformed { request: msg::MODEL_INFO, problem })
+    }
+
+    /// The loaded IR's details; `None` when no IR is loaded or the firmware has no such request.
+    pub fn ir_info(&mut self) -> Result<Option<IrInfo>, SessionError> {
+        let f = match self.request(msg::IR_INFO, &[]) {
+            Ok(f) => f,
+            Err(SessionError::Device { .. }) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        (|| -> Result<IrInfo, WireError> {
+            let mut r = Reader::new(&f.payload);
+            Ok(IrInfo {
+                sample_rate: r.u32()?,
+                channels: r.u16()?,
+                bits: r.u16()?,
+                frames: r.u32()?,
+                length: r.u32()?,
+                resampled: r.bool()?,
+                cut: r.bool()?,
+                gain: r.f32()?,
+            })
+        })()
+        .map(Some)
+        .map_err(|problem| SessionError::Malformed { request: msg::IR_INFO, problem })
     }
 
     /// A request whose payload is one path and whose reply is empty: `MODEL_LOAD`, `IR_LOAD`,

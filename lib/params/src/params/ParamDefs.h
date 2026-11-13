@@ -22,7 +22,7 @@ enum Param : uint8_t {
   kReverbOn, kReverbMix, kReverbSize, kReverbTone,
   kReverbMode,  // 0 hall, 1 gated
   kReverbPreDelay, kReverbMod, kReverbEra, kReverbGate,
-  kOutGain,  // half-dB steps
+  kOutGain,  // the master volume: half-dB steps up to 0 dB; the minimum (-60 dB) is silence. Not in presets.
   kBypass,   // the cab IR off (the amp and effects stay)
   kDrumStyle, kDrumKit,  // 0-based
   kDrumSong,             // 0 = off (the style), else 1-based

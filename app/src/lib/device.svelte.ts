@@ -15,6 +15,8 @@ const empty: Snapshot = {
   presets: [],
   models: [],
   irs: [],
+  modelInfo: null,
+  irInfo: null,
 };
 
 const noMeters: Meters = {
@@ -89,6 +91,12 @@ function apply(e: DeviceEvent) {
       break;
     case "irs":
       device.irs = e.files;
+      break;
+    case "modelInfo":
+      device.modelInfo = e.info;
+      break;
+    case "irInfo":
+      device.irInfo = e.info;
       break;
     case "transfer":
       Object.assign(transfer, { name: e.name, sent: e.sent, total: e.total, done: e.done, error: e.error, at: performance.now() });
@@ -259,6 +267,8 @@ async function startPreview(): Promise<() => void> {
   Object.assign(device, structuredClone(snapshot));
   device.models = [device.files.model, "/AMP/Recto Modern Red.nam", "/AMP/Deluxe Reverb clean.nam", "/AMP/5150 Block Letter.nam"].filter(Boolean).sort().map((path) => ({ path, size: 665758 }));
   device.irs = [device.files.ir, "/IR/Mesa OS 4x12 V30.wav", "/IR/Greenback 2x12.wav"].filter(Boolean).sort().map((path) => ({ path, size: 96044 }));
+  device.modelInfo = { name: "", gearMake: "Marshall", gearModel: "JCM 800 2203", gearType: "amp", toneType: "hi_gain", sampleRate: 48000, loudness: -20.6, inputLevelDbu: 12, outputLevelDbu: null, calibrationDb: -9.3, levelDb: 8.6 };
+  device.irInfo = { sampleRate: 96000, channels: 2, bits: 24, frames: 19968, length: 3992, resampled: true, cut: true, gain: 0.44 };
   device.presets = ["01 Recto", device.files.preset || "02 Crunch", "03 Vintage clean"].map((name) => ({ name, number: Number(name.slice(0, 2)) }));
   preview.on = true;
   const t0 = performance.now();

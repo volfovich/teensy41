@@ -310,6 +310,39 @@ static void onFileLoad(const applink::FrameHeader& h, Reader& r, bool model) {
   replyEmpty(h);
 }
 
+static void onModelInfo(const applink::FrameHeader& h) {
+  if (ampCurrent() < 0) return replyError(h, Err::kNotFound, "No model is loaded");
+  const dsp::NamInfo& m = ampInfo();
+  Writer w(g_txPayload, kTxPayload);
+  w.str(m.name);
+  w.str(m.gearMake);
+  w.str(m.gearModel);
+  w.str(m.gearType);
+  w.str(m.toneType);
+  w.f32(m.sampleRate);
+  w.f32(m.loudness);
+  w.f32(m.inputLevelDbu);
+  w.f32(m.outputLevelDbu);
+  w.f32(ampCalibrationDb());  // NaN: the calibration is off
+  w.f32(ampLevelDb());
+  reply(h, w);
+}
+
+static void onIrInfo(const applink::FrameHeader& h) {
+  if (irCurrent() < 0) return replyError(h, Err::kNotFound, "No IR is loaded");
+  const dsp::IRPrepResult& r = irInfo();
+  Writer w(g_txPayload, kTxPayload);
+  w.u32(r.wav.sampleRate);
+  w.u16(r.wav.channels);
+  w.u16(r.wav.bitsPerSample);
+  w.u32((uint32_t)r.sourceFrames);
+  w.u32((uint32_t)r.length);
+  w.u8(r.resampled);
+  w.u8(r.truncated);
+  w.f32(r.gain);
+  reply(h, w);
+}
+
 // ---- Files on the SD card (PROTOCOL.md 4.5)
 
 static const char* const kFolders[] = {"/IR/", "/AMP/", "/PRESETS/", "/DRUMS/"};
@@ -513,6 +546,8 @@ static void handleFrame() {
     case Msg::kIrList: onFileList(h, false); break;
     case Msg::kModelLoad: onFileLoad(h, r, true); break;
     case Msg::kIrLoad: onFileLoad(h, r, false); break;
+    case Msg::kModelInfo: onModelInfo(h); break;
+    case Msg::kIrInfo: onIrInfo(h); break;
     case Msg::kFilePutBegin: onPutBegin(h, r); break;
     case Msg::kFilePutData: onPutData(h); break;
     case Msg::kFilePutEnd: onPutEnd(h); break;

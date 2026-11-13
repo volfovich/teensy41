@@ -3,6 +3,8 @@
 // Ported from teensy-ir-loader (src/IRLibrary.h) for the PCM1808 / PCM5102A hardware and the i2s32 driver.
 #pragma once
 
+#include <dsp/conv/IRLoader.h>
+
 // (Re)mounts the SD card and rebuilds the sorted file list.
 void scanCard();
 
@@ -22,6 +24,10 @@ int irSaved();
 void loadRelative(int step);
 // Loads the IR saved in the settings, or the first one that loads.
 void loadStartupIR();
+
+// What the loader did with the IR that is loaded (irCurrent() >= 0): the file's format, the
+// length in use, whether it was resampled or cut.
+const dsp::IRPrepResult& irInfo();
 
 bool irSdOk();
 int irCount();

@@ -12,4 +12,4 @@ pub mod session;
 pub mod types;
 
 pub use device::{spawn, DeviceHandle};
-pub use types::{DeviceInfo, Event, FileEntry, Files, Meters, Preset, Setting};
+pub use types::{DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};
