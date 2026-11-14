@@ -1,5 +1,5 @@
 {
-  "comment": "The blocks of the signal chain as both UIs show them (docs/design/APP_PLAN.md 3.5): order, names, colours, and which settings belong to each. Settings are named by their serial key (lib/params ParamDefs.cpp); '@Name' names a setting that has no key. 'on' is the block's switch; 'onInverted' means the setting is a bypass. 'file' is the loaded file the block shows: 'model' or 'ir'. 'summary' is the setting whose value the block's tile shows. 'peak' is the block's place among the METERS frame's block peaks (its output level). 'reduction' is the place of a gain the block reports there (the limiter's lowest gain since the last frame; 1 = none). 'note' is a line of explanation shown in the block's editor. 'only' hides settings that do not apply: it names a setting of the block, then another setting (a type or a mode) and the choices of that one with which the first is shown; with any other choice it is hidden, and the firmware either does not use it or holds it at a fixed value (docs/SIGNAL_CHAIN.md). 'activity' is the METERS bit that shows the block is working. 'master' is the unit's master volume, the last gain before the DAC: one value for all presets, kept in the unit's own settings and not in presets, so it is shown apart from the blocks, beside the meters. The cab block holds the two gains that act right after the cab: the output gain (global) and the preset's level. A setting no block names is shown under 'Other', so nothing can go missing.",
+  "comment": "The blocks of the signal chain as both UIs show them (docs/design/APP_PLAN.md 3.5): order, names, colours, and which settings belong to each. Settings are named by their serial key (lib/params ParamDefs.cpp); '@Name' names a setting that has no key. 'on' is the block's switch; 'onInverted' means the setting is a bypass. 'file' is the loaded file the block shows: 'model' or 'ir'. 'summary' is the setting whose value the block's tile shows. 'tft' is a shorter name for the unit's touch screen, whose chain tiles are narrow (without it: 'short'). 'peak' is the block's place among the METERS frame's block peaks (its output level). 'reduction' is the place of a gain the block reports there (the limiter's lowest gain since the last frame; 1 = none). 'note' is a line of explanation shown in the block's editor. 'only' hides settings that do not apply: it names a setting of the block, then another setting (a type or a mode) and the choices of that one with which the first is shown; with any other choice it is hidden, and the firmware either does not use it or holds it at a fixed value (docs/SIGNAL_CHAIN.md). 'activity' is the METERS bit that shows the block is working. 'master' is the unit's master volume, the last gain before the DAC: one value for all presets, kept in the unit's own settings and not in presets, so it is shown apart from the blocks, beside the meters. The cab block holds the two gains that act right after the cab: the output gain (global) and the preset's level. A setting no block names is shown under 'Other', so nothing can go missing.",
   "blocks": [
     {
       "id": "amp", "peak": 0, "name": "Amp", "short": "AMP", "colour": "#ff8a3d", "on": "amp", "file": "model", "activity": "ampRunning",
@@ -30,7 +30,7 @@
       "sections": [{ "settings": ["mod type", "mod rate", "mod depth", "mod fb", "mod mix", "mod width"] }]
     },
     {
-      "id": "delay", "peak": 4, "summary": "dtime", "name": "Delay", "short": "DELAY", "colour": "#5b8cff", "on": "dl", "activity": "delayRinging",
+      "id": "delay", "peak": 4, "summary": "dtime", "name": "Delay", "short": "DELAY", "tft": "DLY", "colour": "#5b8cff", "on": "dl", "activity": "delayRinging",
       "note": "Digital is the studio rack delay with all its dials. Tape is a tape echo: Mod is its wow and flutter, Drive how hard the tape is hit, and a change of Time bends the repeats in pitch. Analog is a bucket-brigade pedal: dark repeats, Mod is its chorus. Changing the type stops the repeats for a moment.",
       "only": {
         "dduck": { "dtype": ["digital"] },
@@ -40,7 +40,7 @@
       "sections": [{ "settings": ["dtype", "dmix", "dtime", "dfb", "dtone", "dmod", "dduck", "ddrive", "dera"] }]
     },
     {
-      "id": "reverb", "peak": 5, "summary": "rmode", "name": "Reverb", "short": "REVERB", "colour": "#b07cff", "on": "rv", "activity": "reverbRinging",
+      "id": "reverb", "peak": 5, "summary": "rmode", "name": "Reverb", "short": "REVERB", "tft": "REV", "colour": "#b07cff", "on": "rv", "activity": "reverbRinging",
       "only": {
         "rpre": { "rmode": ["hall", "gated", "plate"] },
         "rmod": { "rmode": ["hall", "plate"] },
@@ -56,7 +56,7 @@
     }
   ],
   "lane": {
-    "id": "drums", "summary": "bpm", "name": "Drums and bass", "short": "DRUMS + BASS", "colour": "#ff5c7a", "on": "drum", "activity": "drumsPlaying",
+    "id": "drums", "summary": "bpm", "name": "Drums and bass", "short": "DRUMS + BASS", "tft": "DRUMS", "colour": "#ff5c7a", "on": "drum", "activity": "drumsPlaying",
     "sections": [
       { "title": "Drums", "settings": ["bpm", "drum style", "drum kit", "drum song", "drum vol", "drum comp", "drum crash", "drum count", "@Loop from", "@Loop to"] },
       { "title": "Speed trainer", "settings": ["drum train", "train step", "train every", "train target"] },

@@ -7,6 +7,8 @@ export interface BlockDef {
   id: string;
   name: string;
   short: string;
+  /** A shorter name for the unit's touch screen; the app does not use it. */
+  tft?: string;
   colour: string;
   on?: string;
   onInverted?: boolean;

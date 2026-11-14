@@ -209,6 +209,11 @@ struct UnitModel : UiModel {
   }
   bool fileLoad(FileKind k, int idx) override { return k == kFileModel ? loadAmpIndex(idx) : loadIRIndex(idx); }
   int drumTempoNow() override { return (int)(chain.drums().tempoNow() + 0.5f); }
+  void drumBeat(int* beat, int* beats) override { chain.drums().beatPos(beat, beats); }
+  float limiterReductionDb() override {
+    const float db = -toDb(meterLimiterGain(kMeterScreen));
+    return db > 0.0f ? db : 0.0f;
+  }
   float inputDb() override { return toDb(meterInputPeak(kMeterScreen)); }
   float outputDb() override { return toDb(meterOutputPeak(kMeterScreen)); }
   int cpuPercent() override { return (int)(chain.cpuPercent() + 0.5f); }

@@ -4,7 +4,7 @@ The tracking page: what works and how that is known, what has not been checked, 
 
 ## Where things stand (end of 13 Nov 2026)
 
-**Added on 14 Nov 2026 (not committed when written; the unit runs this firmware):** the memory recap (`mem`, background code to flash, load buffers to the PSRAM); and the touch screen's first version, ([SCREEN.md](SCREEN.md)): 140 host test cases pass, the on-unit protocol check passes. The author wired the display the same day; it is found at boot, calibrated and in use. Waiting for the author there: the verdict on look and touch, and noise by ear.
+**Added on 14 Nov 2026 (not committed when written; the unit runs this firmware):** the memory recap (`mem`, background code to flash, load buffers to the PSRAM); and the touch screen's first version, ([SCREEN.md](SCREEN.md)): 140 host test cases pass, the on-unit protocol check passes. The author wired the display the same day; it is found at boot, calibrated and in use. Waiting for the author there: the verdict on look and touch, and noise by ear. Later the same day the home screen was laid out anew at the author's request (the preset in one bar, the chain in one lane, the drums in their own panel with tempo and beat, the limiter beside the master volume): 141 host test cases pass; flashed, the unit runs it with 0 overruns and its new controls answer injected taps. The author then had it made plainer (names only on the tiles) and found the drums' style name cut off after start and stop: fixed, with a host test that uses every screen at random and compares the glass with a whole repaint (142 host test cases pass).
 
 Work was stopped here at the author's word. Everything described on this page is committed on the branch `i2s-driver-and-hld`, and the unit runs the firmware built from it.
 
@@ -90,7 +90,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - **Presets 01 and 03** could not be put back to their contents of the morning of 13 Nov 2026 after that day's level experiments; preset 02 was rewritten once.
 - **Every model in the "Headbangers Ball" pack reports the same gear and type**: that text is the same inside the files, the app shows what is there.
 - **`ADC_FULL_SCALE_DBU` is a datasheet figure**, so the amp's drive may be off by a few dB.
-- **The SD card disturbs the ADC** (a thump below 20 Hz about every 1.4 s). Handled by the 30 Hz input high-pass; the cause is still there.
+- **The SD card disturbs the ADC** (a thump below 20 Hz about every 1.4 s). Handled by the 30 Hz input high-pass. 14 Nov 2026: after the display was wired the pulse grew to −61 dBFS raw and −66 dBFS after the high-pass, with a 4 ms edge, about every 1.6 s, and opened preset 01's gate (threshold −70 dB); no high-pass that spares the guitar removes such an edge (4th order at 60 Hz leaves −71 dBFS). The author then re-seated a loose wire (which one was not recorded): 30 s of idle input showed no pulse at all, −79 dBFS raw peak and −83 to −85 dBFS after the high-pass. So the thump was most likely the card's current pulse across a poor contact. If it comes back, check the supply and ground joints to the ADC board before touching the filter.
 - **The DAC cannot be muted by firmware** (XSMT soldered high): volume down before flashing.
 - **No input buffer:** the ADC's 60 kΩ input loads a passive pickup. Use a buffered pedal in front until one is built.
 
@@ -103,7 +103,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 
 ### Firmware
 - Try USB MIDI with a controller or a DAW.
-- The touch screen ([SCREEN.md](SCREEN.md)): wired and running since 14 Nov 2026; with a settings screen for each block since the same day; open: the author's verdict on look and touch, noise by ear. Choosing the model and the IR is in too, and a speed trainer screen one tap from home. Saving as a new preset (with a keyboard for the name) and the master volume are in as well, then dragging a value, renaming and deleting the recalled preset, and the drums' style, song, kit and volume on the trainer screen's second page, with a list to pick from for every named choice.
+- The touch screen ([SCREEN.md](SCREEN.md)): wired and running since 14 Nov 2026; with a settings screen for each block since the same day; open: the author's verdict on look and touch, noise by ear. Choosing the model and the IR is in too, and a speed trainer screen one tap from home. Saving as a new preset (with a keyboard for the name) and the master volume are in as well, then dragging a value, renaming and deleting the recalled preset, and the drums' style, song, kit and volume on the trainer screen's second page, with a list to pick from for every named choice. The home screen's second layout (14 Nov 2026) is flashed and runs: open are the 42 px chain tiles under a finger and the author's verdict on it.
 - Lower latency, if wanted: a non-uniformly partitioned convolver, then 16-sample blocks again.
 - Later effects: compressor, parametric EQ, more Mod types (tremolo), more reverbs or delays (shimmer, ping-pong, reverse were offered and not chosen); a longer delay or a looper in PSRAM.
 

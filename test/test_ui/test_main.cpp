@@ -212,6 +212,13 @@ struct FakeModel : UiModel {
   }
   int tempoNow = 100;
   int drumTempoNow() override { return tempoNow; }
+  int beat = 0, beats = 4;
+  float limDb = 0;
+  void drumBeat(int* b, int* n) override {
+    *b = on[kBlockCount - 1] ? beat : -1;
+    *n = beats;
+  }
+  float limiterReductionDb() override { return limDb; }
   float inputDb() override { return inDb; }
   float outputDb() override { return outDb; }
   int cpuPercent() override { return cpu; }
@@ -267,11 +274,14 @@ void tap(Ui& ui, int x, int y) {
 }
 
 // Places on the screens (the middle of each control; see Ui.cpp's layouts).
-const int kPrevX = 28, kNextX = 292, kArrowY = 52, kNameX = 160, kNameY = 60;
-int tileX(int i) { return 4 + (i % 5) * 63 + 30; }
-int tileY(int i) { return 122 + (i / 5) * 44 + 20; }
+const int kPrevX = 22, kNextX = 298, kArrowY = 44, kNameX = 160, kNameY = 44;  // the preset's bar
+// The blocks on the home screen: the chain's seven tiles in one lane, then the limiter in
+// the bottom line (7), the drums' play button (8) and their tempo, which opens the trainer (9).
+const int kPlaysX = 246, kDrumsY = 170;  // what the drums play: opens the trainer's second page
+int tileX(int i) { return i < 7 ? 4 + i * 45 + 21 : (i == 7 ? 186 : (i == 8 ? 34 : 120)); }
+int tileY(int i) { return i < 7 ? 112 : (i == 7 ? 222 : kDrumsY); }
 int rowY(int row) { return 24 + row * 36 + 17; }
-const int kTunerX = 40, kSaveBtnX = 114, kVolX = 283;  // the home screen's bottom line (with PRESETS at 240)
+const int kTunerX = 40, kSaveBtnX = 115, kVolX = 270;  // the home screen's bottom line (with the limiter between)
 const int kBarY = 222, kBackX = 40, kUpX = 120, kDownX = 200, kOkX = 278;
 const int kDlgY = 166, kSaveX = 58, kDiscardX = 160, kCancelX = 262;
 
@@ -303,9 +313,9 @@ void test_only_what_changed_is_repainted() {
   // A block switched from elsewhere (the app, MIDI): its tile alone.
   m.on[3] = true;
   g.paint(ui);
-  TEST_ASSERT_EQUAL_INT(60 * 40, g.pixels);
-  TEST_ASSERT_EQUAL_INT(4 + 3 * 63, g.x0);
-  TEST_ASSERT_EQUAL_INT(122, g.y0);
+  TEST_ASSERT_EQUAL_INT(42 * 52, g.pixels);
+  TEST_ASSERT_EQUAL_INT(4 + 3 * 45, g.x0);
+  TEST_ASSERT_EQUAL_INT(86, g.y0);
 
   // A level: only the meter's segments that change (5 x 10 each).
   m.inDb = -20;
@@ -343,8 +353,9 @@ void test_home_steps_presets_and_toggles_blocks() {
   tap(ui, tileX(8), tileY(8));
   TEST_ASSERT_EQUAL_STRING("toggle1 toggle8 ", m.log.c_str());
   m.log.clear();
-  tap(ui, 160, 119);  // between the name and the tiles
-  tap(ui, 65, 140);   // between two tiles
+  tap(ui, 160, 138);  // between the chain and the drums
+  tap(ui, 47, 112);   // between two tiles
+  tap(ui, 80, 76);    // the loaded files' line
   TEST_ASSERT_EQUAL_STRING_MESSAGE("", m.log.c_str(), "a tap between controls does nothing");
 }
 
@@ -376,10 +387,10 @@ void test_touch_bounce_slide_and_hold() {
   g.paint(ui);
   ui.touch(true, kPrevX, kArrowY, g_ms += 100);
   g.paint(ui);
-  TEST_ASSERT_EQUAL_INT(48 * 60, g.pixels);
+  TEST_ASSERT_EQUAL_INT(36 * 44, g.pixels);
   for (int i = 0; i < 8; i++, g_ms += 10) ui.touch(false, 0, 0, g_ms);
   g.paint(ui);
-  TEST_ASSERT_TRUE(g.pixels > 48 * 60);  // the button and what the new preset changed
+  TEST_ASSERT_TRUE(g.pixels > 36 * 44);  // the button and what the new preset changed
 }
 
 void test_leaving_an_edited_preset_asks() {
@@ -421,7 +432,7 @@ void test_preset_list_previews_keeps_and_goes_back() {
 
   // The second page, a row on it, OK.
   m.log.clear();
-  tap(ui, 240, kBarY);  // the PRESETS button
+  tap(ui, kNameX, kNameY);
   tap(ui, kDownX, kBarY);
   tap(ui, kUpX, kBarY);
   tap(ui, kUpX, kBarY);  // no page before the first
@@ -639,7 +650,7 @@ void test_dragging_a_value() {
 
   // The trainer's rows are dragged the same way.
   const int drums = kBlockCount - 1;
-  tap(ui, 4 + 4 * 63 + 30, 122 + 44 + 20);
+  tap(ui, tileX(9), tileY(9));
   TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
   drag(ui, 120, setY(0), 178, setY(0));
   TEST_ASSERT_EQUAL_INT(75, m.val[drums][FakeModel::find(drums, "bpm")]);
@@ -658,6 +669,161 @@ void type(Ui& ui, const char* text) {
     for (int row = 0; row < 4; row++)
       for (int col = 0; rows[row][col]; col++)
         if (rows[row][col] == (*text >= 'a' && *text <= 'z' ? *text - 32 : *text)) key(ui, row, col);
+  }
+}
+
+// The home screen's drums panel and the limiter beside the master volume.
+void test_home_drums_and_limiter() {
+  FakeModel m;
+  Ui ui(m);
+  const int kLimiter = 7, kDrums = 8;
+  TEST_ASSERT_EQUAL_STRING("limiter", kBlocks[kLimiter].id);
+  TEST_ASSERT_EQUAL_STRING("drums", kBlocks[kDrums].id);
+
+  // PLAY starts and stops the drums; holding it opens the block's settings.
+  tap(ui, tileX(kDrums), tileY(kDrums));
+  TEST_ASSERT_TRUE(m.on[kDrums]);
+  tap(ui, tileX(kDrums), tileY(kDrums));
+  TEST_ASSERT_FALSE(m.on[kDrums]);
+  hold(ui, tileX(kDrums), tileY(kDrums), 700);
+  TEST_ASSERT_EQUAL_INT(Ui::kBlockEdit, ui.screen());
+  TEST_ASSERT_EQUAL_INT(kDrums, ui.editedBlock());
+  tap(ui, kEditBackX, kEditTopY);
+
+  // The tempo opens the trainer; what plays opens its second page (style first).
+  m.log.clear();
+  tap(ui, tileX(9), tileY(9));
+  TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][FakeModel::find(kDrums, "bpm")]);
+  tap(ui, kEditBackX, kEditTopY);
+  tap(ui, kPlaysX, kDrumsY);
+  TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT(2, m.val[kDrums][FakeModel::find(kDrums, "drum style")]);
+  tap(ui, kEditBackX, kEditTopY);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+
+  // The limiter is a block like the tiles: a tap switches it, holding opens its settings.
+  m.log.clear();
+  tap(ui, tileX(kLimiter), tileY(kLimiter));
+  TEST_ASSERT_EQUAL_STRING("toggle7 ", m.log.c_str());
+  hold(ui, tileX(kLimiter), tileY(kLimiter), 700);
+  TEST_ASSERT_EQUAL_INT(Ui::kBlockEdit, ui.screen());
+  TEST_ASSERT_EQUAL_INT(kLimiter, ui.editedBlock());
+  tap(ui, kEditBackX, kEditTopY);
+  tap(ui, tileX(kLimiter), tileY(kLimiter));
+  TEST_ASSERT_TRUE(m.on[kLimiter]);
+
+  // A beat repaints the beat dots alone; the limiter at work repaints its button alone.
+  m.on[kDrums] = true;
+  ui.tick(g_ms += 1000);
+  Glass g;
+  g.paint(ui);
+  m.beat = 1;
+  g.paint(ui);
+  TEST_ASSERT_EQUAL_INT(124 * 16, g.pixels);
+  m.limDb = 6;
+  ui.tick(g_ms += 60);
+  g.paint(ui);
+  TEST_ASSERT_EQUAL_INT(68 * 36, g.pixels);
+  m.limDb = 0.4f;  // too little to show: the bar falls back by itself
+  for (int i = 0; i < 20; i++) ui.tick(g_ms += 60);
+  g.paint(ui);
+  Ui fresh(m);
+  fresh.tick(g_ms + 1000);
+  Glass g2;
+  g2.paint(fresh);
+  TEST_ASSERT_TRUE(g.px == g2.px);
+
+  // With no preset recalled, a song chosen and a bar of seven beats everything still paints.
+  m.current = -1;
+  m.val[kDrums][FakeModel::find(kDrums, "drum song")] = 3;
+  m.beats = 7;
+  m.beat = 6;
+  g.paint(ui);
+  for (uint16_t v : g.px) TEST_ASSERT_TRUE(v != 0xF81F);
+}
+
+// Every screen, used at random: whatever is touched or changes in the unit, the glass must
+// show exactly what painting the whole screen anew would show. This finds a part that
+// paints outside its rectangle (it is cut off when it alone is repainted) and a part
+// that does not notice a change of what it shows.
+void test_random_use_keeps_the_glass_true() {
+  FakeModel m;
+  Ui ui(m);
+  Glass g;
+  g.paint(ui);
+  uint32_t seed = 20261114u;
+  auto rnd = [&seed](int n) {
+    seed = seed * 1664525u + 1013904223u;
+    return (int)((seed >> 10) % (uint32_t)n);
+  };
+  int seen[16] = {0};
+  auto check = [&](int step, const char* what) {
+    ui.tick(g_ms += 60);
+    g.paint(ui);
+    seen[ui.screen()]++;
+    ui.invalidate();
+    Glass whole;
+    whole.paint(ui);
+    for (int i = 0; i < kScreenW * kScreenH; i++)
+      if (g.px[i] != whole.px[i]) {
+        g.save("wrong_glass");
+        whole.save("wrong_whole");
+        char msg[160];
+        snprintf(msg, sizeof(msg), "step %d (%s), screen %d: the glass differs from a whole repaint at x %d y %d (see .pio/ui/wrong_*)",
+                 step, what, (int)ui.screen(), i % kScreenW, i / kScreenW);
+        TEST_FAIL_MESSAGE(msg);
+      }
+  };
+  for (int step = 0; step < 6000; step++) {
+    const int x = rnd(kScreenW), y = rnd(kScreenH), kind = rnd(12);
+    if (kind < 5) {
+      // A tap, looked at while the finger is down and after it.
+      for (int i = 0; i < 8; i++, g_ms += 10) ui.touch(true, x, y, g_ms), ui.tick(g_ms);
+      check(step, "finger down");
+      for (int i = 0; i < 8; i++, g_ms += 10) ui.touch(false, 0, 0, g_ms), ui.tick(g_ms);
+      check(step, "tap");
+    } else if (kind == 5) {
+      hold(ui, x, y, 700 + rnd(900));
+      check(step, "hold");
+    } else if (kind == 6) {
+      drag(ui, x, y, rnd(kScreenW), y);
+      check(step, "drag");
+    } else if (kind == 7) {
+      // The way home, so that every screen is opened many times.
+      tap(ui, 36, 16);
+      tap(ui, 40, 222);
+      check(step, "back");
+    } else {
+      // The unit changes by itself: the drums' beat and tempo, levels, the limiter, a block
+      // switched or a setting changed from the app, the tuner's reading.
+      m.beat = rnd(m.beats);
+      if (!rnd(6)) m.beats = 1 + rnd(12);
+      if (!rnd(4)) m.tempoNow = 40 + rnd(200);
+      if (!rnd(4)) m.on[rnd(kBlockCount)] ^= true;
+      if (!rnd(4)) m.inDb = (float)-rnd(70), m.outDb = (float)-rnd(70);
+      if (!rnd(4)) m.limDb = (float)rnd(14);
+      if (!rnd(4)) m.cpu = rnd(100);
+      if (!rnd(6)) m.edited = !m.edited;
+      if (!rnd(6)) m.masterHalfDb = -rnd(121);
+      if (!rnd(6)) {
+        const int b = rnd(kBlockCount), i = rnd(kBlocks[b].settingCount);
+        m.settingStep(b, i, rnd(3) - 1);
+      }
+      if (!rnd(6)) m.model = rnd((int)m.models.size()), m.ir = rnd((int)m.irs.size());
+      m.view.valid = rnd(2);
+      m.view.note = rnd(12);
+      m.view.cents = (float)(rnd(100) - 50);
+      m.view.hz = 80.0f + (float)rnd(400);
+      check(step, "the unit changed");
+    }
+  }
+  for (int s = Ui::kHome; s <= Ui::kChoices; s++) {
+    char msg[64];
+    snprintf(msg, sizeof(msg), "screen %d was never looked at", s);
+    TEST_ASSERT_TRUE_MESSAGE(seen[s] > 0, msg);
   }
 }
 
@@ -964,7 +1130,7 @@ void test_speed_trainer_is_one_tap_from_home() {
   g.paint(ui);
   m.tempoNow = 110;
   g.paint(ui);
-  TEST_ASSERT_EQUAL_INT(60 * 40, g.pixels);
+  TEST_ASSERT_EQUAL_INT(104 * 48, g.pixels);  // the tempo
   tap(ui, kTrainX, kTrainY);
   tap(ui, 60, 222);
   TEST_ASSERT_FALSE(m.on[kDrums]);
@@ -1028,10 +1194,10 @@ void test_long_names_fit() {
   TEST_ASSERT_TRUE(strlen(out) > 12);
   TEST_ASSERT_TRUE(Canvas::fitText(kFontMedium, "Wide", 3, out, sizeof(out)));
   TEST_ASSERT_EQUAL_STRING("", out);
-  // The longest name a preset may have (24 characters, the widest letters) fits the home
-  // screen in the medium font without being cut.
-  TEST_ASSERT_TRUE(Canvas::textWidth(kFontMedium, "WWWWWWWWWWWWWWWWWWWWWWWW") > 312);  // only this one would not
-  TEST_ASSERT_TRUE(Canvas::textWidth(kFontMedium, "Preset With A Long Name!") <= 312);
+  // A long preset name (24 characters is the most) fits beside its number on the home
+  // screen in the small font without being cut: 164 px are left of the bar's 232.
+  TEST_ASSERT_TRUE(Canvas::textWidth(kFontSmall, "WWWWWWWWWWWWWWWWWWWWWWWW") > 164);  // only such a one would not
+  TEST_ASSERT_TRUE(Canvas::textWidth(kFontSmall, "Preset With A Long Name!") <= 164);
   // The huge font has the digits and note names only.
   TEST_ASSERT_NOT_NULL(kFontHuge.glyph('7'));
   TEST_ASSERT_NOT_NULL(kFontHuge.glyph('#'));
@@ -1065,6 +1231,28 @@ void test_write_pictures() {
     ui.touch(true, tileX(3), tileY(3), g_ms);
     g.paint(ui);
     g.save("home_edited");
+  }
+  {
+    // Everything at work: a drum song in 6/8 on its third beat, the limiter turning down.
+    FakeModel m;
+    const int d = kBlockCount - 1;
+    for (bool& on : m.on) on = true;
+    m.val[4][FakeModel::find(4, "mod type")] = 1;
+    m.val[5][FakeModel::find(5, "dtype")] = 1;
+    m.val[6][FakeModel::find(6, "rmode")] = 3;
+    m.val[d][FakeModel::find(d, "drum song")] = 2;
+    m.tempoNow = 126;
+    m.beats = 6;
+    m.beat = 2;
+    m.limDb = 7;
+    m.masterHalfDb = -25;
+    m.inDb = -14;
+    m.outDb = -4;
+    Ui ui(m);
+    ui.tick(g_ms += 1000);
+    Glass g;
+    g.paint(ui);
+    g.save("home_playing");
   }
   {
     FakeModel m;
@@ -1176,6 +1364,8 @@ int main() {
   RUN_TEST(test_block_settings);
   RUN_TEST(test_choosing_a_model_and_an_ir);
   RUN_TEST(test_speed_trainer_is_one_tap_from_home);
+  RUN_TEST(test_home_drums_and_limiter);
+  RUN_TEST(test_random_use_keeps_the_glass_true);
   RUN_TEST(test_save_over_and_as_new);
   RUN_TEST(test_rename_and_delete);
   RUN_TEST(test_choices_have_a_list);

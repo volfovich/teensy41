@@ -18,7 +18,8 @@ enum FileKind { kFileModel, kFileIr, kFileNone };
 
 struct BlockDef {
   const char* id;
-  const char* label;   // the tile's text
+  const char* label;   // the block's short name
+  const char* tile;    // a shorter one where it is needed: the home screen's narrow tiles
   const char* name;    // the editor's title
   uint16_t colour;     // RGB565
   const char* onKey;   // the serial key of the block's switch
@@ -114,15 +115,15 @@ static const BlockSetting kDrumsSettings[] = {
 };
 
 static const BlockDef kBlocks[] = {
-    {"amp", "AMP", "Amp", 0xFC47, "amp", false, kAmpSettings, 7, kFileModel},
-    {"gate", "GATE", "Noise gate", 0x8EAA, "gate", false, kGateSettings, 3, kFileNone},
-    {"cab", "CAB", "Cab", 0xD54B, "b", true, kCabSettings, 2, kFileIr},
-    {"doubler", "DBL", "Doubler", 0x3E5B, "dbl", false, kDoublerSettings, 2, kFileNone},
-    {"mod", "MOD", "Mod", 0x3EB4, "mod", false, kModSettings, 6, kFileNone},
-    {"delay", "DELAY", "Delay", 0x5C7F, "dl", false, kDelaySettings, 9, kFileNone},
-    {"reverb", "REVERB", "Reverb", 0xB3FF, "rv", false, kReverbSettings, 8, kFileNone},
-    {"limiter", "LIMIT", "Limiter", 0xE68D, "lim", false, kLimiterSettings, 3, kFileNone},
-    {"drums", "DRUMS + BASS", "Drums and bass", 0xFAEF, "drum", false, kDrumsSettings, 18, kFileNone},
+    {"amp", "AMP", "AMP", "Amp", 0xFC47, "amp", false, kAmpSettings, 7, kFileModel},
+    {"gate", "GATE", "GATE", "Noise gate", 0x8EAA, "gate", false, kGateSettings, 3, kFileNone},
+    {"cab", "CAB", "CAB", "Cab", 0xD54B, "b", true, kCabSettings, 2, kFileIr},
+    {"doubler", "DBL", "DBL", "Doubler", 0x3E5B, "dbl", false, kDoublerSettings, 2, kFileNone},
+    {"mod", "MOD", "MOD", "Mod", 0x3EB4, "mod", false, kModSettings, 6, kFileNone},
+    {"delay", "DELAY", "DLY", "Delay", 0x5C7F, "dl", false, kDelaySettings, 9, kFileNone},
+    {"reverb", "REVERB", "REV", "Reverb", 0xB3FF, "rv", false, kReverbSettings, 8, kFileNone},
+    {"limiter", "LIMIT", "LIMIT", "Limiter", 0xE68D, "lim", false, kLimiterSettings, 3, kFileNone},
+    {"drums", "DRUMS + BASS", "DRUMS", "Drums and bass", 0xFAEF, "drum", false, kDrumsSettings, 18, kFileNone},
 };
 static const int kBlockCount = 9;
 static const int kMaxBlockSettings = 18;

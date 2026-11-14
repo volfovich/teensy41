@@ -1,4 +1,4 @@
-// Ui.h - the touch screen's screens: home (preset, chain, meters), preset list, a block's
+// Ui.h - the touch screen's screens: home (meters, preset, chain, drums), preset list, a block's
 // settings, the list of models or IRs, the speed trainer (with what the drums play), saving (over, or as a new preset with a
 // typed name), renaming and deleting the recalled preset, the master volume, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
@@ -87,6 +87,11 @@ struct UiModel {
   virtual const char* fileName(FileKind kind, int idx) = 0;  // without folder and extension
   virtual bool fileLoad(FileKind kind, int idx) = 0;
   virtual int drumTempoNow() = 0;                // BPM as it plays (the trainer raises it)
+  // The beat sounding now in the drums' bar (0-based; -1 while they are stopped) with the
+  // bar's beats.
+  virtual void drumBeat(int* beat, int* beats) = 0;
+  // How far the limiter turned the level down at most since the last call, in dB (0: not at all).
+  virtual float limiterReductionDb() = 0;
   virtual float inputDb() = 0;                   // peaks since the last call
   virtual float outputDb() = 0;
   virtual int cpuPercent() = 0;
@@ -133,7 +138,7 @@ class Ui {
     int arg = 0;
     Rect rect = {0, 0, 0, 0};
   };
-  static const int kMaxParts = 64;
+  static const int kMaxParts = 96;
   struct Part {
     Rect r;
     uint32_t sig;
@@ -149,6 +154,7 @@ class Ui {
 
   void layout(Pass& p);
   void layoutHome(Pass& p);
+  void layoutHomeDrums(Pass& p);
   void layoutPresets(Pass& p);
   void layoutTuner(Pass& p);
   void layoutConfirm(Pass& p);
@@ -202,7 +208,7 @@ class Ui {
   float dragFrom_ = 0.0f;
   // Meters: read 20 times a second, the peak falls slowly.
   uint32_t meterMs_ = 0;
-  float inDb_ = -100.0f, outDb_ = -100.0f;
+  float inDb_ = -100.0f, outDb_ = -100.0f, limDb_ = 0.0f;
   int cpu_ = 0;
   uint32_t cpuMs_ = 0;
   // Preset list.

@@ -6,8 +6,10 @@ The unit's own screen as it is built: a 2.8-inch ILI9341 display (320 x 240 in l
 
 ## What it shows
 
-| Home | Preset list |
+| Home | Home with everything at work |
 | --- | --- |
+| ![home](img/screen/home.png) | ![home](img/screen/home_playing.png) |
+| Home, the preset edited | Preset list |
 | ![home](img/screen/home_edited.png) | ![presets](img/screen/presets.png) |
 | A block's settings | Tuner |
 | ![block](img/screen/block_delay.png) | ![tuner](img/screen/tuner_flat.png) |
@@ -30,9 +32,15 @@ The unit's own screen as it is built: a 2.8-inch ILI9341 display (320 x 240 in l
 | The trainer's second page | The list of songs |
 | ![drums](img/screen/trainer_drums.png) | ![song](img/screen/choices_song.png) |
 
-(The settings pictures come from the host test's made-up unit, which labels settings by their keys; the unit shows the table's labels: Type, Mix, Time, Repeats.)
+(The pictures come from the host test's made-up unit, which labels settings by their keys and gives every number as a percentage; the unit shows the table's labels (Type, Mix, Time, Repeats) and real values, so the stopped tempo on home is the set one.)
 
-- **Home:** input and output meters and the CPU load; the preset's number and name with previous and next (holding repeats); the chain as tiles in the app's colours, lit while the block is on (DRUMS: while they play). A tap on a tile switches the block, **holding it for half a second opens its settings**. Tuner, Save (lit while the preset is edited), Presets and Vol.
+- **Home** (laid out anew on 14 Nov 2026, asked for by the author: the first layout gave the preset's number half the screen, broke the chain into two rows and had the drums among the chain's tiles). From the top:
+  - Input and output meters and the CPU load.
+  - **The preset in one bar:** number and name side by side between previous and next (holding repeats). A tap on the bar opens the preset list (there is no PRESETS button any more). Edited: the number turns amber, an amber dot shows, and SAVE is lit. A long name is shown in a smaller font (three sizes) before it is cut.
+  - **What is loaded:** the amp's model and the cab's IR by name (not touched: the line is too low to hit).
+  - **The chain in one lane:** AMP, GATE, CAB, DBL, MOD, DLY, REV, in the order the guitar passes them, in the app's colours, lit while the block is on, with a line running behind them. A tile shows the block's name and nothing else (its values were on the tiles for an hour on 14 Nov 2026; the author found the screen crowded). A tap switches the block, **holding it for half a second opens its settings**.
+  - **The drums in a panel of their own:** play / stop (holding opens the DRUMS + BASS settings); the tempo, always shown (as it plays, or the set one while stopped), with the trainer's target under it while the trainer is on; the song's or style's name, and while the drums play a dot for each beat of the bar (the sounding one lit, the first in white). No kit name and no bar number: the author asked for less on the screen. A tap on the tempo opens the speed trainer, a tap on what plays opens the trainer's second page (style, song, kit, volume).
+  - **Bottom line:** TUNER, SAVE, then the end of the signal's way: LIMIT and VOL. The limiter is not among the chain's tiles because it is one setting for all presets and acts after the master volume on guitar and drums alike; it is switched and opened like a tile, and a red bar grows on it while it turns the level down (2 dB a step, up to 12 dB). VOL shows the master volume's value.
 - **Save** (14 Nov 2026): over the recalled preset (offered while it is edited), or as a new preset. A new preset's name is typed on a keyboard: digits, letters, hyphen, space, delete; a word's first letter comes in upper case and the rest in lower, and the Aa key changes that for what follows. Up to 24 characters; with no name the unit calls it "Preset NN". The new preset takes the lowest free number and becomes the recalled one. If the unit cannot save (no card, or all 99 numbers taken) the screen stays and says so.
 - **Rename and delete** (14 Nov 2026): in the same menu, for the recalled preset. Rename opens the keyboard with the name it has; the number stays, and unsaved edits are not touched. An empty name or one another preset has is refused and the screen says so. Delete asks first; after it the sound keeps playing with no preset recalled (`renamePreset`, `deletePreset` in `src/PresetLibrary.h`).
 - **Master volume** (14 Nov 2026): Vol on the home screen. Minus and plus in half-dB steps (holding repeats, then 2.5 dB at a time), from 0 dB down to silent. One level for all presets, not part of a preset. The value and its bar can also be dragged (see below).
@@ -45,10 +53,10 @@ The unit's own screen as it is built: a 2.8-inch ILI9341 display (320 x 240 in l
 - **Tuner:** note, a needle (green within 3 cents) and the frequency; the guitar is muted while it is open, as with the shell's and the app's tuner.
 - A change made elsewhere (the app, MIDI, the shell) shows by itself: every pass the screen compares what it would show now with what is on the glass.
 
-- **Speed trainer** (added 14 Nov 2026, asked for by the author to be as easy to reach as possible): the TRAINER tile on the home screen opens it with one tap. The trainer's switch at the top, the tempo it starts from, step, every and target with minus and plus, the drums' PLAY / STOP, and the tempo as it plays. The arrow at the bottom right changes to a second page with what the drums play: style, song, kit and drum volume (the switch and PLAY / STOP stay); the trainer always opens on its first page. The tile is lit while the trainer is switched on and shows the tempo reached while the drums play with it. With a drum song chosen the screen says so (the trainer is for styles). The values are the drum block's own settings, so they are also in the DRUMS tile's settings, the app and the shell.
+- **Speed trainer** (added 14 Nov 2026, asked for by the author to be as easy to reach as possible): the tempo in the home screen's drums panel opens it with one tap. The trainer's switch at the top, the tempo it starts from, step, every and target with minus and plus, the drums' PLAY / STOP, and the tempo as it plays. The arrow at the bottom right changes to a second page with what the drums play: style, song, kit and drum volume (the switch and PLAY / STOP stay); the trainer always opens on its first page. The home screen shows the tempo reached while the drums play, and the trainer's target while it is switched on. With a drum song chosen the screen says so (the trainer is for styles). The values are the drum block's own settings, so they are also in the DRUMS tile's settings, the app and the shell.
 - **Model and IR** (added 14 Nov 2026): the Amp's and the Cab's settings begin with the file they play. The arrows load the previous or next file of the unit's list (round the ends); a tap on the name opens the list, five to a page, where a tap loads a file at once and the one that plays is lit. Names are shown without folder and extension, with spaces for underscores; long ones in the small font. A loaded file is an edit of the preset like any other (Save, or the question on leaving).
 
-Not there: renaming and deleting presets, the blocks' notes.
+Not there: the blocks' notes.
 
 ## How it is built
 
@@ -56,10 +64,11 @@ Not there: renaming and deleting presets, the blocks' notes.
 | --- | --- | --- |
 | Screens, touch handling, drawing | `lib/ui` (portable, namespace `ui_tft`) | `Ui` (the screens), `Canvas` (rectangles, rounded boxes, smoothed text into a strip of pixels), `Font`, `UiModel` (what the screens need from the unit) |
 | Fonts | `lib/ui/src/ui/Fonts.cpp`, made by `tools/make_font.py` | Inter 4.1 (SIL Open Font License) at 13, 19, 30 and 76 px, 2 bits a pixel, 29 KB |
-| Blocks | `lib/ui/src/ui/BlocksGen.h`, made by `tools/make_blocks_header.py` | Names, colours and switches from `protocol/blocks.json`, the file the app reads; a host test fails if the header is out of date |
+| Blocks | `lib/ui/src/ui/BlocksGen.h`, made by `tools/make_blocks_header.py` | Names, colours and switches from `protocol/blocks.json`, the file the app reads (`tft` there is a shorter name for the home screen's narrow tiles: DLY, REV); a host test fails if the header is out of date |
 | The unit's side | `src/Screen.cpp` | Display and touch drivers (`ILI9341_t3`, `XPT2046_Touchscreen` from the Teensy framework), the `UiModel` over `Params`, `PresetLibrary`, `Tuner` and the chain, calibration, the `tft` commands |
-| Meters for several readers | `src/Meters.cpp` | The chain's peak readings clear on reading; here the screen, the app and the shell each get every peak |
+| Meters for several readers | `src/Meters.cpp` | The chain's peak readings and the limiter's lowest gain clear on reading; here the screen, the app and the shell each get every one |
 
+- **A part paints inside its own rectangle only.** What it paints outside is cut off when that part alone is repainted. Found on 14 Nov 2026 on the glass by the author: the drums' style name on the home screen was cut after the drums were stopped. The host test `test_random_use_keeps_the_glass_true` now uses every screen at random (taps, holds, drags, the unit changing by itself; 6000 steps) and after each step compares the glass with a whole repaint; it fails on that fault when it is put back.
 - **No frame buffer.** A screen is one layout function that names each part with its rectangle. It runs three ways: to note a number for what each part shows now, to paint the parts that fall into a strip, and to find the part under a finger. A part is repainted when its number changes; a meter is twelve parts, so a level change repaints a few 5 x 10 rectangles.
 - **Strips.** What changed is composed into a strip of at most 320 x 16 pixels (10 KB, RAM2) and sent as one rectangle, one strip for each pass of `loop()`, so the shell, MIDI and the app are served in between.
 - **Touch.** Read every 10 ms. A tap counts on release, on the control where it began; sliding off cancels; contact lost for under 40 ms is bounce; a held control counts as 8 px larger. While a value is dragged each reading is used one reading late and the last one before the finger lifts is dropped, because a resistive panel's point jumps as the pressure goes.
@@ -78,7 +87,7 @@ Not there: renaming and deleting presets, the blocks' notes.
 - The audio does not notice the screen: the differences are inside the spread between two runs. It cannot be interrupted by it either (the audio runs in an interrupt, the screen in `loop()`).
 - Speed is what the audio leaves of the SPI bus: a 320 x 16 strip takes 9.7 ms with everything on, so a whole screen about 0.15 s (15 strips); a meter change is under 1 ms.
 - Noise at the guitar input with the display wired (input peak with nothing played, three 8 s readings each; what was plugged into the input was not recorded): screen showing home −83.3 to −84.0 dBFS; repainting all the time (`tft bench full`) −81.8 to −82.4 dBFS. So a constantly busy bus adds about 1.5 dB to a floor near −83 dBFS; in use the bus is idle except for meter segments and screen changes.
-- Memory: flash 62 KB (code, fonts); RAM1 data 3 KB; RAM2 10 KB; stack unchanged (16.9 KB deepest).
+- Memory: flash 62 KB (code, fonts); RAM1 data 3 KB; RAM2 10 KB; stack unchanged (16.9 KB deepest). The new home screen (14 Nov 2026) has more parts than the first, so the room for parts went from 64 to 96: 0.8 KB more RAM1 data ("free for local variables" 87.6 to 86.8 KB); RAM1 code is unchanged, the flash grew by a few KB (not measured apart).
 
 ## Looking at the screens without the unit
 
@@ -90,7 +99,8 @@ writes each screen as a PNG to `.pio/ui/`, drawn by the code the unit runs, with
 
 ## What is not checked
 
-- The author's verdict on the picture and the touch: colours, sharpness, whether the 40 px tiles are comfortable to hit, anything to change in the layout.
+- The author's verdict on the picture and the touch: colours, sharpness, anything to change in the layout.
+- **The new home screen on the glass** (14 Nov 2026): flashed the same day; the unit shows home, 0 overruns, and injected taps (`tft tap`) on the tempo, on what plays and on the preset's bar open the trainer and the preset list and come back. Not tapped on the unit: the tiles, PLAY and LIMIT (they change the sound). Nobody has looked at it yet. The author then asked for less on it (no values on the tiles, no kit name, no bar number): that version was flashed the same day and runs (home shown, 0 overruns). On it the author saw the style's name move and lose its lower edge after the drums were started and stopped: fixed (the tempo and the name now keep their places whatever plays), host-tested and flashed: on the unit a tap on PLAY started the drums and a second one stopped them (master at -40 dB for the test, put back to 0 dB), 0 overruns. The shell cannot show what the glass shows, so the name's place after a stop is for the author to confirm. Open there: whether the chain's 42 px wide tiles are comfortable to hit (the first layout's were 60 x 40), the beat dots against the real drums, the limiter's bar.
 - **Noise by ear** with a high-gain preset, and a reading with the guitar plugged in and its volume down (the measurement above did not record what was at the input). Whether the backlight on its own adds noise was not separated from the bus.
 - The tuner screen, the unsaved-changes question, the blocks' settings screens, the file lists, the master volume's buttons, renaming and deleting a preset, the trainer's second page and the lists of choices on the glass (run by injected touches only: `tft tap <x> <y> <ms>`).
 - Possible later: sending strips by DMA, which would keep the bus busy while the audio runs (a whole screen in about 45 ms instead of 150).

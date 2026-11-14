@@ -8,7 +8,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - As built: `docs/SCREEN.md` (the unit's touch screen), `docs/SIGNAL_CHAIN.md` (the audio path and every gain), `docs/FIRMWARE.md` (structure, memory), `docs/CONTROL.md` (serial commands, settings table, MIDI map), `docs/APP.md` (the macOS app), `protocol/PROTOCOL.md`.
 - Tracking: `docs/STATUS.md` (what works, what is unchecked, open items), `docs/DECISIONS.md` (choices and reasons). Working rules and recipes: `docs/DEVELOPMENT.md`.
 - Design record: `docs/design/HLD.md` (budgets, benchmarks), `docs/design/APP_PLAN.md` (the app's plan), `docs/HARDWARE.md`.
-- State on 13 Nov 2026: work stopped at the author's word after the Mod block and the app's IR graphs, then went on the same day with the limiter, two more Mod types (ce2, phase90), two more reverb modes (plate, spring) and two more delay types (tape, analog); `docs/STATUS.md` ("Where things stand") lists what waits for the author. 14 Nov 2026: memory recap (`mem`), and the touch screen's first version, wired and running.
+- State on 13 Nov 2026: work stopped at the author's word after the Mod block and the app's IR graphs, then went on the same day with the limiter, two more Mod types (ce2, phase90), two more reverb modes (plate, spring) and two more delay types (tape, analog); `docs/STATUS.md` ("Where things stand") lists what waits for the author. 14 Nov 2026: memory recap (`mem`), and the touch screen's first version, wired and running; the same day its home screen was laid out anew (one chain lane, drums panel, limiter beside the master volume): flashed and running, not yet judged by the author.
 - **Keep the documents true:** a change to the chain, a setting, a command, a message or the app's structure updates the document that owns it in the same commit; finished or newly found things go into `docs/STATUS.md`, new choices into `docs/DECISIONS.md`.
 
 ## Commands
@@ -71,7 +71,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - All code goes to ITCM (RAM1) by default. `tools/imxrt1062_t41_cold.ld` keeps background code (libc, SdFat, SerialUI, libraries, loaders) in flash. Never add a file with audio-interrupt code to its cold lists.
 - After changing the linker script or the audio path, run `tools/check_hot_code.sh` (after `pio run`): it fails if an audio-path function was linked into flash.
 - The NAM history must be a plain global (DTCM), not `DMAMEM`: OCRAM costs about 4% CPU more.
-- RAM1 code grows in 32 KB steps taken from the stack's space (ITCM): 58.4 KB of the 64 KB step on 14 Nov 2026, 7.2 KB left, "free for local variables" 88.4 KB in `pio run`. If that drops by 32 KB, a step was crossed: move background code to the cold list, or accept it (the stack's deepest use measured with serial `mem` is 17.5 KB).
+- RAM1 code grows in 32 KB steps taken from the stack's space (ITCM): 58.4 KB of the 64 KB step on 14 Nov 2026, 7.2 KB left, "free for local variables" 86.8 KB in `pio run`. If that drops by 32 KB, a step was crossed: move background code to the cold list, or accept it (the stack's deepest use measured with serial `mem` is 17.5 KB).
 - Data only `loop()` touches goes in PSRAM (IR load buffers, the file lists); nothing the audio interrupt reads does (the weights of a model being swapped in stay in RAM2).
 - Load-time-only buffers can go in PSRAM (`EXTMEM`), as the IR resampler table does.
 

@@ -10,3 +10,5 @@ enum MeterReader { kMeterShell, kMeterApp, kMeterScreen, kMeterReaders };
 float meterInputPeak(MeterReader who);
 float meterOutputPeak(MeterReader who);
 float meterStagePeak(MeterReader who, int stage);
+// The limiter's lowest gain since this reader's last call (1 = it did nothing).
+float meterLimiterGain(MeterReader who);

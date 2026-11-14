@@ -33,8 +33,9 @@ def make():
         most = max(most, len(entries))
         name = "k%sSettings" % b["id"].capitalize()
         tables.append("static const BlockSetting %s[] = {\n%s\n};" % (name, "\n".join(entries)))
-        rows.append('    {"%s", "%s", "%s", 0x%04X, "%s", %s, %s, %d, %s},' % (
-            b["id"], b["short"], b["name"], rgb565(b["colour"]), b["on"], "true" if b.get("onInverted") else "false",
+        rows.append('    {"%s", "%s", "%s", "%s", 0x%04X, "%s", %s, %s, %d, %s},' % (
+            b["id"], b["short"], b.get("tft", b["short"]), b["name"], rgb565(b["colour"]), b["on"],
+            "true" if b.get("onInverted") else "false",
             name, len(entries), {"model": "kFileModel", "ir": "kFileIr"}.get(b.get("file"), "kFileNone")))
     m = d["meters"]
     return """// BlocksGen.h - made by tools/make_blocks_header.py from protocol/blocks.json; do not edit.
@@ -57,7 +58,8 @@ enum FileKind { kFileModel, kFileIr, kFileNone };
 
 struct BlockDef {
   const char* id;
-  const char* label;   // the tile's text
+  const char* label;   // the block's short name
+  const char* tile;    // a shorter one where it is needed: the home screen's narrow tiles
   const char* name;    // the editor's title
   uint16_t colour;     // RGB565
   const char* onKey;   // the serial key of the block's switch

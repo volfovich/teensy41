@@ -2,6 +2,7 @@
 #include <ui/Ui.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 namespace ui_tft {
@@ -39,6 +40,12 @@ void triangle(Canvas& c, Rect r, int dir, int size, uint16_t colour) {
     else c.fill(R(cx - half, cy - size / 2 + k, 2 * half + 1, 1), colour);
   }
 }
+
+// The home screen. The last two of kBlocks are not tiles of the chain: the limiter (one
+// setting for all presets, after the master volume) has its place at the bottom beside the
+// master volume, the drums their own panel. The rest is the preset's chain, in one lane.
+const int kLimiterBlock = kBlockCount - 2, kDrumBlock = kBlockCount - 1, kChainTiles = kBlockCount - 2;
+const int kTilePitch = 315 / kChainTiles, kTileW = kTilePitch - 3, kTileY = 86, kTileH = 52;
 
 // The preset's name without its number ("03 Lead" -> "Lead").
 const char* bareName(const char* name, int number) {
@@ -119,6 +126,10 @@ void Ui::layout(Pass& p) {
   }
 }
 
+// The home screen, top to bottom: levels and CPU; the preset in one bar; the files that
+// play; the preset's chain as ONE lane of tiles; the drums in a panel of their own with
+// the tempo and the beat; and a bottom line that ends, as the signal does, with the
+// limiter and the master volume.
 void Ui::layoutHome(Pass& p) {
   // Top line: levels and CPU.
   meter(p, 6, 0, 20, "IN", inDb_);
@@ -127,68 +138,174 @@ void Ui::layoutHome(Pass& p) {
   snprintf(buf, sizeof(buf), "CPU %d%%", cpu_);
   if (part(p, R(240, 0, 76, 20), Sig().s(buf).h)) p.canvas->textIn(R(240, 0, 76, 20), kFontSmall, buf, kDim, kRight);
 
-  // The preset: number, name, previous and next.
+  // The preset: number and name in one bar between previous and next. A tap opens the list.
   const int cur = m_.presetCurrent();
   const bool edited = cur >= 0 && m_.presetEdited();
   const int number = cur >= 0 ? m_.presetNumber(cur) : 0;
   const char* name = cur >= 0 ? bareName(m_.presetName(cur), number) : "No preset";
-  arrowButton(p, R(4, 22, 48, 60), 0, kPrev);
-  arrowButton(p, R(268, 22, 48, 60), 1, kNext);
+  arrowButton(p, R(4, 22, 36, 44), 0, kPrev);
+  arrowButton(p, R(280, 22, 36, 44), 1, kNext);
   if (number > 0) snprintf(buf, sizeof(buf), "%02d", number);
   else strcpy(buf, "--");
-  const Rect numR = R(56, 22, 208, 60);
-  if (part(p, numR, Sig().s(buf).i(edited).i(pressed(kOpenList)).h)) {
-    p.canvas->roundRect(numR, 6, pressed(kOpenList) ? kPanelHi : kPanel);
-    p.canvas->textIn(numR, kFontHuge, buf, kText);
-    if (edited) {
-      const Rect pill = R(numR.x + numR.w - 58, numR.y + 5, 54, 16);
-      p.canvas->roundRect(pill, 8, kAmber);
-      p.canvas->textIn(pill, kFontSmall, "EDITED", kDark);
+  {
+    const Rect card = R(44, 22, 232, 44);
+    const bool down = pressed(kOpenList);
+    if (part(p, card, Sig().s(buf).s(name).i(edited).i(down).h)) {
+      Canvas& c = *p.canvas;
+      c.roundRect(card, 6, down ? kPanelHi : kPanel);
+      if (edited) c.roundRect(R(card.x + card.w - 14, card.y + 6, 8, 8), 4, kAmber);  // unsaved: an amber dot
+      const int numW = Canvas::textWidth(kFontLarge, buf);
+      c.textIn(R(card.x + 12, card.y, numW, card.h), kFontLarge, buf, edited ? kAmber : kAccent);
+      const Rect nameR = R(card.x + 22 + numW, card.y, card.w - numW - 30, card.h);
+      const Font& f = Canvas::textWidth(kFontLarge, name) <= nameR.w ? kFontLarge
+                    : (Canvas::textWidth(kFontMedium, name) <= nameR.w ? kFontMedium : kFontSmall);
+      c.textIn(nameR, f, name, kText, kLeft);
+    }
+    target(p, card, kOpenList);
+  }
+
+  // What is loaded: the amp's model and the cab's IR.
+  for (int i = 0, n = 0; i < kChainTiles && n < 2; i++) {
+    if (kBlocks[i].file == kFileNone) continue;
+    const Rect r = R(4 + n * 158, 67, 154, 18);
+    n++;
+    const int idx = m_.fileCurrent(kBlocks[i].file);
+    const char* file = idx >= 0 ? m_.fileName(kBlocks[i].file, idx) : "none";
+    if (part(p, r, Sig().i(i).s(file).h)) {
+      const int w = Canvas::textWidth(kFontSmall, kBlocks[i].tile);
+      p.canvas->textIn(R(r.x + 4, r.y, w, r.h), kFontSmall, kBlocks[i].tile, mix(kBg, kBlocks[i].colour, 3));
+      p.canvas->textIn(R(r.x + 10 + w, r.y, r.w - w - 12, r.h), kFontSmall, file, kDim, kLeft);
     }
   }
-  const Rect nameR = R(4, 84, 312, 34);
-  if (part(p, nameR, Sig().s(name).i(edited).h)) {
-    const Font& f = Canvas::textWidth(kFontLarge, name) <= nameR.w ? kFontLarge : kFontMedium;
-    p.canvas->textIn(nameR, f, name, edited ? kAmber : kText);
-  }
-  target(p, R(56, 22, 208, 96), kOpenList);
 
-  // The chain: a tile a block, lit while it is on (the drums: while they play).
-  const int drums = kBlockCount - 1;
-  for (int i = 0; i < kBlockCount; i++) {
-    const int col = i % 5, row = i / 5;
-    const Rect r = R(4 + col * 63, 122 + row * 44, 60, 40);
+  // The chain: one lane, a tile a block, in the order the guitar passes them; a line runs
+  // behind the tiles and shows between them. A tile is lit while its block is on: its name
+  // and nothing else.
+  {
+    const Rect line = R(4, kTileY + kTileH / 2 - 1, kTilePitch * kChainTiles - 3, 2);
+    if (part(p, line, 1)) p.canvas->fill(line, kPanelHi);
+  }
+  for (int i = 0; i < kChainTiles; i++) {
+    const Rect r = R(4 + i * kTilePitch, kTileY, kTileW, kTileH);
     const bool on = m_.blockOn(i), down = pressed(kBlock, i);
     if (part(p, r, Sig().i(i).i(on).i(down).h)) {
-      const uint16_t c = kBlocks[i].colour;
+      const uint16_t c = kBlocks[i].colour, fg = on && !down ? kDark : kDim;
       p.canvas->roundRect(r, 6, down ? kPanelHi : (on ? c : kPanel));
-      if (!on) p.canvas->roundRect(R(r.x, r.y, 5, r.h), 2, mix(kPanel, c, 3));  // its colour stays as a stripe
-      p.canvas->textIn(r.inset(2), kFontSmall, i == drums ? "DRUMS" : kBlocks[i].label, on && !down ? kDark : kDim);
+      if (!on) p.canvas->roundRect(R(r.x + 8, r.y + 5, r.w - 16, 3), 1, mix(kPanel, c, 3));  // its colour stays as a bar
+      p.canvas->textIn(R(r.x + 1, r.y, r.w - 2, r.h), kFontSmall, kBlocks[i].tile, fg);
     }
     target(p, r, kBlock, i);
   }
-  // The speed trainer has the last place: lit while it is switched on, and while the
-  // drums play with it, it shows the tempo they have reached. A tap opens its screen.
+
+  layoutHomeDrums(p);
+
+  // Bottom line: the tuner and saving, then the end of the signal's way: the limiter (a
+  // block like the tiles above: a tap switches it, holding opens its settings; a red bar
+  // grows while it turns the level down) and the master volume with its value.
+  button(p, R(4, 204, 74, 36), "TUNER", kOpenTuner);
+  button(p, R(82, 204, 66, 36), "SAVE", kOpenSave, 0, edited ? kAmber : 0);  // lit with something to save
   {
-    const Rect r = R(4 + 4 * 63, 122 + 44, 60, 40);
-    const int onIdx = findSetting(drums, "drum train");
-    SettingView v;
-    const bool on = onIdx >= 0 && m_.setting(drums, onIdx, &v) && v.on, down = pressed(kOpenTrainer);
-    if (on && m_.blockOn(drums)) snprintf(buf, sizeof(buf), "%d BPM", m_.drumTempoNow());
-    else strcpy(buf, "TRAINER");
-    if (part(p, r, Sig().s(buf).i(on).i(down).h)) {
-      const uint16_t c = kBlocks[drums].colour;
+    const int i = kLimiterBlock;
+    const Rect r = R(152, 204, 68, 36);
+    const bool on = m_.blockOn(i), down = pressed(kBlock, i);
+    int seg = on ? (int)(limDb_ / 2.0f + 0.5f) : 0;  // 2 dB a step, six steps
+    if (seg > 6) seg = 6;
+    if (part(p, r, Sig().i(on).i(down).i(seg).h)) {
+      const uint16_t c = kBlocks[i].colour;
       p.canvas->roundRect(r, 6, down ? kPanelHi : (on ? c : kPanel));
-      if (!on) p.canvas->roundRect(R(r.x, r.y, 5, r.h), 2, mix(kPanel, c, 3));
-      p.canvas->textIn(r.inset(2), kFontSmall, buf, on && !down ? kDark : kDim);
+      if (!on) p.canvas->roundRect(R(r.x + 8, r.y + 4, r.w - 16, 3), 1, mix(kPanel, c, 3));
+      p.canvas->textIn(r.inset(4), kFontMedium, kBlocks[i].tile, on && !down ? kDark : kDim);
+      if (seg) p.canvas->fill(R(r.x + 7, r.y + r.h - 7, (r.w - 14) * seg / 6, 3), kMeterHot);
     }
-    target(p, r, kOpenTrainer);
+    target(p, r, kBlock, i);
+  }
+  {
+    const Rect r = R(224, 204, 92, 36);
+    SettingView v;
+    m_.master(&v);
+    if (char* unit = strstr(v.text, " dB")) *unit = 0;
+    const bool down = pressed(kOpenMaster);
+    if (part(p, r, Sig().s(v.text).i(down).h)) {
+      p.canvas->roundRect(r, 6, down ? kPanelHi : kPanel);
+      p.canvas->textIn(R(r.x + 8, r.y, 40, r.h), kFontMedium, "VOL", kText, kLeft);
+      p.canvas->textIn(R(r.x + 50, r.y, r.w - 58, r.h), kFontSmall, v.text, kDim, kRight);
+    }
+    target(p, r, kOpenMaster);
+  }
+}
+
+// The drums on the home screen, apart from the chain: play / stop (holding opens the
+// block's settings), the tempo, with the trainer's target while it is on (a tap opens the
+// trainer), and what plays with the bar's beats (a tap opens the trainer's second page).
+void Ui::layoutHomeDrums(Pass& p) {
+  const int d = kDrumBlock;
+  const uint16_t dc = kBlocks[d].colour;
+  const bool playing = m_.blockOn(d);
+  SettingView v;
+  char buf[40];
+  const Rect panel = R(4, 140, 312, 60);
+  if (part(p, panel, 2)) p.canvas->roundRect(panel, 8, kPanel);
+  {
+    const Rect r = R(8, 144, 52, 52);
+    const bool down = pressed(kBlock, d);
+    if (part(p, r, Sig().i(playing).i(down).h)) {
+      p.canvas->roundRect(r, 6, down ? kPanelHi : (playing ? dc : mix(kPanel, dc, 1)));
+      if (playing) p.canvas->roundRect(R(r.x + 17, r.y + 17, 18, 18), 2, kDark);
+      else triangle(*p.canvas, R(r.x + 2, r.y, r.w, r.h), 1, 18, dc);
+    }
+    target(p, r, kBlock, d);
   }
 
-  button(p, R(4, 210, 74, 30), "TUNER", kOpenTuner);
-  button(p, R(82, 210, 64, 30), "SAVE", kOpenSave, 0, edited ? kAmber : 0);  // lit with something to save
-  button(p, R(150, 210, 96, 30), "PRESETS", kOpenList);
-  button(p, R(250, 210, 66, 30), "VOL", kOpenMaster);
+  // The tempo: as it plays (the trainer raises it), or the one that is set.
+  {
+    const int bpmIdx = findSetting(d, "bpm"), trainIdx = findSetting(d, "drum train"), toIdx = findSetting(d, "train target");
+    const int bpm = playing ? m_.drumTempoNow() : (bpmIdx >= 0 && m_.setting(d, bpmIdx, &v) ? atoi(v.text) : 0);
+    const bool train = trainIdx >= 0 && m_.setting(d, trainIdx, &v) && v.on;
+    const int to = train && toIdx >= 0 && m_.setting(d, toIdx, &v) ? atoi(v.text) : 0;
+    const Rect r = R(64, 144, 112, 52);
+    const bool down = pressed(kOpenTrainer, 0);
+    if (part(p, r, down) && down) p.canvas->roundRect(r, 6, kPanelHi);
+    // The number keeps its place; the trainer's target has the line under it while it is on.
+    const Rect in = R(68, 146, 104, 48);
+    if (part(p, in, Sig().i(bpm).i(playing).i(train).i(to).h)) {
+      const int top = in.y + 6;
+      snprintf(buf, sizeof(buf), "%d", bpm);
+      int x = p.canvas->text(kFontLarge, in.x + 2, top - 7, buf, playing ? kText : kDim);
+      p.canvas->text(kFontSmall, x + 5, top + 10, "BPM", kDim);
+      if (train) {
+        x = p.canvas->text(kFontSmall, in.x + 2, in.y + 31, "TRAINER", dc);
+        triangle(*p.canvas, R(x + 4, in.y + 31, 7, 17), 1, 5, dc);
+        snprintf(buf, sizeof(buf), "%d", to);
+        p.canvas->text(kFontSmall, x + 15, in.y + 31, buf, dc);
+      }
+    }
+    target(p, r, kOpenTrainer, 0);
+  }
+
+  // What plays: the song, or the style, always in the same place; while it plays the bar's
+  // beats are under it as dots, the one that sounds lit. (A part paints inside its own
+  // rectangle only: what it paints outside is cut off when it alone is repainted.)
+  {
+    const int songIdx = findSetting(d, "drum song"), styleIdx = findSetting(d, "drum style");
+    char what[24] = "";
+    if (songIdx >= 0 && m_.setting(d, songIdx, &v) && strcmp(v.text, "off") != 0) snprintf(what, sizeof(what), "%s", v.text);
+    else if (styleIdx >= 0 && m_.setting(d, styleIdx, &v)) snprintf(what, sizeof(what), "%s", v.text);
+    int beat = -1, beats = 0;
+    if (playing) m_.drumBeat(&beat, &beats);
+    const Rect r = R(180, 144, 132, 52);
+    const bool down = pressed(kOpenTrainer, 1);
+    if (part(p, r, down) && down) p.canvas->roundRect(r, 6, kPanelHi);
+    const Rect top = R(184, 148, 124, 30);
+    if (part(p, top, Sig().s(what).i(playing).h))
+      p.canvas->textIn(top, Canvas::textWidth(kFontMedium, what) <= top.w ? kFontMedium : kFontSmall, what, playing ? kText : kDim, kLeft);
+    const Rect dots = R(184, 178, 124, 16);
+    const int n = beat < 0 || beats <= 0 ? 0 : (beats > 12 ? 12 : beats), pitch = n <= 6 ? 13 : 120 / n, size = n <= 6 ? 9 : pitch - 2;
+    if (part(p, dots, Sig().i(beat).i(n).h))
+      for (int k = 0; k < n; k++)
+        p.canvas->roundRect(R(dots.x + 1 + k * pitch, dots.y + (dots.h - size) / 2, size, size), size / 2,
+                            k != beat ? kOff : (k == 0 ? kText : dc));
+    target(p, r, kOpenTrainer, 1);
+  }
 }
 
 // SAVE on the home screen: over the recalled preset or as a new one, and the recalled
@@ -763,7 +880,7 @@ void Ui::fire(Action a, int arg) {
     }
     case kOpenTrainer:
       editBlock_ = kBlockCount - 1;  // its rows are the drum block's settings
-      trainerPage_ = 0;
+      trainerPage_ = arg ? 1 : 0;    // the home screen's "what plays" opens the second page
       go(kTrainer);
       break;
     case kTrainerOn: {
@@ -890,6 +1007,10 @@ void Ui::tick(uint32_t ms) {
     outDb_ = out > outDb_ - 1.5f ? out : outDb_ - 1.5f;
     if (inDb_ < -100.0f) inDb_ = -100.0f;
     if (outDb_ < -100.0f) outDb_ = -100.0f;
+    // The limiter's work, the same way: up at once, back 1 dB a reading.
+    const float lim = m_.limiterReductionDb();
+    limDb_ = lim > limDb_ - 1.0f ? lim : limDb_ - 1.0f;
+    if (limDb_ < 0.0f) limDb_ = 0.0f;
   }
   if (ms - cpuMs_ >= 500) {
     cpuMs_ = ms;
