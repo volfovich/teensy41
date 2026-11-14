@@ -115,11 +115,14 @@ struct FakeModel : UiModel {
     v->toggle = isToggle(st.ref);
     v->on = val[b][i] != 0;
     const char* const* c = choices(st.ref);
-    v->bar = !v->toggle && !c;
+    const bool named = !strcmp(st.ref, "drum style") || !strcmp(st.ref, "drum kit") || !strcmp(st.ref, "drum song");
+    v->bar = !v->toggle && !c && !named;
     v->fraction = val[b][i] / 100.0f;
     if (c) snprintf(v->text, sizeof(v->text), "%s", c[val[b][i]]);
     else if (v->toggle) snprintf(v->text, sizeof(v->text), "%s", v->on ? "ON" : "OFF");
     else if (!strcmp(st.ref, "drum song")) snprintf(v->text, sizeof(v->text), "%s", val[b][i] == 50 ? "off" : "Blues 12 bar");
+    else if (!strcmp(st.ref, "drum style")) snprintf(v->text, sizeof(v->text), "Rock %d", val[b][i]);
+    else if (!strcmp(st.ref, "drum kit")) snprintf(v->text, sizeof(v->text), "Studio %d", val[b][i]);
     else snprintf(v->text, sizeof(v->text), "%d%%", val[b][i]);
     return true;
   }
@@ -149,6 +152,22 @@ struct FakeModel : UiModel {
     return true;
   }
   bool canSaveAs = true;
+  bool rename(const char* name) override {
+    log += std::string("rename[") + name + "] ";
+    if (!name[0] || current < 0) return false;
+    char file[64];
+    snprintf(file, sizeof(file), "%02d %s", presetNumber(current), name);
+    names[current] = file;
+    return true;
+  }
+  bool remove() override {
+    log += "remove" + std::to_string(current) + " ";
+    if (current < 0) return false;
+    names.erase(names.begin() + current);
+    current = saved = -1;
+    edited = false;
+    return true;
+  }
   bool saveAs(const char* name) override {
     log += std::string("saveAs[") + name + "] ";
     if (!canSaveAs) return false;
@@ -612,7 +631,7 @@ void test_dragging_a_value() {
 }
 
 // Places on the save menu and the keyboard.
-const int kMenuX = 160, kOverY = 77, kNewY = 131, kMenuCancelY = 204;
+const int kMenuX = 160, kOverY = 66, kNewY = 110, kMenuCancelY = 208, kRenameX = 89, kDeleteX = 231, kMenuRowY = 154;
 void key(Ui& ui, int row, int col) { tap(ui, 4 + col * 313 / 10 + 14, 36 + row * 42 + 20); }
 void type(Ui& ui, const char* text) {
   static const char* const rows[4] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL-", "ZXCVBNM"};
@@ -695,6 +714,72 @@ void test_save_over_and_as_new() {
   type(ui, "b");
   g.paint(ui);
   TEST_ASSERT_TRUE(g.pixels >= 312 * 30);
+}
+
+void test_rename_and_delete() {
+  FakeModel m;
+  Ui ui(m);
+  // Rename starts from the name the preset has; its number stays. Edits are not touched.
+  m.edited = true;
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kRenameX, kMenuRowY);
+  TEST_ASSERT_EQUAL_INT(Ui::kName, ui.screen());
+  type(ui, " x");  // after a space the next letter is upper case
+  key(ui, 3, 9);
+  type(ui, "live");
+  tap(ui, 240, kBarY);
+  TEST_ASSERT_EQUAL_STRING("rename[JCM8OO Live] ", m.log.c_str());
+  TEST_ASSERT_EQUAL_STRING("02 JCM8OO Live", m.names[1].c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  TEST_ASSERT_TRUE(m.edited);
+  TEST_ASSERT_EQUAL_INT(7, (int)m.names.size());
+
+  // An empty name is refused: the screen stays and says so. Cancel renames nothing.
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kRenameX, kMenuRowY);
+  for (int i = 0; i < 11; i++) key(ui, 3, 9);
+  tap(ui, 240, kBarY);
+  TEST_ASSERT_EQUAL_STRING("rename[] ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kName, ui.screen());
+  tap(ui, 80, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("02 JCM8OO Live", m.names[1].c_str());
+
+  // A new preset after a rename starts with an empty name and saves, not renames.
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kMenuX, kNewY);
+  type(ui, "a");
+  tap(ui, 240, kBarY);
+  TEST_ASSERT_EQUAL_STRING("saveAs[A] ", m.log.c_str());
+  m.recall(1);
+
+  // Delete asks first; Cancel deletes nothing.
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kDeleteX, kMenuRowY);
+  TEST_ASSERT_EQUAL_INT(Ui::kDeleteAsk, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  tap(ui, 232, 166);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kDeleteX, kMenuRowY);
+  tap(ui, 88, 166);
+  TEST_ASSERT_EQUAL_STRING("remove1 ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  TEST_ASSERT_EQUAL_INT(-1, m.current);
+
+  // With no preset recalled there is nothing to rename, delete or save over.
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kRenameX, kMenuRowY);
+  tap(ui, kDeleteX, kMenuRowY);
+  tap(ui, kMenuX, kOverY);
+  TEST_ASSERT_EQUAL_INT(Ui::kSaveMenu, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  tap(ui, kMenuX, kMenuCancelY);
 }
 
 void test_master_volume() {
@@ -799,7 +884,7 @@ void test_speed_trainer_is_one_tap_from_home() {
   g.paint(ui);
   m.tempoNow = 105;
   g.paint(ui);
-  TEST_ASSERT_EQUAL_INT(186 * 34, g.pixels);
+  TEST_ASSERT_EQUAL_INT(140 * 34, g.pixels);
   tap(ui, kEditBackX, kEditTopY);
   TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
   g.paint(ui);
@@ -809,6 +894,33 @@ void test_speed_trainer_is_one_tap_from_home() {
   tap(ui, kTrainX, kTrainY);
   tap(ui, 60, 222);
   TEST_ASSERT_FALSE(m.on[kDrums]);
+
+  // The second page is what the drums play: style, song, kit, volume. PLAY and the
+  // trainer's switch stay; opening the trainer again shows its first page.
+  const int style = FakeModel::find(kDrums, "drum style"), song = FakeModel::find(kDrums, "drum song"),
+            kit = FakeModel::find(kDrums, "drum kit"), vol = FakeModel::find(kDrums, "drum vol");
+  TEST_ASSERT_TRUE(style >= 0 && song >= 0 && kit >= 0 && vol >= 0);
+  tap(ui, 282, 222);
+  tap(ui, kPlusX, setY(0));
+  tap(ui, kMinusX, setY(1));
+  tap(ui, kPlusX, setY(2));
+  tap(ui, kPlusX, setY(3));
+  TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][style]);
+  TEST_ASSERT_EQUAL_INT(49, m.val[kDrums][song]);
+  TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][kit]);
+  TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][vol]);
+  TEST_ASSERT_EQUAL_INT_MESSAGE(51, m.val[kDrums][bpm], "the first page's rows are not touched");
+  tap(ui, 60, 222);
+  TEST_ASSERT_TRUE(m.on[kDrums]);
+  tap(ui, 60, 222);
+  tap(ui, 282, 222);
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT(52, m.val[kDrums][bpm]);
+  tap(ui, 282, 222);
+  tap(ui, kEditBackX, kEditTopY);
+  tap(ui, kTrainX, kTrainY);
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT(53, m.val[kDrums][bpm]);
 }
 
 void test_tuner_opens_and_closes() {
@@ -943,6 +1055,9 @@ void test_write_pictures() {
     tap(ui, tileX(9), tileY(8));
     g.paint(ui);
     g.save("trainer");
+    tap(ui, 282, 222);
+    g.paint(ui);
+    g.save("trainer_drums");
   }
   {
     FakeModel m;
@@ -961,6 +1076,11 @@ void test_write_pictures() {
     m.masterHalfDb = -12;
     g.paint(ui);
     g.save("master");
+    tap(ui, 36, 16);
+    tap(ui, kSaveBtnX, kBarY);
+    tap(ui, kDeleteX, kMenuRowY);
+    g.paint(ui);
+    g.save("delete");
   }
 }
 
@@ -979,6 +1099,7 @@ int main() {
   RUN_TEST(test_choosing_a_model_and_an_ir);
   RUN_TEST(test_speed_trainer_is_one_tap_from_home);
   RUN_TEST(test_save_over_and_as_new);
+  RUN_TEST(test_rename_and_delete);
   RUN_TEST(test_master_volume);
   RUN_TEST(test_dragging_a_value);
   RUN_TEST(test_tuner_opens_and_closes);

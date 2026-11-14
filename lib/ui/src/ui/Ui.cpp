@@ -114,6 +114,7 @@ void Ui::layout(Pass& p) {
     case kSaveMenu: layoutSaveMenu(p); break;
     case kName: layoutName(p); break;
     case kMaster: layoutMaster(p); break;
+    case kDeleteAsk: layoutDelete(p); break;
   }
 }
 
@@ -189,17 +190,31 @@ void Ui::layoutHome(Pass& p) {
   button(p, R(250, 210, 66, 30), "VOL", kOpenMaster);
 }
 
-// SAVE on the home screen: over the recalled preset, or as a new one.
+// SAVE on the home screen: over the recalled preset or as a new one, and the recalled
+// preset's new name or its end.
 void Ui::layoutSaveMenu(Pass& p) {
   const int cur = m_.presetCurrent();
   const bool canOver = cur >= 0 && m_.presetEdited();
-  if (part(p, R(10, 8, 300, 34), 1)) p.canvas->textIn(R(10, 8, 300, 34), kFontLarge, "Save", kText);
+  if (part(p, R(10, 4, 300, 34), 1)) p.canvas->textIn(R(10, 4, 300, 34), kFontLarge, "Preset", kText);
   char buf[64];
-  if (cur >= 0) snprintf(buf, sizeof(buf), "Over %s", m_.presetName(cur));
-  else snprintf(buf, sizeof(buf), "Over the preset");
-  button(p, R(20, 54, 280, 46), buf, kSaveOver, 0, kAmber, canOver);  // nothing changed: nothing to save over
-  button(p, R(20, 108, 280, 46), "As a new preset", kSaveNew, 0, kMeterOk);
-  button(p, R(20, 182, 280, 44), "CANCEL", kHome_);
+  if (cur >= 0) snprintf(buf, sizeof(buf), "Save over %s", m_.presetName(cur));
+  else snprintf(buf, sizeof(buf), "Save over the preset");
+  button(p, R(20, 46, 280, 40), buf, kSaveOver, 0, kAmber, canOver);  // nothing changed: nothing to save over
+  button(p, R(20, 90, 280, 40), "Save as a new preset", kSaveNew, 0, kMeterOk);
+  button(p, R(20, 134, 138, 40), "RENAME", kRename, 0, 0, cur >= 0);
+  button(p, R(162, 134, 138, 40), "DELETE", kAskDelete, 0, 0, cur >= 0);
+  button(p, R(20, 188, 280, 40), "CANCEL", kHome_);
+}
+
+// DELETE in that menu asks first.
+void Ui::layoutDelete(Pass& p) {
+  const int cur = m_.presetCurrent();
+  if (part(p, R(10, 30, 300, 30), 1)) p.canvas->textIn(R(10, 30, 300, 30), kFontLarge, "Delete this preset?", kText);
+  const char* name = cur >= 0 ? m_.presetName(cur) : "";
+  if (part(p, R(10, 68, 300, 26), Sig().s(name).h)) p.canvas->textIn(R(10, 68, 300, 26), kFontMedium, name, kAmber);
+  if (part(p, R(10, 98, 300, 22), 2)) p.canvas->textIn(R(10, 98, 300, 22), kFontSmall, "The sound keeps playing, without a preset", kDim);
+  button(p, R(20, 140, 136, 52), "DELETE", kDeleteYes, 0, kMeterHot, cur >= 0);
+  button(p, R(164, 140, 136, 52), "CANCEL", kHome_);
 }
 
 namespace {
@@ -209,7 +224,7 @@ const char* const kKeyRows[4] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL-", "ZXCV
 inline Rect keyRect(int row, int col) { return R(4 + col * 313 / 10, 36 + row * 42, 29, 40); }
 }  // namespace
 
-// The new preset's name: typed on a keyboard, upper case for the first letter and lower
+// The new preset's name, or the recalled preset's new one: typed on a keyboard, upper case for the first letter and lower
 // after it unless the Aa key says otherwise. Empty is allowed (the unit names it "Preset NN").
 void Ui::layoutName(Pass& p) {
   const Rect field = R(4, 2, 312, 30);
@@ -217,8 +232,9 @@ void Ui::layoutName(Pass& p) {
     p.canvas->roundRect(field, 6, kPanel);
     char buf[kNameMax + 2];
     snprintf(buf, sizeof(buf), "%s_", name_);
-    if (saveFailed_) p.canvas->textIn(field.inset(8), kFontSmall, "Could not save (card missing or 99 presets)", kAmber, kLeft);
-    else if (!name_[0]) p.canvas->textIn(field.inset(8), kFontSmall, "Name of the new preset (or none)", kDim, kLeft);
+    if (saveFailed_)
+      p.canvas->textIn(field.inset(8), kFontSmall, renaming_ ? "Could not rename (no name, or the name is taken)" : "Could not save (card missing or 99 presets)", kAmber, kLeft);
+    else if (!name_[0]) p.canvas->textIn(field.inset(8), kFontSmall, renaming_ ? "The preset's new name" : "Name of the new preset (or none)", kDim, kLeft);
     else p.canvas->textIn(field.inset(8), kFontMedium, buf, kText, kLeft);
   }
   for (int row = 0; row < 4; row++)
@@ -232,7 +248,7 @@ void Ui::layoutName(Pass& p) {
   button(p, keyRect(3, 8), "_", kSpace);
   button(p, keyRect(3, 9), "<", kDelete);
   button(p, R(4, 206, 154, 34), "CANCEL", kHome_);
-  button(p, R(162, 206, 154, 34), "SAVE", kNameOk, 0, kMeterOk);
+  button(p, R(162, 206, 154, 34), renaming_ ? "RENAME" : "SAVE", kNameOk, 0, kMeterOk);
 }
 
 // The master volume: the unit's last gain, the same for all presets.
@@ -334,12 +350,14 @@ int Ui::findSetting(int block, const char* ref) {
 }
 
 // The speed trainer, one tap from home: its switch, the tempo it starts from, its three
-// settings, the drums' play button and the tempo as it plays. The settings are the drum
+// settings, the drums' play button and the tempo as it plays; on its second page what the
+// drums play: style, song, kit and volume. The settings are the drum
 // block's own (the last of kBlocks), so the app and the shell show the same values.
 void Ui::layoutTrainer(Pass& p) {
   const int drums = kBlockCount - 1;
   const BlockDef& b = kBlocks[drums];
-  static const char* const kRefs[4] = {"bpm", "train step", "train every", "train target"};
+  static const char* const kRefs[2][4] = {{"bpm", "train step", "train every", "train target"},
+                                          {"drum style", "drum song", "drum kit", "drum vol"}};
   const int onIdx = findSetting(drums, "drum train"), songIdx = findSetting(drums, "drum song");
   SettingView v;
   const bool on = onIdx >= 0 && m_.setting(drums, onIdx, &v) && v.on;
@@ -349,7 +367,7 @@ void Ui::layoutTrainer(Pass& p) {
   if (part(p, R(72, 2, 160, 28), 1)) p.canvas->textIn(R(72, 2, 160, 28), kFontMedium, "Speed trainer", b.colour);
   button(p, R(236, 2, 80, 28), on ? "ON" : "OFF", kTrainerOn, 0, on ? b.colour : 0);
   for (int row = 0; row < 4; row++) {
-    const int i = findSetting(drums, kRefs[row]);
+    const int i = findSetting(drums, kRefs[trainerPage_][row]);
     const int y = 34 + row * 43;
     if (i < 0 || !m_.setting(drums, i, &v)) {
       part(p, R(4, y, 48, 40), 0);
@@ -357,17 +375,26 @@ void Ui::layoutTrainer(Pass& p) {
       part(p, R(268, y, 48, 40), 0);
       continue;
     }
-    if (row == 0) snprintf(v.label, sizeof(v.label), "Start tempo");
+    if (row == 0 && trainerPage_ == 0) snprintf(v.label, sizeof(v.label), "Start tempo");
     settingRow(p, row, drums, i, v);
   }
-  button(p, R(4, 206, 120, 34), playing ? "STOP" : "PLAY", kPlay, 0, playing ? b.colour : 0);
+  button(p, R(4, 206, 96, 34), playing ? "STOP" : "PLAY", kPlay, 0, playing ? b.colour : 0);
   // What it is doing now. A drum song plays at its own tempo: the trainer is for styles.
   char buf[40];
   if (song) snprintf(buf, sizeof(buf), "Not with a song");
   else if (playing) snprintf(buf, sizeof(buf), "now %d BPM", m_.drumTempoNow());
   else snprintf(buf, sizeof(buf), "stopped");
-  const Rect st = R(130, 206, 186, 34);
-  if (part(p, st, Sig().s(buf).i(song).h)) p.canvas->textIn(st, kFontMedium, buf, song ? kAmber : (playing ? kText : kDim));
+  const Rect st = R(104, 206, 140, 34);
+  if (part(p, st, Sig().s(buf).i(song).h))
+    p.canvas->textIn(st, Canvas::textWidth(kFontMedium, buf) <= st.w ? kFontMedium : kFontSmall, buf, song ? kAmber : (playing ? kText : kDim));
+  // The other page: what the drums play (style, song, kit, volume).
+  const Rect pg = R(248, 206, 68, 34);
+  const bool down = pressed(kTrainerPage);
+  if (part(p, pg, Sig().i(trainerPage_).i(down).h)) {
+    p.canvas->roundRect(pg, 6, down ? kPanelHi : kPanel);
+    triangle(*p.canvas, pg, trainerPage_ ? 2 : 3, 12, kText);
+  }
+  target(p, pg, kTrainerPage);
 }
 
 // A block's settings: four to a page, each with minus and plus (holding repeats, then goes
@@ -591,9 +618,28 @@ void Ui::fire(Action a, int arg) {
     case kSaveNew:
       name_[0] = 0;
       upper_ = autoUpper_ = true;
-      saveFailed_ = false;
+      saveFailed_ = renaming_ = false;
       go(kName);
       break;
+    case kRename: {
+      // Starts from the name it has (without its number, which stays).
+      const int cur = m_.presetCurrent();
+      if (cur < 0) break;
+      strncpy(name_, bareName(m_.presetName(cur), m_.presetNumber(cur)), kNameMax);
+      name_[kNameMax] = 0;
+      const size_t n = strlen(name_);
+      upper_ = autoUpper_ = n == 0 || name_[n - 1] == ' ';
+      saveFailed_ = false;
+      renaming_ = true;
+      go(kName);
+      break;
+    }
+    case kAskDelete: go(kDeleteAsk); break;
+    case kDeleteYes:
+      m_.remove();
+      go(kHome);
+      break;
+    case kTrainerPage: trainerPage_ = !trainerPage_; break;
     case kKey: {
       const size_t n = strlen(name_);
       char c = kKeyRows[arg / 10][arg % 10];
@@ -630,7 +676,7 @@ void Ui::fire(Action a, int arg) {
     case kNameOk: {
       size_t n = strlen(name_);
       while (n > 0 && name_[n - 1] == ' ') name_[--n] = 0;
-      if (m_.saveAs(name_)) go(kHome);
+      if (renaming_ ? m_.rename(name_) : m_.saveAs(name_)) go(kHome);
       else saveFailed_ = true;
       break;
     }
@@ -657,6 +703,7 @@ void Ui::fire(Action a, int arg) {
     }
     case kOpenTrainer:
       editBlock_ = kBlockCount - 1;  // its rows are the drum block's settings
+      trainerPage_ = 0;
       go(kTrainer);
       break;
     case kTrainerOn: {

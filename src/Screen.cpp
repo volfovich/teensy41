@@ -145,6 +145,8 @@ struct UnitModel : UiModel {
   void keepPreview() override { ::keepPreview(); }
   bool save() override { return savePreset(); }
   bool saveAs(const char* name) override { return newPreset(name); }
+  bool rename(const char* name) override { return renamePreset(name); }
+  bool remove() override { return ::presetCurrent() >= 0 && deletePreset(::presetCurrent()); }
   void master(SettingView* v) override {
     int lo, hi;
     paramLimits(ui::kMaster, &lo, &hi);
@@ -443,7 +445,7 @@ void serviceScreen() {
 
 // ---- Shell ----
 void screenCommand(const char* arg) {
-  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume"};
+  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume", "delete question"};
   if (!arg || !*arg) {
     Serial.printf("Touch screen: %s, %s (%s), touch %s, showing %s.\n", g_present ? "display found" : "no display found",
                   g_active ? "on" : "off", g_rec.mode == kAuto ? "automatic" : "forced",

@@ -1,6 +1,6 @@
 // Ui.h - the touch screen's screens: home (preset, chain, meters), preset list, a block's
-// settings, the list of models or IRs, the speed trainer, saving (over, or as a new preset with a
-// typed name), the master volume, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
+// settings, the list of models or IRs, the speed trainer (with what the drums play), saving (over, or as a new preset with a
+// typed name), renaming and deleting the recalled preset, the master volume, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
 // (src/Screen.cpp) and the host tests use the same code.
 //
@@ -56,6 +56,10 @@ struct UiModel {
   virtual bool save() = 0;
   // Saves the sound as a new preset, which becomes the recalled one ("" = "Preset NN").
   virtual bool saveAs(const char* name) = 0;
+  // Renames the recalled preset (its number stays; false for an empty or a taken name), and
+  // deletes it: the sound keeps playing, with no preset recalled.
+  virtual bool rename(const char* name) = 0;
+  virtual bool remove() = 0;
   // The master volume (the unit's last gain, for all presets), as a setting.
   virtual void master(SettingView* v) = 0;
   virtual void masterStep(int steps) = 0;
@@ -84,7 +88,7 @@ struct UiModel {
 
 class Ui {
  public:
-  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer, kSaveMenu, kName, kMaster };
+  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer, kSaveMenu, kName, kMaster, kDeleteAsk };
   static const int kNameMax = 24;      // a preset name's longest
   static const int kRowsPerPage = 5;   // the preset list
   static const int kSettingsPerPage = 4;
@@ -109,7 +113,8 @@ class Ui {
                 kListBack, kListOk, kSave, kDiscard, kCancel, kEditBack, kEditOn, kMinus, kPlus, kFlip,
                 kEditUp, kEditDown, kFilePrev, kFileNext, kOpenFiles, kFileRow, kFilesBack, kFilesUp, kFilesDown, kOpenTrainer,
                 kTrainerOn, kPlay, kOpenSave, kSaveOver, kSaveNew, kKey, kCaps, kSpace, kDelete, kNameOk, kHome_,
-                kOpenMaster, kVolDown, kVolUp, kDrag, kDragVol };
+                kOpenMaster, kVolDown, kVolUp, kDrag, kDragVol, kRename, kAskDelete,
+                kDeleteYes, kTrainerPage };
   enum Mode { kMeasure, kPaint, kHit };
   struct Pass {
     Mode mode;
@@ -145,6 +150,7 @@ class Ui {
   void layoutSaveMenu(Pass& p);
   void layoutName(Pass& p);
   void layoutMaster(Pass& p);
+  void layoutDelete(Pass& p);
   // One setting with minus and plus in row `row` of the settings area.
   void settingRow(Pass& p, int row, int block, int i, const SettingView& v);
   // The place of a setting in a block by its name in blocks.json; -1 if it has none.
@@ -195,9 +201,11 @@ class Ui {
   bool previewing_ = false, editedAtOpen_ = false;
   // A block's settings.
   int editBlock_ = 0, editPage_ = 0, repeats_ = 0, filePage_ = 0;
+  int trainerPage_ = 0;  // 0: the trainer's settings, 1: what the drums play
   // The new preset's name as it is typed.
   char name_[kNameMax + 1] = "";
   bool upper_ = true, autoUpper_ = true, saveFailed_ = false;
+  bool renaming_ = false;  // the name is the recalled preset's new one, not a new preset's
   // The question.
   bool askKeep_ = false;
   int askTarget_ = -1;
