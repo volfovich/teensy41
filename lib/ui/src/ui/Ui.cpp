@@ -115,6 +115,7 @@ void Ui::layout(Pass& p) {
     case kName: layoutName(p); break;
     case kMaster: layoutMaster(p); break;
     case kDeleteAsk: layoutDelete(p); break;
+    case kChoices: layoutChoices(p); break;
   }
 }
 
@@ -305,6 +306,40 @@ void Ui::layoutFiles(Pass& p) {
   arrowButton(p, R(214, 206, 102, 34), 3, kFilesDown);
 }
 
+// The named choices of one setting of the edited block: a tap chooses at once (the one
+// that is set is lit), as the list of models and IRs.
+void Ui::layoutChoices(Pass& p) {
+  SettingView v;
+  const bool there = m_.setting(editBlock_, choiceSetting_, &v);
+  const int count = there ? v.choices : 0, pages = count ? (count + kRowsPerPage - 1) / kRowsPerPage : 1;
+  if (choicePage_ >= pages) choicePage_ = pages - 1;
+  char buf[32];
+  const char* title = there ? v.label : "";
+  if (part(p, R(8, 0, 220, 24), Sig().s(title).h)) p.canvas->textIn(R(8, 0, 220, 24), kFontSmall, title, kDim, kLeft);
+  snprintf(buf, sizeof(buf), "%d / %d", choicePage_ + 1, pages);
+  if (part(p, R(232, 0, 80, 24), Sig().s(buf).h)) p.canvas->textIn(R(232, 0, 80, 24), kFontSmall, buf, kDim, kRight);
+  for (int row = 0; row < kRowsPerPage; row++) {
+    const int idx = choicePage_ * kRowsPerPage + row;
+    const Rect r = R(4, 24 + row * 36, 312, 34);
+    if (idx >= count) {
+      part(p, r, 0);
+      continue;
+    }
+    const char* name = m_.settingChoice(editBlock_, choiceSetting_, idx);
+    const bool set = idx == v.choice, down = pressed(kChoiceRow, idx);
+    if (part(p, r, Sig().i(idx).s(name).i(set).i(down).h)) {
+      p.canvas->roundRect(r, 6, down ? kPanelHi : (set ? kBlocks[editBlock_].colour : kPanel));
+      const Rect in = R(r.x + 10, r.y, r.w - 20, r.h);
+      const Font& f = Canvas::textWidth(kFontMedium, name) <= in.w ? kFontMedium : kFontSmall;
+      p.canvas->textIn(in, f, name, set ? kDark : kText, kLeft);
+    }
+    target(p, r, kChoiceRow, idx);
+  }
+  button(p, R(4, 206, 100, 34), "BACK", kChoicesBack);
+  arrowButton(p, R(108, 206, 102, 34), 2, kChoicesUp);
+  arrowButton(p, R(214, 206, 102, 34), 3, kChoicesDown);
+}
+
 void Ui::fileStep(int dir) {
   const FileKind kind = kBlocks[editBlock_].file;
   const int count = m_.fileCount(kind);
@@ -325,7 +360,8 @@ void Ui::settingRow(Pass& p, int row, int block, int i, const SettingView& v) {
   const int y = 34 + row * 43;
   const Rect minus = R(4, y, 48, 40), mid = R(56, y, 208, 40), plus = R(268, y, 48, 40);
   button(p, minus, "-", kMinus, i);
-  const bool down = (v.toggle && pressed(kFlip, i)) || (v.bar && pressed(kDrag, i));
+  const bool list = !v.toggle && !v.bar && v.choices > 2;  // two are as quick with minus and plus
+  const bool down = (v.toggle && pressed(kFlip, i)) || (v.bar && pressed(kDrag, i)) || (list && pressed(kOpenChoices, i));
   if (part(p, mid, Sig().i(i).s(v.label).s(v.text).i((int)(v.fraction * 192.0f)).i(v.bar).i(v.toggle && v.on).i(down).h)) {
     p.canvas->roundRect(mid, 6, down ? kPanelHi : kPanel);
     const int textW = Canvas::textWidth(kFontMedium, v.text);
@@ -340,6 +376,7 @@ void Ui::settingRow(Pass& p, int row, int block, int i, const SettingView& v) {
   }
   if (v.toggle) target(p, mid, kFlip, i);
   else if (v.bar) target(p, mid, kDrag, i);  // dragged sideways
+  else if (list) target(p, mid, kOpenChoices, i);
   button(p, plus, "+", kPlus, i);
 }
 
@@ -640,6 +677,29 @@ void Ui::fire(Action a, int arg) {
       go(kHome);
       break;
     case kTrainerPage: trainerPage_ = !trainerPage_; break;
+    case kOpenChoices: {
+      SettingView v;
+      if (!m_.setting(editBlock_, arg, &v)) break;
+      choiceSetting_ = arg;
+      choicePage_ = v.choice > 0 ? v.choice / kRowsPerPage : 0;
+      choiceBack_ = screen_;
+      go(kChoices);
+      break;
+    }
+    case kChoiceRow: {
+      SettingView v;
+      if (m_.setting(editBlock_, choiceSetting_, &v) && arg != v.choice) m_.settingPick(editBlock_, choiceSetting_, arg);
+      break;
+    }
+    case kChoicesBack: go(choiceBack_); break;
+    case kChoicesUp:
+      if (choicePage_ > 0) choicePage_--;
+      break;
+    case kChoicesDown: {
+      SettingView v;
+      if (m_.setting(editBlock_, choiceSetting_, &v) && (choicePage_ + 1) * kRowsPerPage < v.choices) choicePage_++;
+      break;
+    }
     case kKey: {
       const size_t n = strlen(name_);
       char c = kKeyRows[arg / 10][arg % 10];

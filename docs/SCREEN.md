@@ -27,8 +27,8 @@ The unit's own screen as it is built: a 2.8-inch ILI9341 display (320 x 240 in l
 | Master volume | The delete question |
 | --- | --- |
 | ![master](img/screen/master.png) | ![delete](img/screen/delete.png) |
-| The trainer's second page | |
-| ![drums](img/screen/trainer_drums.png) | |
+| The trainer's second page | The list of songs |
+| ![drums](img/screen/trainer_drums.png) | ![song](img/screen/choices_song.png) |
 
 (The settings pictures come from the host test's made-up unit, which labels settings by their keys; the unit shows the table's labels: Type, Mix, Time, Repeats.)
 
@@ -37,6 +37,7 @@ The unit's own screen as it is built: a 2.8-inch ILI9341 display (320 x 240 in l
 - **Rename and delete** (14 Nov 2026): in the same menu, for the recalled preset. Rename opens the keyboard with the name it has; the number stays, and unsaved edits are not touched. An empty name or one another preset has is refused and the screen says so. Delete asks first; after it the sound keeps playing with no preset recalled (`renamePreset`, `deletePreset` in `src/PresetLibrary.h`).
 - **Master volume** (14 Nov 2026): Vol on the home screen. Minus and plus in half-dB steps (holding repeats, then 2.5 dB at a time), from 0 dB down to silent. One level for all presets, not part of a preset. The value and its bar can also be dragged (see below).
 - **A block's settings** (added 14 Nov 2026): the settings `protocol/blocks.json` gives the block, four to a page, each with minus and plus. A tap is one step of the setting's own size (the table's `step`); holding repeats ten times a second and after the tenth goes five steps at a time. A toggle also flips by a tap on its name. Settings that do not apply to the chosen type or mode are left out, as in the app (the `only` rules). ON / OFF at the top is the block's switch. Labels are the table's short ones, or the full name where two in a block share one (the drums' and the bass's Volume).
+- **A list for a named choice** (14 Nov 2026): a setting chosen by name with more than two choices (the drums' style, song and crash, a type, a mode, the bass's key) opens a list of its names by a tap on it, five to a page, opened on the page of the one that is set. A tap on a row chooses at once and the list stays; BACK returns to the screen it was opened from. Minus and plus still step. Choosing a song sets the tempo to the song's, as from the shell. Until this was added, minus and plus on the drum song did nothing on the screen: the screen changed saved settings through `setParamQuiet()`, which leaves the song alone; it now goes through `setParam()`.
 - **Dragging a value** (14 Nov 2026): a setting with a bar (a block's settings, the trainer's rows, the master volume) follows a finger slid sideways along it. The drag begins after 10 px of sideways movement and the value then moves from where it was, the bar's width being the whole range (192 px for a setting, 280 px for the master), on the setting's own steps; the finger may leave the row once the drag has begun. A tap on a value changes nothing, so a stray touch cannot move a setting. Choices and toggles are not dragged. Lists are not dragged or swiped: they keep their page buttons.
 - The author tried dragging and the keyboard with a finger on the glass on 14 Nov 2026: both work fine.
 - **Preset list:** five to a page. A tap plays a preset without committing to it; OK keeps it, Back returns to the sound from before, edits included (`previewPreset`, `keepPreview`, `cancelPreview` in `src/PresetLibrary.h`).
@@ -91,5 +92,5 @@ writes each screen as a PNG to `.pio/ui/`, drawn by the code the unit runs, with
 
 - The author's verdict on the picture and the touch: colours, sharpness, whether the 40 px tiles are comfortable to hit, anything to change in the layout.
 - **Noise by ear** with a high-gain preset, and a reading with the guitar plugged in and its volume down (the measurement above did not record what was at the input). Whether the backlight on its own adds noise was not separated from the bus.
-- The tuner screen, the unsaved-changes question, the blocks' settings screens, the file lists, the master volume's buttons, renaming and deleting a preset and the trainer's second page on the glass (run by injected touches only: `tft tap <x> <y> <ms>`).
+- The tuner screen, the unsaved-changes question, the blocks' settings screens, the file lists, the master volume's buttons, renaming and deleting a preset, the trainer's second page and the lists of choices on the glass (run by injected touches only: `tft tap <x> <y> <ms>`).
 - Possible later: sending strips by DMA, which would keep the bus busy while the audio runs (a whole screen in about 45 ms instead of 150).

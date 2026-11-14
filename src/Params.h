@@ -21,6 +21,8 @@ void paramLimits(int id, int* lo, int* hi);
 // The value as text: a style, kit or song by name, otherwise as the table
 // formats it ("30%", "380ms", "ON").
 void paramText(int id, char* buf, int n);
+// The same for a value the setting does not have now (a UI's list of choices).
+void paramTextOf(int id, int v, char* buf, int n);
 // Applies every saved setting, except the drum song (which needs the SD
 // card): call once at startup after audioBegin().
 void applyAllParams();

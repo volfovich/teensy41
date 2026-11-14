@@ -63,9 +63,10 @@ static int findSetting(const char* ref) {
 }
 
 // Saved settings change quietly, as from a MIDI controller; the others (the drums' play
-// switch, the song's loop) through setParam(), which they need.
+// switch, the song's loop) through setParam(), which they need, and so does the drum song,
+// which setParamQuiet() leaves alone (choosing one loads it).
 static void changeSetting(int id, int v) {
-  if (id < ui::kParamCount) setParamQuiet(id, v);
+  if (id < ui::kParamCount && id != ui::kDrumSong) setParamQuiet(id, v);
   else setParam(id, v);
 }
 
@@ -110,6 +111,8 @@ struct UnitModel : UiModel {
     v->toggle = d.unit == ui::Unit::kOnOff;
     v->on = val != 0;
     v->bar = !v->toggle && !d.choices && d.unit != ui::Unit::kName && hi > lo;
+    v->choices = !v->toggle && (d.choices || d.unit == ui::Unit::kName) ? hi - lo + 1 : 0;
+    v->choice = val - lo;
     v->fraction = hi > lo ? (float)(val - lo) / (float)(hi - lo) : 0.0f;
     return true;
   }
@@ -122,6 +125,23 @@ struct UnitModel : UiModel {
     int v = d.unit == ui::Unit::kOnOff ? (steps > 0) : getParam(id) + steps * (d.step ? d.step : 1);
     v = v < lo ? lo : (v > hi ? hi : v);
     if (v != getParam(id)) changeSetting(id, v);
+  }
+  const char* settingChoice(int b, int i, int idx) override {
+    static char buf[40];
+    buf[0] = 0;
+    const int id = settingId[b][i];
+    int lo, hi;
+    if (id < 0) return buf;
+    paramLimits(id, &lo, &hi);
+    if (idx >= 0 && lo + idx <= hi) paramTextOf(id, lo + idx, buf, sizeof(buf));
+    return buf;
+  }
+  void settingPick(int b, int i, int idx) override {
+    const int id = settingId[b][i];
+    int lo, hi;
+    if (id < 0) return;
+    paramLimits(id, &lo, &hi);
+    if (idx >= 0 && lo + idx <= hi && lo + idx != getParam(id)) changeSetting(id, lo + idx);
   }
   void settingSet(int b, int i, float fraction) override {
     const int id = settingId[b][i];
@@ -445,7 +465,7 @@ void serviceScreen() {
 
 // ---- Shell ----
 void screenCommand(const char* arg) {
-  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume", "delete question"};
+  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume", "delete question", "choices"};
   if (!arg || !*arg) {
     Serial.printf("Touch screen: %s, %s (%s), touch %s, showing %s.\n", g_present ? "display found" : "no display found",
                   g_active ? "on" : "off", g_rec.mode == kAuto ? "automatic" : "forced",

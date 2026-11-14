@@ -43,8 +43,9 @@ void paramLimits(int id, int* lo, int* hi) {
   }
 }
 
-void paramText(int id, char* buf, int n) {
-  const int v = getParam(id);
+void paramText(int id, char* buf, int n) { paramTextOf(id, getParam(id), buf, n); }
+
+void paramTextOf(int id, int v, char* buf, int n) {
   switch (id) {
     case kMaster:
       if (v <= paramDef(id).min) {

@@ -4,6 +4,9 @@
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
 // (src/Screen.cpp) and the host tests use the same code.
 //
+// A setting chosen by name with more than two choices (the drums' style and song, a type, a
+// mode) opens a list of them by a tap on it.
+//
 // A value with a bar (a block's settings, the trainer's, the master volume) also follows a
 // finger dragged sideways along it; a tap on it changes nothing.
 //
@@ -38,6 +41,8 @@ struct SettingView {
   bool toggle = false;   // an on / off setting
   bool on = false;       // a toggle's value
   bool bar = false;      // a number with a range worth showing (not a toggle or a choice)
+  int choices = 0;       // a value chosen by name: how many there are (0: not one)
+  int choice = 0;        // and which it is now, 0-based
 };
 
 // What the screen needs from the unit. Preset indices are places in the list, 0-based.
@@ -73,6 +78,9 @@ struct UiModel {
   virtual void settingStep(int block, int i, int steps) = 0;
   // Puts a setting with a bar at a place in its range (0 .. 1), on its nearest step.
   virtual void settingSet(int block, int i, float fraction) = 0;
+  // A setting chosen by name: the name of choice idx, and choosing it.
+  virtual const char* settingChoice(int block, int i, int idx) = 0;
+  virtual void settingPick(int block, int i, int idx) = 0;
   // The files a block can load (kind: kFileModel or kFileIr), by place in the unit's list.
   virtual int fileCount(FileKind kind) = 0;
   virtual int fileCurrent(FileKind kind) = 0;              // -1 = none loaded
@@ -88,7 +96,7 @@ struct UiModel {
 
 class Ui {
  public:
-  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer, kSaveMenu, kName, kMaster, kDeleteAsk };
+  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer, kSaveMenu, kName, kMaster, kDeleteAsk, kChoices };
   static const int kNameMax = 24;      // a preset name's longest
   static const int kRowsPerPage = 5;   // the preset list
   static const int kSettingsPerPage = 4;
@@ -114,7 +122,7 @@ class Ui {
                 kEditUp, kEditDown, kFilePrev, kFileNext, kOpenFiles, kFileRow, kFilesBack, kFilesUp, kFilesDown, kOpenTrainer,
                 kTrainerOn, kPlay, kOpenSave, kSaveOver, kSaveNew, kKey, kCaps, kSpace, kDelete, kNameOk, kHome_,
                 kOpenMaster, kVolDown, kVolUp, kDrag, kDragVol, kRename, kAskDelete,
-                kDeleteYes, kTrainerPage };
+                kDeleteYes, kTrainerPage, kOpenChoices, kChoiceRow, kChoicesBack, kChoicesUp, kChoicesDown };
   enum Mode { kMeasure, kPaint, kHit };
   struct Pass {
     Mode mode;
@@ -151,6 +159,7 @@ class Ui {
   void layoutName(Pass& p);
   void layoutMaster(Pass& p);
   void layoutDelete(Pass& p);
+  void layoutChoices(Pass& p);
   // One setting with minus and plus in row `row` of the settings area.
   void settingRow(Pass& p, int row, int block, int i, const SettingView& v);
   // The place of a setting in a block by its name in blocks.json; -1 if it has none.
@@ -201,6 +210,9 @@ class Ui {
   bool previewing_ = false, editedAtOpen_ = false;
   // A block's settings.
   int editBlock_ = 0, editPage_ = 0, repeats_ = 0, filePage_ = 0;
+  // The list of a setting's named choices (the drums' style and song, a type, a mode).
+  int choiceSetting_ = 0, choicePage_ = 0;
+  Screen choiceBack_ = kBlockEdit;
   int trainerPage_ = 0;  // 0: the trainer's settings, 1: what the drums play
   // The new preset's name as it is typed.
   char name_[kNameMax + 1] = "";

@@ -86,12 +86,21 @@ struct FakeModel : UiModel {
     for (int b = 0; b < kBlockCount; b++)
       for (int i = 0; i < kBlocks[b].settingCount; i++)
         if (choices(kBlocks[b].settings[i].ref) || isToggle(kBlocks[b].settings[i].ref)) val[b][i] = 0;
+    val[kBlockCount - 1][find(kBlockCount - 1, "drum style")] = 1;
+    val[kBlockCount - 1][find(kBlockCount - 1, "drum kit")] = 1;
   }
   static const char* const* choices(const char* ref) {
     static const char* const dtype[] = {"digital", "tape", "analog", nullptr};
     static const char* const rmode[] = {"hall", "gated", "plate", "spring", nullptr};
     static const char* const mtype[] = {"chorus", "flanger", "ce2", "phase90", nullptr};
     static const char* const gtype[] = {"nam", "hard", nullptr};
+    static const char* const style[] = {"metronome", "rock", "offbeat 8ths", "offbeat 16ths", "triplets", "pop", "blues shuffle", "6/8 ballad", nullptr};
+    static const char* const song[] = {"off", "Back in Black-ish (built-in)", "Sweet Child-ish (built-in)", "Livin on a Prayer-ish (built-in)",
+                                       "Enter Sandman-ish (built-in)", "Smoke on Water-ish (built-in)", nullptr};
+    static const char* const kit[] = {"synth", "rock", nullptr};
+    if (!strcmp(ref, "drum style")) return style;
+    if (!strcmp(ref, "drum song")) return song;
+    if (!strcmp(ref, "drum kit")) return kit;
     return !strcmp(ref, "dtype") ? dtype : (!strcmp(ref, "rmode") ? rmode : (!strcmp(ref, "mod type") ? mtype : (!strcmp(ref, "gate type") ? gtype : nullptr)));
   }
   static bool isToggle(const char* ref) {
@@ -115,14 +124,12 @@ struct FakeModel : UiModel {
     v->toggle = isToggle(st.ref);
     v->on = val[b][i] != 0;
     const char* const* c = choices(st.ref);
-    const bool named = !strcmp(st.ref, "drum style") || !strcmp(st.ref, "drum kit") || !strcmp(st.ref, "drum song");
-    v->bar = !v->toggle && !c && !named;
+    v->bar = !v->toggle && !c;
+    for (v->choices = 0; c && c[v->choices];) v->choices++;
+    v->choice = val[b][i];
     v->fraction = val[b][i] / 100.0f;
     if (c) snprintf(v->text, sizeof(v->text), "%s", c[val[b][i]]);
     else if (v->toggle) snprintf(v->text, sizeof(v->text), "%s", v->on ? "ON" : "OFF");
-    else if (!strcmp(st.ref, "drum song")) snprintf(v->text, sizeof(v->text), "%s", val[b][i] == 50 ? "off" : "Blues 12 bar");
-    else if (!strcmp(st.ref, "drum style")) snprintf(v->text, sizeof(v->text), "Rock %d", val[b][i]);
-    else if (!strcmp(st.ref, "drum kit")) snprintf(v->text, sizeof(v->text), "Studio %d", val[b][i]);
     else snprintf(v->text, sizeof(v->text), "%d%%", val[b][i]);
     return true;
   }
@@ -177,6 +184,12 @@ struct FakeModel : UiModel {
     current = saved = (int)names.size() - 1;
     edited = previewOn = false;
     return true;
+  }
+  const char* settingChoice(int b, int i, int idx) override { return choices(kBlocks[b].settings[i].ref)[idx]; }
+  void settingPick(int b, int i, int idx) override {
+    log += "pick" + std::to_string(idx) + " ";
+    val[b][i] = idx;
+    edited = true;
   }
   void settingSet(int b, int i, float fraction) override {
     val[b][i] = (int)(fraction * 100.0f + 0.5f);
@@ -602,6 +615,8 @@ void test_dragging_a_value() {
   // A choice is not dragged, and sliding off minus or plus still only lets the button go.
   drag(ui, 100, setY(0), 200, setY(0));
   TEST_ASSERT_EQUAL_INT(0, m.val[kDelay][0]);
+  TEST_ASSERT_EQUAL_INT_MESSAGE(Ui::kChoices, ui.screen(), "a touch that ends on a choice opens its list");
+  tap(ui, 50, 222);
   drag(ui, kPlusX, setY(1), 150, setY(1));
   TEST_ASSERT_EQUAL_INT(40, m.val[kDelay][1]);
   // What changed is repainted: the row, nothing else.
@@ -782,6 +797,65 @@ void test_rename_and_delete() {
   tap(ui, kMenuX, kMenuCancelY);
 }
 
+void test_choices_have_a_list() {
+  FakeModel m;
+  Ui ui(m);
+  const int kDrums = kBlockCount - 1;
+  const int style = FakeModel::find(kDrums, "drum style"), song = FakeModel::find(kDrums, "drum song"), kit = FakeModel::find(kDrums, "drum kit");
+  // The trainer's second page: a tap on the style opens its eight names, two pages, on
+  // the page of the one that is set. A row chooses at once and the list stays.
+  tap(ui, tileX(9), tileY(8));
+  tap(ui, 282, 222);
+  m.val[kDrums][style] = 6;
+  tap(ui, kMidX, setY(0));
+  TEST_ASSERT_EQUAL_INT(Ui::kChoices, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  tap(ui, 160, rowY(1));  // page 2: 5, 6, 7; this one is set
+  TEST_ASSERT_EQUAL_STRING_MESSAGE("", m.log.c_str(), "the one that is set is not set again");
+  tap(ui, 160, rowY(2));
+  tap(ui, 160, rowY(4));  // nothing in this row
+  tap(ui, 260, kBarY);    // no third page
+  tap(ui, 160, kBarY);    // up
+  tap(ui, 160, kBarY);
+  tap(ui, 160, rowY(3));
+  TEST_ASSERT_EQUAL_STRING("pick7 pick3 ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(3, m.val[kDrums][style]);
+  TEST_ASSERT_EQUAL_INT(Ui::kChoices, ui.screen());
+  // Only the two rows that changed are repainted.
+  Glass g;
+  g.paint(ui);
+  tap(ui, 160, rowY(0));
+  g.paint(ui);
+  TEST_ASSERT_EQUAL_INT(2 * 312 * 34, g.pixels);
+  // BACK returns to where it was opened: the trainer's second page.
+  tap(ui, 50, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT(1, m.val[kDrums][style]);
+  // The song's list begins with "off".
+  tap(ui, kMidX, setY(1));
+  tap(ui, 160, rowY(2));
+  TEST_ASSERT_EQUAL_INT(2, m.val[kDrums][song]);
+  tap(ui, 160, rowY(0));
+  TEST_ASSERT_EQUAL_INT(0, m.val[kDrums][song]);
+  tap(ui, 50, kBarY);
+  // Two choices have no list: minus and plus are as quick.
+  tap(ui, kMidX, setY(2));
+  TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
+  TEST_ASSERT_EQUAL_INT(1, m.val[kDrums][kit]);
+  tap(ui, kEditBackX, kEditTopY);
+
+  // A block's type has one too, and BACK returns to the block's settings.
+  const int kDelay = 5;
+  hold(ui, tileX(kDelay), tileY(kDelay), 700);
+  tap(ui, kMidX, setY(0));
+  TEST_ASSERT_EQUAL_INT(Ui::kChoices, ui.screen());
+  tap(ui, 160, rowY(2));
+  TEST_ASSERT_EQUAL_INT(2, m.val[kDelay][0]);
+  tap(ui, 50, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kBlockEdit, ui.screen());
+}
+
 void test_master_volume() {
   FakeModel m;
   Ui ui(m);
@@ -902,12 +976,13 @@ void test_speed_trainer_is_one_tap_from_home() {
   TEST_ASSERT_TRUE(style >= 0 && song >= 0 && kit >= 0 && vol >= 0);
   tap(ui, 282, 222);
   tap(ui, kPlusX, setY(0));
-  tap(ui, kMinusX, setY(1));
-  tap(ui, kPlusX, setY(2));
+  tap(ui, kPlusX, setY(1));
+  tap(ui, kMinusX, setY(2));
   tap(ui, kPlusX, setY(3));
-  TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][style]);
-  TEST_ASSERT_EQUAL_INT(49, m.val[kDrums][song]);
-  TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][kit]);
+  TEST_ASSERT_EQUAL_INT(2, m.val[kDrums][style]);
+  TEST_ASSERT_EQUAL_INT(1, m.val[kDrums][song]);
+  TEST_ASSERT_EQUAL_INT(0, m.val[kDrums][kit]);
+  tap(ui, kMinusX, setY(1));
   TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][vol]);
   TEST_ASSERT_EQUAL_INT_MESSAGE(51, m.val[kDrums][bpm], "the first page's rows are not touched");
   tap(ui, 60, 222);
@@ -1058,6 +1133,9 @@ void test_write_pictures() {
     tap(ui, 282, 222);
     g.paint(ui);
     g.save("trainer_drums");
+    tap(ui, kMidX, setY(1));
+    g.paint(ui);
+    g.save("choices_song");
   }
   {
     FakeModel m;
@@ -1100,6 +1178,7 @@ int main() {
   RUN_TEST(test_speed_trainer_is_one_tap_from_home);
   RUN_TEST(test_save_over_and_as_new);
   RUN_TEST(test_rename_and_delete);
+  RUN_TEST(test_choices_have_a_list);
   RUN_TEST(test_master_volume);
   RUN_TEST(test_dragging_a_value);
   RUN_TEST(test_tuner_opens_and_closes);
