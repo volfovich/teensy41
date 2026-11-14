@@ -145,7 +145,7 @@ static void onHello(const applink::FrameHeader& h, Reader& r) {
   char appName[64];
   r.str(appName, sizeof(appName));
   if (!r.ok()) return replyError(h, Err::kBadPayload, "Bad HELLO");
-  if (appVersion < 1) return replyError(h, Err::kVersion, "This firmware speaks protocol version 1");
+  if (appVersion != applink::kProtocolVersion) return replyError(h, Err::kVersion, "This firmware speaks protocol version 2");
 
   const uint32_t hash = schemaHash();  // uses the payload buffer: before the reply is built
   Writer w(g_txPayload, kTxPayload);
@@ -638,7 +638,6 @@ static void sendMeters() {
   w.f32(chain.cpuPercent());
   w.f32(chain.cpuPercentMax());
   w.f32(chain.ampCpuPercent());
-  w.f32(chain.doublerCpuPercent());
   w.f32(chain.delayCpuPercent());
   w.f32(chain.reverbCpuPercent());
   w.f32(chain.drumCpuPercent());

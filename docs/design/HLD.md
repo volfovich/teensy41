@@ -2,6 +2,8 @@
 
 Written 13 Nov 2026. **This is the design record:** the review of the hardware, the budgets, the benchmarks and the reasoning. The project as built is described in [`../SIGNAL_CHAIN.md`](../SIGNAL_CHAIN.md) and [`../FIRMWARE.md`](../FIRMWARE.md); progress, open items and risks are tracked in [`../STATUS.md`](../STATUS.md), decisions in [`../DECISIONS.md`](../DECISIONS.md).
 
+**14 Nov 2026:** the doubler named in this record was removed from the firmware and the app at the author's word; the figures below are as measured with it.
+
 Companion to [`../HARDWARE.md`](../HARDWARE.md) (the "hardware doc").
 Numbers marked **(verify)** are taken from datasheets or vendor claims quoted from memory, and need to be checked or measured.
 

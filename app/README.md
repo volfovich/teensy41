@@ -32,7 +32,7 @@ Only one program can hold the unit's serial port: close `pio device monitor` bef
 ## Using it (milestone A5 of the plan)
 The app connects by itself and shows the main screen: the library on the unit's card (presets, amp models, IRs), the signal chain as blocks (click to edit, power button or Space to switch), the drums and bass lane, the selected block's controls, input and output meters, CPU and the driver's counters. Every control is built from the unit's own settings table; a setting no block names appears under "Other settings".
 
-Levels after the cab, as in the original firmware: the Cab block has Out gain (global, −60 to +24 dB, kept in the unit's settings) and Level (the preset's own, saved with it). They are one gain right after the cab, before the doubler, delay and reverb; the drums and bass are not affected by it.
+Levels after the cab, as in the original firmware: the Cab block has Out gain (global, −60 to +24 dB, kept in the unit's settings) and Level (the preset's own, saved with it). They are one gain right after the cab, before the mod, delay and reverb; the drums and bass are not affected by it.
 
 The master volume is the slider beside the meters: the last gain before the DAC, from silent (its lowest step) to 0 dB, where it changes nothing. It turns everything down, drums and bass included. It is global, kept in the unit's settings, never in presets, so moving it does not mark a preset as edited.
 
@@ -54,7 +54,7 @@ The amp and cab editors show what the loaded file is: the model's gear, loudness
 
 Backup and restore (the Card tab): "Back up now" copies every amp model, IR, preset and drum song from the card into a new folder under `~/Music/NAM Forge/Backups/`, named by date and time and laid out like the card (`AMP/`, `IR/`, `PRESETS/`, `DRUMS/`, IRs from the card's root at the top). "Restore…" lets you pick such a folder, says what it holds, and after a yes sends the files back: files of the same name are replaced, others on the card are left alone.
 
-The Card tab shows the card's free space. Not in yet: renaming files, a drum song editor. Keys: 1 to 8 open the chain's blocks and 9 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner, L the level bars.
+The Card tab shows the card's free space. Not in yet: renaming files, a drum song editor. Keys: 1 to 7 open the chain's blocks and 8 the drums, Space switches the open block, the arrows step through the presets, Cmd-S saves, T is the tuner, L the level bars.
 
 The icon is drawn in `src-tauri/icons/source/icon.svg`; after changing it, render it to a 1024-pixel PNG and run `npx tauri icon <png>`.
 

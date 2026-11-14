@@ -24,7 +24,7 @@ struct FakeModel : UiModel {
   std::vector<std::string> names = {"01 Recto 91", "02 JCM8OO", "03 Clean Chorus", "04 Lead", "05 Plexi", "06 Tweed", "07 Djent"};
   int current = 1, saved = 1;
   bool edited = false, previewOn = false, editedBefore = false;
-  bool on[kBlockCount] = {true, false, true, false, false, false, true, true, false};
+  bool on[kBlockCount] = {true, false, true, false, false, true, true, false};
   float inDb = -100, outDb = -100;
   int cpu = 57;
   bool tunerIsOpen = false;
@@ -275,11 +275,11 @@ void tap(Ui& ui, int x, int y) {
 
 // Places on the screens (the middle of each control; see Ui.cpp's layouts).
 const int kPrevX = 22, kNextX = 298, kArrowY = 44, kNameX = 160, kNameY = 44;  // the preset's bar
-// The blocks on the home screen: the chain's seven tiles in one lane, then the limiter in
-// the bottom line (7), the drums' play button (8) and their tempo, which opens the trainer (9).
+// The blocks on the home screen: the chain's six tiles in one lane, then the limiter in
+// the bottom line (6), the drums' play button (7) and their tempo, which opens the trainer (8).
 const int kPlaysX = 246, kDrumsY = 170;  // what the drums play: opens the trainer's second page
-int tileX(int i) { return i < 7 ? 4 + i * 45 + 21 : (i == 7 ? 186 : (i == 8 ? 34 : 120)); }
-int tileY(int i) { return i < 7 ? 112 : (i == 7 ? 222 : kDrumsY); }
+int tileX(int i) { return i < 6 ? 4 + i * 52 + 24 : (i == 6 ? 186 : (i == 7 ? 34 : 120)); }
+int tileY(int i) { return i < 6 ? 112 : (i == 6 ? 222 : kDrumsY); }
 int rowY(int row) { return 24 + row * 36 + 17; }
 const int kTunerX = 40, kSaveBtnX = 115, kVolX = 270;  // the home screen's bottom line (with the limiter between)
 const int kBarY = 222, kBackX = 40, kUpX = 120, kDownX = 200, kOkX = 278;
@@ -313,8 +313,8 @@ void test_only_what_changed_is_repainted() {
   // A block switched from elsewhere (the app, MIDI): its tile alone.
   m.on[3] = true;
   g.paint(ui);
-  TEST_ASSERT_EQUAL_INT(42 * 52, g.pixels);
-  TEST_ASSERT_EQUAL_INT(4 + 3 * 45, g.x0);
+  TEST_ASSERT_EQUAL_INT(49 * 52, g.pixels);
+  TEST_ASSERT_EQUAL_INT(4 + 3 * 52, g.x0);
   TEST_ASSERT_EQUAL_INT(86, g.y0);
 
   // A level: only the meter's segments that change (5 x 10 each).
@@ -350,11 +350,11 @@ void test_home_steps_presets_and_toggles_blocks() {
   TEST_ASSERT_EQUAL_INT_MESSAGE(6, m.current, "previous from the first goes to the last");
   m.log.clear();
   tap(ui, tileX(1), tileY(1));
-  tap(ui, tileX(8), tileY(8));
-  TEST_ASSERT_EQUAL_STRING("toggle1 toggle8 ", m.log.c_str());
+  tap(ui, tileX(7), tileY(7));
+  TEST_ASSERT_EQUAL_STRING("toggle1 toggle7 ", m.log.c_str());
   m.log.clear();
   tap(ui, 160, 138);  // between the chain and the drums
-  tap(ui, 47, 112);   // between two tiles
+  tap(ui, 54, 112);   // between two tiles
   tap(ui, 80, 76);    // the loaded files' line
   TEST_ASSERT_EQUAL_STRING_MESSAGE("", m.log.c_str(), "a tap between controls does nothing");
 }
@@ -508,7 +508,7 @@ void hold(Ui& ui, int x, int y, int ms) {
 void test_block_settings() {
   FakeModel m;
   Ui ui(m);
-  const int kDelay = 5;
+  const int kDelay = 4;
   // Holding a tile opens its settings and does not switch the block; a tap still switches.
   hold(ui, tileX(kDelay), tileY(kDelay), 700);
   TEST_ASSERT_EQUAL_INT(Ui::kBlockEdit, ui.screen());
@@ -562,7 +562,7 @@ void test_block_settings() {
   // ON / OFF at the top switches the block; BACK returns home.
   m.log.clear();
   tap(ui, kEditOnX, kEditTopY);
-  TEST_ASSERT_EQUAL_STRING("toggle5 ", m.log.c_str());
+  TEST_ASSERT_EQUAL_STRING("toggle4 ", m.log.c_str());
   tap(ui, kEditBackX, kEditTopY);
   TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
 
@@ -597,7 +597,7 @@ void drag(Ui& ui, int x0, int y, int x1, int y1, int liftX = -1) {
 void test_dragging_a_value() {
   FakeModel m;
   Ui ui(m);
-  const int kDelay = 5;
+  const int kDelay = 4;
   hold(ui, tileX(kDelay), tileY(kDelay), 700);
   // Rows: dtype (a choice), dmix, dtime, dfb; all numbers at 50 of 0 .. 100, the bar 192 px.
   // The first 10 px begin the drag, the rest move the value: 58 px = 48 px = 25 of 100.
@@ -650,7 +650,7 @@ void test_dragging_a_value() {
 
   // The trainer's rows are dragged the same way.
   const int drums = kBlockCount - 1;
-  tap(ui, tileX(9), tileY(9));
+  tap(ui, tileX(8), tileY(8));
   TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
   drag(ui, 120, setY(0), 178, setY(0));
   TEST_ASSERT_EQUAL_INT(75, m.val[drums][FakeModel::find(drums, "bpm")]);
@@ -676,7 +676,7 @@ void type(Ui& ui, const char* text) {
 void test_home_drums_and_limiter() {
   FakeModel m;
   Ui ui(m);
-  const int kLimiter = 7, kDrums = 8;
+  const int kLimiter = 6, kDrums = 7;
   TEST_ASSERT_EQUAL_STRING("limiter", kBlocks[kLimiter].id);
   TEST_ASSERT_EQUAL_STRING("drums", kBlocks[kDrums].id);
 
@@ -692,7 +692,7 @@ void test_home_drums_and_limiter() {
 
   // The tempo opens the trainer; what plays opens its second page (style first).
   m.log.clear();
-  tap(ui, tileX(9), tileY(9));
+  tap(ui, tileX(8), tileY(8));
   TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
   tap(ui, kPlusX, setY(0));
   TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][FakeModel::find(kDrums, "bpm")]);
@@ -707,7 +707,7 @@ void test_home_drums_and_limiter() {
   // The limiter is a block like the tiles: a tap switches it, holding opens its settings.
   m.log.clear();
   tap(ui, tileX(kLimiter), tileY(kLimiter));
-  TEST_ASSERT_EQUAL_STRING("toggle7 ", m.log.c_str());
+  TEST_ASSERT_EQUAL_STRING("toggle6 ", m.log.c_str());
   hold(ui, tileX(kLimiter), tileY(kLimiter), 700);
   TEST_ASSERT_EQUAL_INT(Ui::kBlockEdit, ui.screen());
   TEST_ASSERT_EQUAL_INT(kLimiter, ui.editedBlock());
@@ -970,7 +970,7 @@ void test_choices_have_a_list() {
   const int style = FakeModel::find(kDrums, "drum style"), song = FakeModel::find(kDrums, "drum song"), kit = FakeModel::find(kDrums, "drum kit");
   // The trainer's second page: a tap on the style opens its eight names, two pages, on
   // the page of the one that is set. A row chooses at once and the list stays.
-  tap(ui, tileX(9), tileY(8));
+  tap(ui, tileX(8), tileY(8));
   tap(ui, 282, 222);
   m.val[kDrums][style] = 6;
   tap(ui, kMidX, setY(0));
@@ -1012,7 +1012,7 @@ void test_choices_have_a_list() {
   tap(ui, kEditBackX, kEditTopY);
 
   // A block's type has one too, and BACK returns to the block's settings.
-  const int kDelay = 5;
+  const int kDelay = 4;
   hold(ui, tileX(kDelay), tileY(kDelay), 700);
   tap(ui, kMidX, setY(0));
   TEST_ASSERT_EQUAL_INT(Ui::kChoices, ui.screen());
@@ -1079,15 +1079,15 @@ void test_choosing_a_model_and_an_ir() {
   TEST_ASSERT_EQUAL_STRING("ir1 ir0 ", m.log.c_str());
   tap(ui, 40, kBarY);
   tap(ui, kEditBackX, kEditTopY);
-  hold(ui, tileX(3), tileY(3), 700);  // the doubler
-  tap(ui, kPlusX, setY(0));
-  TEST_ASSERT_EQUAL_INT(51, m.val[3][0]);
+  hold(ui, tileX(1), tileY(1), 700);  // the gate
+  tap(ui, kPlusX, setY(1));
+  TEST_ASSERT_EQUAL_INT(51, m.val[1][1]);
 }
 
 void test_speed_trainer_is_one_tap_from_home() {
   FakeModel m;
   Ui ui(m);
-  const int kDrums = kBlockCount - 1, kTrainX = tileX(9), kTrainY = tileY(8);
+  const int kDrums = kBlockCount - 1, kTrainX = tileX(8), kTrainY = tileY(8);
   const int on = FakeModel::find(kDrums, "drum train"), bpm = FakeModel::find(kDrums, "bpm");
   const int step = FakeModel::find(kDrums, "train step"), every = FakeModel::find(kDrums, "train every"),
             target = FakeModel::find(kDrums, "train target");
@@ -1116,7 +1116,7 @@ void test_speed_trainer_is_one_tap_from_home() {
   tap(ui, kEditOnX, kEditTopY);
   tap(ui, 60, 222);
   TEST_ASSERT_TRUE(m.on[kDrums]);
-  TEST_ASSERT_EQUAL_STRING("toggle8 ", m.log.c_str());
+  TEST_ASSERT_EQUAL_STRING("toggle7 ", m.log.c_str());
 
   // While it plays the tempo it has reached shows, here and on the home tile; only that
   // part is repainted when it changes.
@@ -1207,7 +1207,7 @@ void test_long_names_fit() {
 void test_blocks_header_matches_blocks_json() {
   TEST_ASSERT_EQUAL_INT_MESSAGE(0, system("python3 tools/make_blocks_header.py --check > /dev/null"),
                                 "lib/ui/src/ui/BlocksGen.h is out of date: run tools/make_blocks_header.py");
-  TEST_ASSERT_EQUAL_INT(9, kBlockCount);
+  TEST_ASSERT_EQUAL_INT(8, kBlockCount);
   TEST_ASSERT_EQUAL_STRING("amp", kBlocks[0].id);
   TEST_ASSERT_TRUE(kBlocks[2].onInverted);  // the cab's switch is a bypass
 }
@@ -1225,7 +1225,7 @@ void test_write_pictures() {
     g.save("home");
     m.names[1] = "02 Preset With A Long Name!";
     m.edited = true;
-    m.on[1] = m.on[4] = m.on[5] = m.on[8] = true;
+    m.on[1] = m.on[3] = m.on[4] = m.on[7] = true;
     m.outDb = -0.5f;
     ui.tick(g_ms += 1000);
     ui.touch(true, tileX(3), tileY(3), g_ms);
@@ -1237,9 +1237,9 @@ void test_write_pictures() {
     FakeModel m;
     const int d = kBlockCount - 1;
     for (bool& on : m.on) on = true;
-    m.val[4][FakeModel::find(4, "mod type")] = 1;
-    m.val[5][FakeModel::find(5, "dtype")] = 1;
-    m.val[6][FakeModel::find(6, "rmode")] = 3;
+    m.val[3][FakeModel::find(3, "mod type")] = 1;
+    m.val[4][FakeModel::find(4, "dtype")] = 1;
+    m.val[5][FakeModel::find(5, "rmode")] = 3;
     m.val[d][FakeModel::find(d, "drum song")] = 2;
     m.tempoNow = 126;
     m.beats = 6;
@@ -1288,11 +1288,11 @@ void test_write_pictures() {
   }
   {
     FakeModel m;
-    m.on[5] = true;
-    m.val[5][1] = 25;
-    m.val[5][3] = 35;
+    m.on[4] = true;
+    m.val[4][1] = 25;
+    m.val[4][3] = 35;
     Ui ui(m);
-    hold(ui, tileX(5), tileY(5), 700);
+    hold(ui, tileX(4), tileY(4), 700);
     Glass g;
     g.paint(ui);
     g.save("block_delay");
@@ -1315,7 +1315,7 @@ void test_write_pictures() {
     Glass g;
     g.paint(ui);
     g.save("home_trainer");
-    tap(ui, tileX(9), tileY(8));
+    tap(ui, tileX(8), tileY(8));
     g.paint(ui);
     g.save("trainer");
     tap(ui, 282, 222);

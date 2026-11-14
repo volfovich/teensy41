@@ -29,7 +29,7 @@ How to work on the project without breaking it. Commands for the app are in [`ap
 | --- | --- |
 | Anything in `lib/dsp`, `lib/params`, `lib/applink` | `pio test -e native` |
 | The audio path or the linker script | `pio run`, `tools/check_hot_code.sh`, then on the unit `s`: CPU as before, 0 overruns |
-| Any background firmware code | `pio run`: "free for local variables" must stay at 86.8 KB (a drop of 32 KB means RAM1 code crossed a step); `mem` on the unit shows the room left and the stack's deepest use |
+| Any background firmware code | `pio run`: "free for local variables" must stay at 88.0 KB (a drop of 32 KB means RAM1 code crossed a step); `mem` on the unit shows the room left and the stack's deepest use |
 | `src/AppLink.cpp` or the protocol | Host tests, `cargo test`, flash, `tools/applink_check.py` |
 | The settings table | See "Adding a setting" |
 | The app's Rust | `cargo test` |

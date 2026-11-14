@@ -20,7 +20,7 @@ def main():
     time.sleep(1)
     link.s.reset_input_buffer()
 
-    f, _ = link.request(0x01, struct.pack("<H", 1) + string("applink_snapshot"))
+    f, _ = link.request(0x01, struct.pack("<H", 2) + string("applink_snapshot"))
     r = Reader(f[3])
     info = dict(protocol=r.u16(), firmware=r.str(), blockSize=r.u16(), sampleRate=r.u32(), maxModels=r.u16(),
                 maxIrs=r.u16(), maxPath=r.u16(), savedSettings=r.u16(), settings=r.u16(), schemaHash=r.u32(),

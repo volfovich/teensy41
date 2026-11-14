@@ -40,7 +40,6 @@ const CcMap kMap[] = {
     // Switches.
     {80, kAmpOn, 0, 1, true},
     {81, kGateOn, 0, 1, true},
-    {82, kDblOn, 0, 1, true},
     {83, kDelayOn, 0, 1, true},
     {84, kReverbOn, 0, 1, true},
     {85, kBypass, 0, 1, true},        // the cab IR's bypass

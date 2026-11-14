@@ -291,9 +291,6 @@ static void printStatus() {
   if (getParam(kGateType)) printValues({kGateType, kGateThr, kGateRel});
   else printValues({kGateType, kGateThr});
   Serial.println();
-  Serial.printf("Doubler:   %s", getParam(kDblOn) ? "on" : "off");
-  printValues({kDblTime, kDblWidth});
-  Serial.println();
   Serial.printf("Mod:       %s", getParam(kModOn) ? "on" : "off");
   // The pedal types show their pedal's dials only (Params.cpp holds the rest).
   if (getParam(kModType) == dsp::Modulation::kPhaser) printValues({kModType, kModRate});
@@ -321,9 +318,9 @@ static void printStatus() {
     default: printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone, kReverbPreDelay, kReverbEra, kReverbMod}); break;
   }
   Serial.println();
-  Serial.printf("CPU:       IR + effects %.1f%% avg / %.1f%% max (amp %.1f%%, doubler %.1f%%, mod %.1f%%, delay %.1f%%, reverb %.1f%%, drums %.1f%%, limiter %.1f%%), audio total %.1f%% max\n",
+  Serial.printf("CPU:       IR + effects %.1f%% avg / %.1f%% max (amp %.1f%%, mod %.1f%%, delay %.1f%%, reverb %.1f%%, drums %.1f%%, limiter %.1f%%), audio total %.1f%% max\n",
                 chain.cpuPercent(), chain.cpuPercentMax(), chain.ampCpuPercent(),
-                chain.doublerCpuPercent(), chain.modCpuPercent(), chain.delayCpuPercent(),
+                chain.modCpuPercent(), chain.delayCpuPercent(),
                 chain.reverbCpuPercent(), chain.drumCpuPercent(), chain.limiterCpuPercent(),
                 100.0f * i2s32::load(drv.maxCycles));
   Serial.printf("Driver:    overruns %lu, FIFO errors %lu, overload mutes %lu\n", (unsigned long)drv.overruns,

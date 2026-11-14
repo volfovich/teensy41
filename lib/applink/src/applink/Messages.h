@@ -6,7 +6,7 @@
 
 namespace applink {
 
-constexpr uint16_t kProtocolVersion = 1;
+constexpr uint16_t kProtocolVersion = 2;
 
 enum class Msg : uint8_t {
     // Session

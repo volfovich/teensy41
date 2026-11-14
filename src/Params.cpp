@@ -132,9 +132,6 @@ static void applyParam(int id, int v) {
       chain.gate().setType(v ? dsp::NoiseGate<kBlock>::Type::kHard
                                  : dsp::NoiseGate<kBlock>::Type::kNam);
       break;
-    case kDblOn: chain.doubler().setOn(v); break;
-    case kDblTime:
-    case kDblWidth: chain.doubler().set(s[kDblTime], s[kDblWidth] / 100.0f); break;
     case kModOn: chain.mod().setOn(v); break;
     case kModType:
     case kModRate:

@@ -2,7 +2,7 @@
 
 A guitar processor on a Teensy 4.1, and the macOS app that controls it.
 
-- **The unit:** guitar in, a Neural Amp Modeler (NAM A2-Lite) amp model, noise gate, cabinet impulse response, doubler, a Mod block (chorus, flanger, a CE-2 style chorus, a Phase 90 style phaser), a delay (digital, tape echo or analog) and a reverb (hall, gated, plate or spring), an output limiter, plus a drum machine with bass for practice. 48 kHz / 24-bit from converter to converter, 32-bit float inside, about 2.2 ms from input to output.
+- **The unit:** guitar in, a Neural Amp Modeler (NAM A2-Lite) amp model, noise gate, cabinet impulse response, a Mod block (chorus, flanger, a CE-2 style chorus, a Phase 90 style phaser), a delay (digital, tape echo or analog) and a reverb (hall, gated, plate or spring), an output limiter, plus a drum machine with bass for practice. 48 kHz / 24-bit from converter to converter, 32-bit float inside, about 2.2 ms from input to output.
 - **The app, "Volfovich NAM Forge":** shows the chain as blocks, edits every setting, manages presets, sends amp models and IRs to the unit's SD card, has a tuner and level meters, draws the loaded IR's waveform and frequency response, and backs the card up to the Mac.
 
 Most of the DSP and the firmware's application code is ported from the author's earlier project, [teensy-ir-loader](https://github.com/volfovich/teensy-ir-loader). New here: the hardware (PCM1808 ADC and PCM5102A DAC instead of a codec), the I2S driver, the link protocol and the app.

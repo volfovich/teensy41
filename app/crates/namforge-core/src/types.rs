@@ -64,7 +64,6 @@ pub struct Meters {
     pub cpu: f32,
     pub cpu_max: f32,
     pub cpu_amp: f32,
-    pub cpu_doubler: f32,
     pub cpu_delay: f32,
     pub cpu_reverb: f32,
     pub cpu_drums: f32,
@@ -76,7 +75,7 @@ pub struct Meters {
     pub drums_playing: bool,
     pub muted: bool,
     pub tuner_open: bool,
-    /// The peak at each block's output, in chain order: amp, gate, cab, doubler, delay, reverb.
+    /// The peak at each block's output, in the order the unit sends them: amp, gate, cab, delay, reverb, mod, limiter.
     /// Above 1.0 is over full scale. Empty from firmware that does not measure them.
     pub stage_peaks: Vec<f32>,
 }

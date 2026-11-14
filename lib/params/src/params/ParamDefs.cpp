@@ -75,15 +75,12 @@ static const ParamDef kParams[kValueCount] = {
     {"amp treble",   "Amp treble",         "Treble",       -24,   24,   0, 1, U::kHalfDb,  nullptr, kPreset},
     {"amp presence", "Amp presence",       "Presence",     -20,   20,   0, 1, U::kHalfDb,  nullptr, kPreset},
     {"gate rel",     "Gate release",       "Release",       10,  500,  50, 5, U::kMs,      nullptr, kPreset},
-    {"dbl",          "Doubler",            "On",             0,    1,   0, 1, U::kOnOff,   nullptr, kPreset},
-    {"dbl time",     "Doubler time",       "Time",           1,   35,  10, 1, U::kMs,      nullptr, kPreset},
-    {"dbl width",    "Doubler width",      "Width",          0,  100, 100, 1, U::kPercent, nullptr, kPreset},
     {"gate",         "Noise gate",         "On",             0,    1,   1, 1, U::kOnOff,   nullptr, kPreset},
     {"gate type",    "Gate type",          "Type",           0,    1,   1, 1, U::kNone,    kGateTypes, kPreset},
     {"pvol",         "Preset level",       "Level",        -48,   24,   0, 1, U::kHalfDb,  nullptr, kPreset},
     // The last gain before the DAC: 0 dB (no change) down to -60 dB; the minimum is silence.
     {"master",       "Master volume",      "Master",      -120,    0,   0, 1, U::kHalfDb,  nullptr, 0},
-    // The Mod block between the doubler and the delay: a chorus, a flanger, a CE-2 style
+    // The Mod block between the cab and the delay: a chorus, a flanger, a CE-2 style
     // chorus or a Phase 90 style phaser.
     {"mod",          "Mod",                "On",             0,    1,   0, 1, U::kOnOff,   nullptr, kPreset},
     {"mod type",     "Mod type",           "Type",           0,    3,   0, 1, U::kNone,    kModTypes, kPreset},

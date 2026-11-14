@@ -45,7 +45,6 @@ export interface Meters {
   cpu: number;
   cpuMax: number;
   cpuAmp: number;
-  cpuDoubler: number;
   cpuDelay: number;
   cpuReverb: number;
   cpuDrums: number;

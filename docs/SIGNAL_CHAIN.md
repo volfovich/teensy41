@@ -30,9 +30,7 @@ CAB        IR convolution
   ▼
 tuner mute                              mono up to here
   ▼
-DOUBLER    mono in, stereo out
-  ▼
-MOD        chorus, flanger, ce2 or phase90, stereo
+MOD        chorus, flanger, ce2 or phase90, stereo (its input is the mono signal on both sides)
   ▼
 DELAY      stereo
   ▼
@@ -92,11 +90,11 @@ The drums and the bass are not affected by this gain.
 ### Tuner mute
 While the tuner is open the guitar is faded out here (20 ms), before the delay and the reverb, so their tails ring out.
 
-### Doubler (`dbl`, in presets)
-`dsp/fx/Doubler.h`. A second "take" 1 to 35 ms later (`dbl time`), panned opposite (`dbl width`). Makes the signal stereo.
+### Doubler (removed)
+The ported doubler (`dbl`: a second "take" 1 to 35 ms later, panned opposite) stood here until 14 Nov 2026 and was removed at the author's word. Off, it passed the mono signal on untouched, so nothing else changed. Older presets load; their `dbl` lines are ignored.
 
 ### Mod (`mod`, in presets)
-`dsp/fx/Modulation.h`. New in this project (13 Nov 2026), not ported. A chorus, a flanger, a chorus in the style of the Boss CE-2 or a phaser in the style of the MXR Phase 90 (`mod type`), stereo in and out; with the doubler off its input is mono and the two sides get the sweep at different points of its cycle, which makes it wide.
+`dsp/fx/Modulation.h`. New in this project (13 Nov 2026), not ported. A chorus, a flanger, a chorus in the style of the Boss CE-2 or a phaser in the style of the MXR Phase 90 (`mod type`), stereo out; its input is mono (the cab's signal on both sides) and the two sides get the sweep at different points of its cycle, which makes it wide.
 
 | Setting | Does |
 | --- | --- |
@@ -156,7 +154,7 @@ While the tuner is open the guitar is faded out here (20 ms), before the delay a
 
 **The effects of one block share its memory**, so only one of them holds sound at a time. A change between hall and gated is Reverb80's own (as ported). Any other change of `rmode`, and every change of `dtype`, does the same thing: the tail fades out over 20 ms, the memory is cleared in silence (up to 12 ms), and the other effect starts; with the block off and rung out the change is immediate. The settings go to every effect that has them, so they are in place after a change. With `hall`, `gated` and `digital` the samples are exactly those of the ported effects (host test `test_fx_banks`).
 
-An effect that is off and has rung out is idle: it costs no CPU and passes its input through bit for bit. With doubler, mod, delay, reverb and drums all idle, the mono signal goes to both outputs.
+An effect that is off and has rung out is idle: it costs no CPU and passes its input through bit for bit. With mod, delay, reverb and drums all idle, the mono signal goes to both outputs.
 
 ### Drums and bass (`drum`, not in presets)
 `dsp/drums/`. Sampled kit, styles, songs (built in and MIDI files from `/DRUMS`), a plucked bass, count-in, speed trainer. Added to the outputs after the reverb.
@@ -201,7 +199,7 @@ Samples beyond full scale are clipped and counted (the app's CLIP label, `s` in 
 | Limiter | `lim ceil` | global | after the master: only ever turns down, and only above its ceiling |
 
 - A high-gain model with a resonant IR can peak near or above 0 dBFS after the cab at `amp out` 0 dB. Between blocks that is harmless (float); the output gain's default of −6 dB is the headroom before the DAC.
-- **Block meters:** the chain keeps the peak at the output of amp, gate, cab (after the output gain and preset level), doubler, mod, delay, reverb and limiter (`takeStagePeak`); the limiter also reports how far it is turning down. The app shows them on the blocks' tiles: green, yellow from −6 dBFS, red from −1 dBFS. An idle effect reports the level before it.
+- **Block meters:** the chain keeps the peak at the output of amp, gate, cab (after the output gain and preset level), mod, delay, reverb and limiter (`takeStagePeak`); the limiter also reports how far it is turning down. The app shows them on the blocks' tiles: green, yellow from −6 dBFS, red from −1 dBFS. An idle effect reports the level before it.
 - **Checking levels without a guitar:** `sig 220 -20` in the shell replaces the guitar with a sine (`sig 0` ends it). Turn the master down first: a high-gain model makes any input loud.
 
 ## Tuner
@@ -214,7 +212,7 @@ Measured on the board, 32-sample blocks (budget: worst case at or below 80 % of 
 | What | CPU | Date |
 | --- | --- | --- |
 | Amp (network, DC blocker, tone) | 32.9 % | 13 Nov 2026 |
-| Doubler | 1.1 % | 13 Nov 2026 |
+| Doubler (removed 14 Nov 2026) | 1.1 % | 13 Nov 2026 |
 | Mod: chorus, flanger, phase90 / ce2 | 2.4 % / 2.7 % | 13 Nov 2026 |
 | Limiter: on and idle / limiting / limiting with lookahead | 0.6 % / 1.1 % / 1.9 % | 13 Nov 2026 |
 | Delay: digital / tape / analog | 4.8 % / 3.5 % / 3.0 % | 13 Nov 2026 |
@@ -230,7 +228,6 @@ Measured on the board, 32-sample blocks (budget: worst case at or below 80 % of 
 | --- | --- |
 | Amp history | 87 KB, DTCM (must stay there: OCRAM costs about 4 % CPU) |
 | Cab spectra and history | DTCM |
-| Doubler | 8 KB, OCRAM |
 | Mod | 16 KB, OCRAM |
 | Limiter | 1.3 KB, DTCM |
 | Delay | 144 KB DTCM + 144 KB OCRAM (shared by the three types; tape and analog use the first line) |

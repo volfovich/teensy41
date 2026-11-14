@@ -12,7 +12,7 @@ pub const MAGIC: [u8; 2] = [0xF1, 0xD5];
 pub const MAX_PAYLOAD: usize = 65536;
 pub const HEADER_SIZE: usize = 10;
 pub const CRC_SIZE: usize = 4;
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 
 pub mod flags {
     pub const REPLY: u8 = 0x01;

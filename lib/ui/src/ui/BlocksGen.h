@@ -50,11 +50,6 @@ static const BlockSetting kCabSettings[] = {
     {"pvol", nullptr, nullptr},
 };
 
-static const BlockSetting kDoublerSettings[] = {
-    {"dbl time", nullptr, nullptr},
-    {"dbl width", nullptr, nullptr},
-};
-
 static const BlockSetting kModSettings[] = {
     {"mod type", nullptr, nullptr},
     {"mod rate", nullptr, nullptr},
@@ -118,14 +113,13 @@ static const BlockDef kBlocks[] = {
     {"amp", "AMP", "AMP", "Amp", 0xFC47, "amp", false, kAmpSettings, 7, kFileModel},
     {"gate", "GATE", "GATE", "Noise gate", 0x8EAA, "gate", false, kGateSettings, 3, kFileNone},
     {"cab", "CAB", "CAB", "Cab", 0xD54B, "b", true, kCabSettings, 2, kFileIr},
-    {"doubler", "DBL", "DBL", "Doubler", 0x3E5B, "dbl", false, kDoublerSettings, 2, kFileNone},
     {"mod", "MOD", "MOD", "Mod", 0x3EB4, "mod", false, kModSettings, 6, kFileNone},
     {"delay", "DELAY", "DLY", "Delay", 0x5C7F, "dl", false, kDelaySettings, 9, kFileNone},
     {"reverb", "REVERB", "REV", "Reverb", 0xB3FF, "rv", false, kReverbSettings, 8, kFileNone},
     {"limiter", "LIMIT", "LIMIT", "Limiter", 0xE68D, "lim", false, kLimiterSettings, 3, kFileNone},
     {"drums", "DRUMS + BASS", "DRUMS", "Drums and bass", 0xFAEF, "drum", false, kDrumsSettings, 18, kFileNone},
 };
-static const int kBlockCount = 9;
+static const int kBlockCount = 8;
 static const int kMaxBlockSettings = 18;
 
 static const float kMeterFloorDb = -60.0f, kMeterWarnDb = -6.0f, kMeterHotDb = -1.0f;

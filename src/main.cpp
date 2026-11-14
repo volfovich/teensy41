@@ -2,7 +2,7 @@
 //
 //   guitar -> PCM1808 ADC (right) -> 30 Hz high-pass -> [NAM A2-Lite amp] -> noise gate
 //          -> IR convolution (cab) -> output gain + preset level
-//          -> doubler -> mod -> delay -> reverb -> + drums and bass
+//          -> mod -> delay -> reverb -> + drums and bass
 //          -> master volume -> PCM5102A DAC L/R
 //          (32-bit float throughout, 24-bit converters, 48 kHz; docs/SIGNAL_CHAIN.md)
 //
@@ -72,7 +72,7 @@ void testSignal(float hz, float dbfs) {
 // The overload protection (lib/i2s32, Config::faultAfterOverruns): when the chain cannot keep
 // up for 16 blocks in a row the driver goes silent and stops calling it, which gives loop()
 // the CPU back. Here the load is reduced, then the audio resumes after a second: first the
-// drums and bass stop; if it trips again within 10 s the doubler, mod, delay and reverb go off too.
+// drums and bass stop; if it trips again within 10 s the mod, delay and reverb go off too.
 static void serviceFault() {
   static uint32_t faultAt = 0, lastFaultAt = 0;
   static bool handling = false;
@@ -88,8 +88,7 @@ static void serviceFault() {
     if (getParam(ui::kDrumsPlay)) {
       setParam(ui::kDrumsPlay, 0);
     } else if (again) {
-      Serial.println("Again: switching the doubler, mod, delay and reverb off.");
-      setParam(ui::kDblOn, 0);
+      Serial.println("Again: switching the mod, delay and reverb off.");
       setParam(ui::kModOn, 0);
       setParam(ui::kDelayOn, 0);
       setParam(ui::kReverbOn, 0);

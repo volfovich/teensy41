@@ -39,12 +39,11 @@ enum Param : uint8_t {
   kGateThr,         // the noise gate's threshold, dBFS (on the input)
   kAmpBass, kAmpMid, kAmpTreble, kAmpPresence,  // half-dB steps, 0 = flat
   kGateRel,         // the gate's fade from open to -60 dB, ms
-  kDblOn, kDblTime, kDblWidth,  // the doubler (ms, %)
   kGateOn,          // the noise gate (after the amp, before the cab)
   kGateType,        // 0 nam (the NAM plugin's expander), 1 hard (the default; release applies)
   kPresetLevel,     // half-dB steps, added to the output gain; saved in presets (PRESETS.md)
   kMaster,          // the master volume, the last gain before the DAC: half-dB steps up to 0 dB; the minimum is silence. Not in presets.
-  // The Mod block (chorus / flanger / ce2 / phase90), between the doubler and the delay.
+  // The Mod block (chorus / flanger / ce2 / phase90), between the cab and the delay.
   kModOn,
   kModType,   // 0 chorus, 1 flanger, 2 ce2, 3 phase90 (dsp::Modulation::Type)
   kModRate,   // hundredths of a Hz

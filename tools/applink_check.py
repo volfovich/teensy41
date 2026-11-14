@@ -120,11 +120,11 @@ def main():
     f, _ = link.request(0x03)
     check(f and f[1] == 3 and Reader(f[3]).u16() == 2, "before HELLO a request is refused")
 
-    f, _ = link.request(0x01, struct.pack("<H", 1) + string("applink_check"))
+    f, _ = link.request(0x01, struct.pack("<H", 2) + string("applink_check"))
     r = Reader(f[3])
     hello = dict(protocol=r.u16(), firmware=r.str(), block=r.u16(), rate=r.u32(), models=r.u16(), irs=r.u16(),
                  path=r.u16(), saved=r.u16(), settings=r.u16(), hash=r.u32())
-    check(f[1] == 1 and r.done() and hello["protocol"] == 1 and hello["rate"] == 48000, "HELLO: %s" % hello)
+    check(f[1] == 1 and r.done() and hello["protocol"] == 2 and hello["rate"] == 48000, "HELLO: %s" % hello)
 
     f, _ = link.request(0x02)
     r = Reader(f[3])
@@ -171,11 +171,11 @@ def main():
     # Meter frames: 20 per second for a second, then off.
     f, _ = link.request(0x50, struct.pack("<H", 20))
     meters = [e for e in link.poll(1.0) if e[0] == 0x51 and e[1] == 4]
-    ok = f[1] == 1 and Reader(f[3]).u16() == 20 and 15 <= len(meters) <= 22 and all(len(e[3]) == 89 for e in meters)
-    m = struct.unpack("<fffIfffffffIIB9f", meters[-1][3]) if ok else ()
+    ok = f[1] == 1 and Reader(f[3]).u16() == 20 and 15 <= len(meters) <= 22 and all(len(e[3]) == 81 for e in meters)
+    m = struct.unpack("<fffIffffffIIB8f", meters[-1][3]) if ok else ()
     ok = ok and all(0 <= p < 4 for p in m[14:]) and 0 <= m[0] <= 1.5 and 0 <= m[2] <= 1 and 1 < m[4] < 100 and m[4] <= m[5] + 5
     check(ok, "SUBSCRIBE 20: %d METERS frames in 1 s; in %.4f out %.4f gate %.2f cpu %.1f%% (max %.1f%%) bits %d"
-          % ((len(meters),) + ((m[0], m[1], m[2], m[4], m[5], m[13]) if m else (0, 0, 0, 0, 0, 0))))
+          % ((len(meters),) + ((m[0], m[1], m[2], m[4], m[5], m[12]) if m else (0, 0, 0, 0, 0, 0))))
     f, _ = link.request(0x50, struct.pack("<H", 0))
     link.poll(0.2)
     check(f[1] == 1 and not [e for e in link.poll(0.5) if e[0] == 0x51], "SUBSCRIBE 0: the frames stop")
@@ -362,7 +362,7 @@ def main():
         m = [e for e in link.poll(0.4) if e[0] == 0x51]
         link.request(0x50, struct.pack("<H", 0))
         link.poll(0.2)
-        return bool(m and m[-1][3][52] & 32)  # the activity bits
+        return bool(m and m[-1][3][48] & 32)  # the activity bits
 
     names = {e["key"]: e["choices"] for e in schema}
     check(len(names["drum style"]) == schema[[e["key"] for e in schema].index("drum style")]["hi"] + 1
@@ -376,7 +376,7 @@ def main():
     link.poll(0.3)
     f, _ = link.request(0x03)
     check(f is not None and f[1] == 3, "after 5 s of silence the session has ended")
-    link.request(0x01, struct.pack("<H", 1) + string("applink_check"))
+    link.request(0x01, struct.pack("<H", 2) + string("applink_check"))
     check(not tuner_bit(), "the tuner the app left open was closed when the session ended")
 
     print("%d failed" % failures if failures else "all passed")

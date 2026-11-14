@@ -115,7 +115,7 @@
   }
 
   const cpuOf = (b: Block): number | null =>
-    ({ amp: meters.cpuAmp, doubler: meters.cpuDoubler, delay: meters.cpuDelay, reverb: meters.cpuReverb, drums: meters.cpuDrums })[b.def.id] ?? null;
+    ({ amp: meters.cpuAmp, delay: meters.cpuDelay, reverb: meters.cpuReverb, drums: meters.cpuDrums })[b.def.id] ?? null;
 
   // The clip count only grows: "clipped" lights for 2 s after it last went up.
   // `now` is a clock that ticks, so that things shown "for 2 s" also go away again.

@@ -63,7 +63,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 
 ## Settings table
 
-68 values in the firmware's order (the number is the setting's id in the link protocol). The first 65 are saved in the unit; "In presets" marks the 43 a preset stores. New settings are added after the last saved one, so ids of saved settings never change; the three unsaved ones at the end move up. Defaults are what a blank unit starts with.
+65 values in the firmware's order (the number is the setting's id in the link protocol). The first 62 are saved in the unit; "In presets" marks the 40 a preset stores. New settings are added after the last saved one, so ids of saved settings never change; the three unsaved ones at the end move up. Defaults are what a blank unit starts with.
 
 | # | Key | Name | Range | Default | In presets |
 | --- | --- | --- | --- | --- | --- |
@@ -113,26 +113,23 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | 43 | `amp treble` | Amp treble | -12.0 dB to +12.0 dB | 0 dB | yes |
 | 44 | `amp presence` | Amp presence | -10.0 dB to +10.0 dB | 0 dB | yes |
 | 45 | `gate rel` | Gate release | 10 ms to 500 ms | 50 ms | yes |
-| 46 | `dbl` | Doubler | on, off | off | yes |
-| 47 | `dbl time` | Doubler time | 1 ms to 35 ms | 10 ms | yes |
-| 48 | `dbl width` | Doubler width | 0 % to 100 % | 100 % | yes |
-| 49 | `gate` | Noise gate | on, off | on | yes |
-| 50 | `gate type` | Gate type | nam, hard | hard | yes |
-| 51 | `pvol` | Preset level | -24.0 dB to +12.0 dB | 0 dB | yes |
-| 52 | `master` | Master volume | silent (the lowest step), -59.5 dB to 0 dB | 0 dB | no |
-| 53 | `mod` | Mod | on, off | off | yes |
-| 54 | `mod type` | Mod type | chorus, flanger, ce2, phase90 (ce2 uses only rate and depth, phase90 only rate; see [SIGNAL_CHAIN.md](SIGNAL_CHAIN.md)) | chorus | yes |
-| 55 | `mod rate` | Mod rate | 0.05 Hz to 10.00 Hz | 0.80 Hz | yes |
-| 56 | `mod depth` | Mod depth | 0 % to 100 % | 50 % | yes |
-| 57 | `mod fb` | Mod feedback | 0 % to 100 % | 0 % | yes |
-| 58 | `mod mix` | Mod mix | 0 % to 100 % | 50 % | yes |
-| 59 | `mod width` | Mod width | 0 % to 100 % | 50 % | yes |
-| 60 | `lim` | Limiter | on, off | off | no |
-| 61 | `lim ceil` | Limiter ceiling | -12.0 dB to -0.5 dB | -1.0 dB | no |
-| 62 | `lim rel` | Limiter release | 10 ms to 1000 ms | 100 ms | no |
-| 63 | `lim look` | Limiter lookahead | on, off | off | no |
-| 64 | `dtype` | Delay type | digital, tape, analog | digital | yes |
-| 65 | `drum` | Drums | on, off | off | no |
+| 46 | `gate` | Noise gate | on, off | on | yes |
+| 47 | `gate type` | Gate type | nam, hard | hard | yes |
+| 48 | `pvol` | Preset level | -24.0 dB to +12.0 dB | 0 dB | yes |
+| 49 | `master` | Master volume | silent (the lowest step), -59.5 dB to 0 dB | 0 dB | no |
+| 50 | `mod` | Mod | on, off | off | yes |
+| 51 | `mod type` | Mod type | chorus, flanger, ce2, phase90 (ce2 uses only rate and depth, phase90 only rate; see [SIGNAL_CHAIN.md](SIGNAL_CHAIN.md)) | chorus | yes |
+| 52 | `mod rate` | Mod rate | 0.05 Hz to 10.00 Hz | 0.80 Hz | yes |
+| 53 | `mod depth` | Mod depth | 0 % to 100 % | 50 % | yes |
+| 54 | `mod fb` | Mod feedback | 0 % to 100 % | 0 % | yes |
+| 55 | `mod mix` | Mod mix | 0 % to 100 % | 50 % | yes |
+| 56 | `mod width` | Mod width | 0 % to 100 % | 50 % | yes |
+| 57 | `lim` | Limiter | on, off | off | no |
+| 58 | `lim ceil` | Limiter ceiling | -12.0 dB to -0.5 dB | -1.0 dB | no |
+| 59 | `lim rel` | Limiter release | 10 ms to 1000 ms | 100 ms | no |
+| 60 | `lim look` | Limiter lookahead | on, off | off | no |
+| 61 | `dtype` | Delay type | digital, tape, analog | digital | yes |
+| 62 | `drum` | Drums | on, off | off | no |
 | 66 | – | Loop from | off, or a bar of the song | off | no |
 | 67 | – | Loop to | a bar of the song | the last bar | no |
 
@@ -155,7 +152,7 @@ Any channel. `midi` in the shell prints this map from the code.
 | CC 70, 71, 72, 73 | Amp bass, middle, treble, presence (whole range) |
 | CC 12, 13, 14 | Delay mix, time, repeats |
 | CC 91, 92 | Reverb mix, size |
-| CC 80 to 84 | Amp, gate, doubler, delay, reverb on / off (on from 64) |
+| CC 80, 81, 83, 84 | Amp, gate, delay, reverb on / off (on from 64). CC 82 was the doubler, removed on 14 Nov 2026, and does nothing. |
 | CC 85 | Cab bypass |
 | CC 86 | Drums play / stop |
 | CC 87 | Tuner |

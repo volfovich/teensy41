@@ -55,7 +55,7 @@ int main() {
   printf("test_presets\n");
   int count = 0;
   for (int id = 0; id < kParamCount; id++) count += inPreset(id);
-  CHECK(count == 43, "43 settings in a preset (%d)", count);
+  CHECK(count == 40, "40 settings in a preset (%d)", count);
   CHECK(inPreset(kAmpIn) && inPreset(kGateType) && inPreset(kPresetLevel) && inPreset(kBypass), "amp, gate, pvol, bypass in");
   CHECK(!inPreset(kOutGain) && !inPreset(kDrumTempo) && !inPreset(kBassOn), "levels, drums, bass out");
 
@@ -124,6 +124,17 @@ int main() {
     b.v[kGateRel] = 300;
     const int d0 = presetDiff(a, b, 0), d1 = presetDiff(a, b, d0 + 1);
     CHECK(d0 == kDelayMix && d1 == kGateRel && presetDiff(a, b, d1 + 1) < 0, "diff finds dmix then gate rel");
+  }
+
+  // A preset saved before the doubler was removed (14 Nov 2026) has its three lines:
+  // they are ignored and change nothing.
+  {
+    PresetData a;
+    presetDefaults(&a);
+    int unknown = 0, bad = 0;
+    const PresetData b = read({"dbl on", "dbl time 20", "dbl width 80", "dmix 31"}, &unknown, &bad);
+    a.v[kDelayMix] = 31;
+    CHECK(unknown == 3 && bad == 0 && same(a, b), "the doubler's lines of an older preset are ignored (%d unknown, %d bad)", unknown, bad);
   }
 
   // Damaged input: random bytes and very long lines never crash, and every

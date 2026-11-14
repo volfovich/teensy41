@@ -2,6 +2,8 @@
 
 Written 13 Nov 2026. **This is the plan, kept as the record of the design.** What is built is described in [`../APP.md`](../APP.md), progress and open items in [`../STATUS.md`](../STATUS.md), the protocol as implemented in [`protocol/PROTOCOL.md`](../../protocol/PROTOCOL.md).
 
+14 Nov 2026: the doubler named in this plan was removed from the firmware and the app.
+
 Built so far (13 Nov 2026): milestones A0 to A5 and most of A6 (the IR's waveform and frequency response, the card's free space, backup and restore; not file renaming), plus the master volume, block level meters and the Mod block, which were not in the original plan.
 
 **Where the build differs from this plan:**

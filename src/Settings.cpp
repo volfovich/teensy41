@@ -8,7 +8,7 @@
 
 Settings g_settings;
 
-static const uint32_t kSettingsMagic = 0x4E464731;  // "NFG1": the paths, then values by ui::Param
+static const uint32_t kSettingsMagic = 0x4E464732;  // "NFG2": the paths, then values by ui::Param
 static uint32_t g_saveAt = 0;  // millis() when a pending save is due (0 = none)
 
 // The record up to 2026-11-13 ("IRLR", teensy-ir-loader's layout): the same with three more
@@ -16,27 +16,42 @@ static uint32_t g_saveAt = 0;  // millis() when a pending save is due (0 = none)
 // This hardware has no such settings; the record is read once to carry the others over.
 static const uint32_t kCodecMagic = 0x49524C52;
 constexpr int kCodecFirst = ui::kOutGain + 1, kCodecValues = 3;
-struct CodecSettings {
+// The record up to 2026-11-14 ("NFG1"): the same as now with the doubler's three values
+// (on, time, width) where the gate's switch now is. The doubler was removed; the record
+// is read once to carry the others over.
+static const uint32_t kDoublerMagic = 0x4E464731;
+constexpr int kDoublerFirst = ui::kGateOn, kDoublerValues = 3;
+struct OldSettings {
   uint32_t magic;
   uint16_t count;
   uint16_t reserved;
   char irPath[IR_PATH_MAX];
   char ampPath[IR_PATH_MAX];
   char presetPath[IR_PATH_MAX];
-  int16_t v[ui::kParamCount + kCodecValues];  // count of them were written
+  int16_t v[ui::kParamCount + kCodecValues + kDoublerValues];  // count of them were written
 };
 
-static void fromCodecRecord() {
-  static CodecSettings old;  // static: not on the stack
+// Carries an older record over: without the doubler's values, and (codec: the "IRLR"
+// record, which had both) without the codec's.
+static void fromOldRecord(bool codec) {
+  static OldSettings old;  // static: not on the stack
   EEPROM.get(0, old);
   memset(&g_settings, 0, sizeof(g_settings));
   memcpy(g_settings.irPath, old.irPath, IR_PATH_MAX);
   memcpy(g_settings.ampPath, old.ampPath, IR_PATH_MAX);
   memcpy(g_settings.presetPath, old.presetPath, IR_PATH_MAX);
-  const int had = old.count < ui::kParamCount + kCodecValues ? old.count : ui::kParamCount + kCodecValues;
+  const int most = ui::kParamCount + kDoublerValues + (codec ? kCodecValues : 0);
+  const int had = old.count < most ? old.count : most;
   int n = 0;
-  for (int i = 0; i < had; i++)
-    if (i < kCodecFirst || i >= kCodecFirst + kCodecValues) g_settings.v[n++] = old.v[i];
+  for (int i = 0; i < had; i++) {
+    int j = i;  // the value's place in the "NFG1" record
+    if (codec) {
+      if (j >= kCodecFirst && j < kCodecFirst + kCodecValues) continue;
+      if (j >= kCodecFirst + kCodecValues) j -= kCodecValues;
+    }
+    if (j >= kDoublerFirst && j < kDoublerFirst + kDoublerValues) continue;
+    g_settings.v[n++] = old.v[i];
+  }
   g_settings.count = n;
   g_settings.magic = kSettingsMagic;
   scheduleSave();
@@ -44,7 +59,8 @@ static void fromCodecRecord() {
 
 void loadSettings() {
   EEPROM.get(0, g_settings);
-  if (g_settings.magic == kCodecMagic) fromCodecRecord();
+  if (g_settings.magic == kCodecMagic) fromOldRecord(true);
+  else if (g_settings.magic == kDoublerMagic) fromOldRecord(false);
   if (g_settings.magic != kSettingsMagic) {
     memset(&g_settings, 0, sizeof(g_settings));
     g_settings.magic = kSettingsMagic;

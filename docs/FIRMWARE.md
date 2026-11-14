@@ -62,7 +62,7 @@ One serial port carries two languages: text lines for the shell and binary frame
 - Low FIFO watermarks, so the path adds about 2 frames beyond the two blocks of buffering.
 - Sets flush-to-zero and default-NaN for the interrupt, so denormals cost nothing.
 - Counts overruns (a block that took too long) and FIFO errors; `s` in the shell shows them.
-- **Overload protection:** after 16 overruns in a row it sends silence and stops calling the callback, which gives `loop()` the CPU back. `serviceFault()` in `main.cpp` then stops the drums, resumes after 1 s, and on a second trip within 10 s switches the doubler, mod, delay and reverb off.
+- **Overload protection:** after 16 overruns in a row it sends silence and stops calling the callback, which gives `loop()` the CPU back. `serviceFault()` in `main.cpp` then stops the drums, resumes after 1 s, and on a second trip within 10 s switches the mod, delay and reverb off.
 
 ## Settings
 
@@ -104,9 +104,9 @@ The Teensy 4.1 has several kinds of memory with very different speeds. RAM1 is t
 
 | Region | Used (14 Nov 2026) | Holds |
 | --- | --- | --- |
-| RAM1 code (ITCM) | 58.4 KB of a 64 KB step (7.2 KB left before the stack loses 32 KB) | The audio path (39 KB), the USB interrupt, the maths and memory routines it uses |
-| RAM1 data (DTCM) | 372 KB, 86.8 KB left for the stack (deepest use measured: 17.5 KB) | One delay line (144 KB), the chain with the convolver's spectra (118 KB), amp history (90 KB) |
-| RAM2 (OCRAM, `DMAMEM`) | 425 KB, 99 KB heap (3 KB of it ever taken) | Reverb (148 KB), the other delay line (144 KB), drum songs and bass (54 KB), tuner, doubler and mod lines, the model being swapped in, the screen's strip (10 KB), USB and I2S buffers |
+| RAM1 code (ITCM) | 57.2 KB of a 64 KB step (8.3 KB left before the stack loses 32 KB) | The audio path (39 KB), the USB interrupt, the maths and memory routines it uses |
+| RAM1 data (DTCM) | 371 KB, 88.0 KB left for the stack (deepest use measured: 17.5 KB) | One delay line (144 KB), the chain with the convolver's spectra (118 KB), amp history (90 KB) |
+| RAM2 (OCRAM, `DMAMEM`) | 417 KB, 107 KB heap (3 KB of it ever taken) | Reverb (148 KB), the other delay line (144 KB), drum songs and bass (54 KB), tuner and mod lines, the model being swapped in, the screen's strip (10 KB), USB and I2S buffers |
 | PSRAM (`EXTMEM`, 8 MB) | 0.73 MB | The raw capture buffer (575 KB), IR resampler table, IR load buffers, the four file lists, app link buffers |
 | Flash | 1.72 MB of 7.9 MB | Background code, the touch screen with its fonts, the built-in model, drum kits |
 

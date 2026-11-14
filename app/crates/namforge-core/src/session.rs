@@ -459,7 +459,6 @@ fn read_meters(r: &mut Reader<'_>) -> Result<Meters, WireError> {
         cpu: r.f32()?,
         cpu_max: r.f32()?,
         cpu_amp: r.f32()?,
-        cpu_doubler: r.f32()?,
         cpu_delay: r.f32()?,
         cpu_reverb: r.f32()?,
         cpu_drums: r.f32()?,
@@ -518,7 +517,7 @@ mod tests {
 
     impl FakeUnit {
         fn new() -> Self {
-            Self { values: vec![0, 30, 380], protocol: 1, ..Default::default() }
+            Self { values: vec![0, 30, 380], protocol: namforge_link::PROTOCOL_VERSION, ..Default::default() }
         }
         fn send(&mut self, t: u8, fl: u8, seq: u16, payload: Vec<u8>) {
             self.out.extend(encode_frame(t, fl, seq, &payload).unwrap());
@@ -623,7 +622,7 @@ mod tests {
     fn handshake_schema_state_and_set() {
         let mut s = Session::new(FakeUnit::new());
         let info = s.hello("fake").unwrap();
-        assert_eq!((info.protocol, info.block_size, info.sample_rate, info.settings), (1, 32, 48000, 3));
+        assert_eq!((info.protocol, info.block_size, info.sample_rate, info.settings), (2, 32, 48000, 3));
         let schema = s.schema().unwrap();
         assert_eq!(schema.len(), 3);
         assert_eq!((schema[1].key.as_str(), schema[1].min, schema[1].max, schema[1].unit), ("dmix", 0, 100, 2));
@@ -665,7 +664,7 @@ mod tests {
         let mut dev = FakeUnit::new();
         let mut w = Writer::new();
         w.f32(0.5).f32(0.25).f32(1.0).u32(3);
-        for cpu in [56.0f32, 57.5, 32.0, 1.0, 6.0, 9.0, 0.0] {
+        for cpu in [56.0f32, 57.5, 32.0, 6.0, 9.0, 0.0] {
             w.f32(cpu);
         }
         w.u32(2).u32(1).u8(0b0_1101);

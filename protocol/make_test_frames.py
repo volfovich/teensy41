@@ -39,9 +39,9 @@ def pattern(n):
 
 CASES = [
     ("empty request", 0x03, 0x00, 1, b""),
-    ("hello request", 0x01, 0x00, 2, struct.pack("<H", 1) + string("NAM Forge 0.1.0")),
+    ("hello request", 0x01, 0x00, 2, struct.pack("<H", 2) + string("NAM Forge 0.1.0")),
     ("hello reply", 0x01, 0x01, 2,
-     struct.pack("<H", 1) + string("0.1.0") + struct.pack("<HIHHHHHI", 32, 48000, 64, 128, 95, 64, 67, 0xDEADBEEF)),
+     struct.pack("<H", 2) + string("0.1.0") + struct.pack("<HIHHHHHI", 32, 48000, 64, 128, 95, 64, 67, 0xDEADBEEF)),
     ("set param", 0x10, 0x00, 3, struct.pack("<Hi", 2, 380)),
     ("set param reply", 0x10, 0x01, 3, struct.pack("<Hi", 2, 380)),
     ("param changed event", 0x11, 0x04, 0, struct.pack("<Hi", 39, 1)),
