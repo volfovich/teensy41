@@ -13,12 +13,13 @@
 #include "Settings.h"
 #include "config.h"
 
-// Load buffers live in the 512 KB OCRAM (DMAMEM) so the DTCM stays free for
-// the chain's spectra and delay line, which are accessed every block.
+// Load buffers live in the PSRAM (EXTMEM): only loop() touches them, while a file
+// loads or the app asks for the IR's samples, so RAM1 stays free for the chain's
+// spectra and delay line and RAM2 for the effects' lines and the heap.
 // The source is streamed through g_scratch, so any file length fits.
 static const int kLoadScratch = 2048;
-DMAMEM static float g_scratch[kLoadScratch];
-DMAMEM static float g_ir[IR_MAX_LENGTH];
+EXTMEM static float g_scratch[kLoadScratch];
+EXTMEM static float g_ir[IR_MAX_LENGTH];
 // Resampler kernel table: enough for 192 kHz sources (makes loading ~50x faster).
 static const int kKernelTableSize = 14336;
 // On this board the kernel table goes in the PSRAM (EXTMEM): it is only read
@@ -29,9 +30,9 @@ EXTMEM static float g_kernelTable[kKernelTableSize];
 // ---------------------------------------------------------------------------
 // IR file list
 // ---------------------------------------------------------------------------
-// Only used from loop(), so it lives in OCRAM too (rows past g_numFiles are
+// Only used from loop(), so it lives in the PSRAM too (rows past g_numFiles are
 // never read, so it needs no initialization).
-DMAMEM static char g_files[IR_MAX_FILES][IR_PATH_MAX];
+EXTMEM static char g_files[IR_MAX_FILES][IR_PATH_MAX];
 static int g_numFiles = 0;
 static int g_current = -1;
 static bool g_sdOk = false;

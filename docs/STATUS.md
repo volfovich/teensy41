@@ -1,8 +1,10 @@
 # Status
 
-The tracking page: what works and how that is known, what has not been checked, and what is open. Update it when something is finished, tested or found. Last updated: 13 Nov 2026, at the stop described under "Where things stand".
+The tracking page: what works and how that is known, what has not been checked, and what is open. Update it when something is finished, tested or found. Last updated: 14 Nov 2026.
 
 ## Where things stand (end of 13 Nov 2026)
+
+**Added on 14 Nov 2026 (not committed when written; the unit runs this firmware):** the memory recap (`mem`, background code to flash, load buffers to the PSRAM); and the touch screen's first version, ([SCREEN.md](SCREEN.md)): 132 host test cases pass, the on-unit protocol check passes. The author wired the display the same day; it is found at boot, calibrated and in use. Waiting for the author there: the verdict on look and touch, and noise by ear.
 
 Work was stopped here at the author's word. Everything described on this page is committed on the branch `i2s-driver-and-hld`, and the unit runs the firmware built from it.
 
@@ -39,7 +41,7 @@ Work was stopped here at the author's word. Everything described on this page is
 | USB MIDI | Built, **not tried** | Map prints; no real controller or DAW has sent messages |
 | Sound | **As ported** | Confirmed by the author on 13 Nov 2026 after two unrequested level changes were reverted; test tones matched the morning's firmware within 0.3 dB over 36 points |
 
-Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb) 56.3 % CPU average, 57.1 % maximum, 0 overruns. With everything on (doubler, mod, delay, reverb, drums and bass) 69 % average, 80.4 % maximum, 0 overruns. Per effect (13 Nov 2026): reverb hall 8.1 %, gated 6.7 %, plate 4.8 %, spring 8.0 %; delay digital 4.8 %, tape 3.5 %, analog 3.0 %. RAM1 code 63.9 KB, 91.5 KB free for the stack (after the new reverbs and delays).
+Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb) 56.3 % CPU average, 57.1 % maximum, 0 overruns. With everything on (doubler, mod, delay, reverb, drums and bass) 69 % average, 80.4 % maximum, 0 overruns. Per effect (13 Nov 2026): reverb hall 8.1 %, gated 6.7 %, plate 4.8 %, spring 8.0 %; delay digital 4.8 %, tape 3.5 %, analog 3.0 %. RAM1 code 58.4 KB, 88.4 KB free for the stack, RAM2 heap 99 KB (14 Nov 2026, with the touch screen's code in; after moving background code to flash and load buffers to the PSRAM; the CPU figures were measured again and are the same, an IR load takes 8 ms instead of 6).
 
 ## App
 
@@ -72,7 +74,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 - The worst-case CPU (long IR, busy drums at 240 BPM, IR switching) at 32-sample blocks.
 
 ## Known issues and observations
-- **RAM1 code is 1.6 KB from its next 32 KB step** (63.9 KB of 64 KB). The new reverbs and delays took it over the step; moving the chain's constructors and libm's double-precision routines to flash brought it back. The next feature with audio-interrupt code will cross it, which takes 32 KB from the stack's 91 KB, unless more is moved out first; check the build output.
+- **RAM1 code is 7.2 KB from its next 32 KB step** (58.4 KB of 64 KB, 14 Nov 2026). The reverbs and delays of 13 Nov took it to 63.9 KB; moving the core's start-up and background routines to flash gave 5.6 KB back. Crossing the step takes 32 KB from the stack's 88.4 KB; the deepest stack use measured is 17.5 KB (`mem`), so that step can be taken when needed. CPU, not memory, is the limit for new effects. Not yet in the stack measurement: `cap`, `amp selftest`, and loading a model that has no cache file.
 - **The limiter works on sample peaks**, not on peaks between samples; its default ceiling of −1 dB is the margin for that.
 - The limiter's cost with everything else on was not measured together: expect the worst block at 81 to 82 %, over the 80 % budget, when all blocks, the drums and the lookahead limiter run at once.
 - Asking the card for its free space stops the unit's `loop()` for about 0.8 s (16 GB card): the audio keeps running, the app's meters pause for that moment. It happens when the app connects and after each file sent or deleted.
@@ -101,7 +103,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 
 ### Firmware
 - Try USB MIDI with a controller or a DAW.
-- The touch screen UI (2.8-inch TFT): display choice, pins, screens. To read `protocol/blocks.json` like the app.
+- The touch screen ([SCREEN.md](SCREEN.md)): wired and running since 14 Nov 2026; open: the author's verdict on look and touch, noise by ear. Then the second step: a screen for each block's settings, choosing model and IR, saving as new.
 - Lower latency, if wanted: a non-uniformly partitioned convolver, then 16-sample blocks again.
 - Later effects: compressor, parametric EQ, more Mod types (tremolo), more reverbs or delays (shimmer, ping-pong, reverse were offered and not chosen); a longer delay or a looper in PSRAM.
 

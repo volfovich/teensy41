@@ -369,7 +369,7 @@ See the [README](../../README.md) and [`../FIRMWARE.md`](../FIRMWARE.md) ("Modul
 | M3 | IR loader | Done: ported, host-tested, IRs loaded from the SD card. |
 | M4 | NAM in the chain | Done, with models loaded from the SD card. |
 | M5 | Effects, presets, drums | Ported and running; presets on the SD card in use. |
-| M6 | Input preamp, UI | Not started. UI: a 2.8-inch TFT with touch, to be designed. USB MIDI control is in (untested with a controller). |
+| M6 | Input preamp, UI | Preamp not started. UI: the touch screen's first version (playing screens) is wired and running, 14 Nov 2026 ([SCREEN.md](../SCREEN.md)). USB MIDI control is in (untested with a controller). |
 
 Next steps (as written on 13 Nov 2026; the current list is in [`../STATUS.md`](../STATUS.md)):
 1. Try USB MIDI with a real controller or a DAW.

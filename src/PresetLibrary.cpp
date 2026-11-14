@@ -20,8 +20,8 @@ static const int kMaxPresets = 99;
 static const int kNameMax = 48;      // the file name, with ".txt"
 static const int kUserNameMax = 24;  // what a new or renamed preset may be called
 
-// The list and the recalled preset's values, in OCRAM (background only).
-DMAMEM static char g_files[kMaxPresets][kNameMax];
+// Background only: the list in the PSRAM, the recalled preset's values in OCRAM.
+EXTMEM static char g_files[kMaxPresets][kNameMax];
 DMAMEM static PresetData g_ref;      // the recalled preset, as in its file
 DMAMEM static PresetData g_staging;  // a preset being read or written
 static int g_count = 0;

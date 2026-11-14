@@ -5,20 +5,21 @@ NAM A2-Lite amp models, IR cab loader, effects. 48 kHz / 24-bit end to end, lowe
 Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM. No PJRC Audio Library on the audio path.
 
 - Start at `README.md`: it lists every document and which one owns which fact.
-- As built: `docs/SIGNAL_CHAIN.md` (the audio path and every gain), `docs/FIRMWARE.md` (structure, memory), `docs/CONTROL.md` (serial commands, settings table, MIDI map), `docs/APP.md` (the macOS app), `protocol/PROTOCOL.md`.
+- As built: `docs/SCREEN.md` (the unit's touch screen), `docs/SIGNAL_CHAIN.md` (the audio path and every gain), `docs/FIRMWARE.md` (structure, memory), `docs/CONTROL.md` (serial commands, settings table, MIDI map), `docs/APP.md` (the macOS app), `protocol/PROTOCOL.md`.
 - Tracking: `docs/STATUS.md` (what works, what is unchecked, open items), `docs/DECISIONS.md` (choices and reasons). Working rules and recipes: `docs/DEVELOPMENT.md`.
 - Design record: `docs/design/HLD.md` (budgets, benchmarks), `docs/design/APP_PLAN.md` (the app's plan), `docs/HARDWARE.md`.
-- State on 13 Nov 2026: work stopped at the author's word after the Mod block and the app's IR graphs, then went on the same day with the limiter, two more Mod types (ce2, phase90), two more reverb modes (plate, spring) and two more delay types (tape, analog); `docs/STATUS.md` ("Where things stand") lists what waits for the author.
+- State on 13 Nov 2026: work stopped at the author's word after the Mod block and the app's IR graphs, then went on the same day with the limiter, two more Mod types (ce2, phase90), two more reverb modes (plate, spring) and two more delay types (tape, analog); `docs/STATUS.md` ("Where things stand") lists what waits for the author. 14 Nov 2026: memory recap (`mem`), and the touch screen's first version, wired and running.
 - **Keep the documents true:** a change to the chain, a setting, a command, a message or the app's structure updates the document that owns it in the same commit; finished or newly found things go into `docs/STATUS.md`, new choices into `docs/DECISIONS.md`.
 
 ## Commands
 - Build firmware: `pio run`
 - Flash: `pio run -t upload` (Teensy Loader GUI; press the board's button if it doesn't auto-reboot)
-- Serial monitor / command shell: `pio device monitor` (type `?` for commands, `s` for status)
+- Serial monitor / command shell: `pio device monitor` (type `?` for commands, `s` for status, `mem` for memory)
 - Check the desktop app's link protocol on the device (close the serial monitor first): `~/.platformio/penv/bin/python tools/applink_check.py`
 - After changing the settings table: refresh the app's browser-preview data with `tools/applink_snapshot.py` (see `app/README.md`) and add new settings to `protocol/blocks.json`
 - Check that no audio code was linked into flash: `tools/check_hot_code.sh` (after `pio run`)
 - Host unit tests for portable DSP: `pio test -e native`
+- The touch screen's screens as pictures, without the unit: `pio test -e native -f test_ui && python3 tools/ui_render.py` (PNG files in `.pio/ui/`); after changing `protocol/blocks.json` also run `python3 tools/make_blocks_header.py`
 - I2S driver self-test (bare board, jumper pin 7 -> pin 8; replaces app firmware until you re-upload):
   `pio run -e i2s_loopback -t upload && pio device monitor -e i2s_loopback`
 - Reference NAM engine (NeuralAmpModelerCore) benchmark, for comparison only (fetches it into `third_party/` on first build):
@@ -36,6 +37,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - `include/config.h` – compile-time settings and hardware constants (guitar channel, ADC full scale, mute pin)
 - `lib/i2s32/` – I2S driver (SAI1 + eDMA, 48 kHz, 32-bit slots, block callback in the DMA interrupt). Teensy-only.
 - `lib/dsp/` – **portable float DSP** (namespace `dsp`, no Arduino/Teensy includes), unit-tested on the host: `nam/`, `conv/`, `fx/`, `drums/`
+- `lib/ui/` – the touch screen's screens, touch handling and drawing (namespace `ui_tft`). Portable, host-tested (`test/test_ui`); `src/Screen.cpp` is the unit's side (ILI9341 + XPT2046 on SPI0: CS 10, DC 9, reset 5, touch CS 4, IRQ 3). All of it must stay on the cold list (flash). The display is wired (14 Nov 2026); without one the screen stays off.
 - `lib/params/` – the settings table (`ParamDefs`) and preset file format. Portable.
 - `lib/applink/` – the desktop app's link protocol on the firmware side (frames, payload fields, message numbers). Portable. Reference: `protocol/PROTOCOL.md`; the chain's blocks as the UIs show them (names, colours, which settings belong where): `protocol/blocks.json`; shared examples `protocol/test_frames.txt` (regenerate with `python3 protocol/make_test_frames.py`).
 - `app/` – the macOS control app, "Volfovich NAM Forge" (as built: `docs/APP.md`, plan: `docs/design/APP_PLAN.md`, commands: `app/README.md`): Tauri 2, Rust core in `app/crates`, Svelte UI in `app/src`. Only one program can hold the unit's serial port: close the app before flashing or opening the serial monitor.
@@ -49,7 +51,7 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - The ported test suites run the original checks inside one Unity test each (`#define main ported_main`).
 - The settings table is the old project's minus its three codec levels (`in`, `out`, `hp`: line in, line out, headphones), which this hardware does not have. Preset files are still interchangeable (those three were never in presets); the EEPROM record is not (`Settings.cpp` converts the old record once).
 - `Reverb80` and `StudioDelay` are ported and are not edited: the plate and spring reverbs and the tape and analog delays are separate classes written for this project (`PlateReverb`, `SpringReverb`, `TapeDelay`, `AnalogDelay`), chosen through `ReverbBank` / `DelayBank`, which hand hall, gated and digital through bit for bit (`test_fx_banks`). A new mode or type must cost no more CPU than the ported one and fit the block's existing memory.
-- Not ported and not wanted: the OLED panel, encoder and keys. The planned UI is a 2.8-inch TFT with touch, designed from scratch.
+- Not ported and not wanted: the OLED panel, encoder and keys. The unit's own UI is a 2.8-inch TFT with touch, designed from scratch (`docs/SCREEN.md`).
 
 ## Audio facts
 - 48 kHz only. Block = `DSP_BLOCK` frames (32, set in `platformio.ini`; 16 was tried and overruns because the convolver's cost doubles) = `i2s32::kBlock` = `kBlock` in `config.h`. In-to-out latency is about 2 blocks plus converter filters.
@@ -69,7 +71,8 @@ Hardware: PCM1808 ADC + PCM5102A DAC on I2S (Teensy is clock master), 8 MB PSRAM
 - All code goes to ITCM (RAM1) by default. `tools/imxrt1062_t41_cold.ld` keeps background code (libc, SdFat, SerialUI, libraries, loaders) in flash. Never add a file with audio-interrupt code to its cold lists.
 - After changing the linker script or the audio path, run `tools/check_hot_code.sh` (after `pio run`): it fails if an audio-path function was linked into flash.
 - The NAM history must be a plain global (DTCM), not `DMAMEM`: OCRAM costs about 4% CPU more.
-- RAM1 code is close to a 32 KB step (ITCM grows in 32 KB blocks, taken from the stack's space): after adding background code, check `pio run`'s "free for local variables" stays near 95 KB (RAM1 code was 63.9 KB of the 64 KB step on 13 Nov 2026: 1.6 KB left, free for local variables 91.5 KB); if it drops by 32 KB, something background was linked into ITCM (add it to the cold list).
+- RAM1 code grows in 32 KB steps taken from the stack's space (ITCM): 58.4 KB of the 64 KB step on 14 Nov 2026, 7.2 KB left, "free for local variables" 88.4 KB in `pio run`. If that drops by 32 KB, a step was crossed: move background code to the cold list, or accept it (the stack's deepest use measured with serial `mem` is 17.5 KB).
+- Data only `loop()` touches goes in PSRAM (IR load buffers, the file lists); nothing the audio interrupt reads does (the weights of a model being swapped in stay in RAM2).
 - Load-time-only buffers can go in PSRAM (`EXTMEM`), as the IR resampler table does.
 
 ## DSP conventions

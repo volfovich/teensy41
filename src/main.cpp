@@ -36,6 +36,7 @@
 #include "IRLibrary.h"
 #include "MidiControl.h"
 #include "Params.h"
+#include "Screen.h"
 #include "SerialUI.h"
 #include "Settings.h"
 #include "config.h"
@@ -132,6 +133,7 @@ FASTRUN static void audioCallback(const int32_t* rx, int32_t* tx, size_t frames)
 }
 
 void setup() {
+  paintStack();
   loadSettings();
   // The chain gets its memory and the saved settings, then the audio starts: the passthrough
   // runs from here on, even before an IR or a model is loaded.
@@ -148,6 +150,7 @@ void setup() {
                 kBlock, IR_MAX_LENGTH);
 
   scanCard();
+  screenBegin();
   loadStartupIR();
   loadStartupAmp();
   // The drum song saved last time (an SD file may have gone: then none).
@@ -160,5 +163,6 @@ void loop() {
   serviceSave();
   serviceMidi();
   serviceAppLink();
+  serviceScreen();
   serviceFault();
 }

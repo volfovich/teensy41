@@ -16,9 +16,10 @@
 using namespace ui;
 
 static const int kMaxAmps = AMP_MAX_FILES;
-// The file list and the weights being handed to the audio side, in OCRAM:
-// only the background touches them (the weights once, when swapped in).
-DMAMEM static char g_files[kMaxAmps][IR_PATH_MAX];
+// The file list is in the PSRAM: only the background reads it. The weights being
+// handed to the audio side stay in OCRAM, because the audio interrupt copies them
+// when it swaps the model in.
+EXTMEM static char g_files[kMaxAmps][IR_PATH_MAX];
 DMAMEM static float g_staging[dsp::nama2::kWeightCount];
 static int g_numFiles = 0;
 static int g_current = -1;

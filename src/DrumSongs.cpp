@@ -14,9 +14,10 @@ static const int kMaxFiles = 64, kNameMax = 48;
 static const uint32_t kMaxEvents = 4096;
 static const uint16_t kMaxBars = 512;
 
-// Only used from loop(); the song buffers are read by the audio interrupt
-// while a loaded song plays (they are only rewritten while it doesn't).
-DMAMEM static char g_files[kMaxFiles][kNameMax];
+// The file list is only used from loop() and lives in the PSRAM; the song buffers
+// are read by the audio interrupt while a loaded song plays (they are only
+// rewritten while it doesn't), so they stay in OCRAM.
+EXTMEM static char g_files[kMaxFiles][kNameMax];
 DMAMEM static dsp::SongEvent g_events[kMaxEvents];
 DMAMEM static dsp::SongBar g_bars[kMaxBars];
 DMAMEM static dsp::BassEvent g_bass[kMaxEvents];

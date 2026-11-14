@@ -12,6 +12,7 @@
 
 #include "AmpLibrary.h"
 #include "AudioChain.h"
+#include "Meters.h"
 #include "DrumSongs.h"
 #include "IRLibrary.h"
 #include "Params.h"
@@ -615,9 +616,9 @@ static void onSubscribe(const applink::FrameHeader& h, Reader& r) {
   if (!r.done()) return replyError(h, Err::kBadPayload, "Bad SUBSCRIBE");
   g_meterRate = rate > 60 ? 60 : rate;
   g_lastMeterMs = millis();
-  chain.takeInputPeak();  // the first frame's peaks start now
-  chain.takeOutputPeak();
-  for (int stage = 0; stage < AudioChain::kStageCount; stage++) chain.takeStagePeak(stage);
+  meterInputPeak(kMeterApp);  // the first frame's peaks start now
+  meterOutputPeak(kMeterApp);
+  for (int stage = 0; stage < AudioChain::kStageCount; stage++) meterStagePeak(kMeterApp, stage);
   chain.resetCpuMax();
   Writer w(g_txPayload, kTxPayload);
   w.u16(g_meterRate);
@@ -630,8 +631,8 @@ static void onSubscribe(const applink::FrameHeader& h, Reader& r) {
 static void sendMeters() {
   const i2s32::Stats drv = i2s32::stats();
   Writer w(g_txPayload, kTxPayload);
-  w.f32(chain.takeInputPeak());
-  w.f32(chain.takeOutputPeak());
+  w.f32(meterInputPeak(kMeterApp));
+  w.f32(meterOutputPeak(kMeterApp));
   w.f32(getParam(kGateOn) ? chain.gate().gain() : 1.0f);
   w.u32(chain.clipCount());
   w.f32(chain.cpuPercent());
@@ -645,7 +646,7 @@ static void sendMeters() {
   w.u32(drv.faults);
   w.u8((chain.amp().active() ? 1 : 0) | (chain.delayActive() ? 2 : 0) | (chain.reverbActive() ? 4 : 0) |
        (chain.drums().playing() ? 8 : 0) | (i2s32::faulted() ? 16 : 0) | (chain.tunerOn() ? 32 : 0));
-  for (int stage = 0; stage < AudioChain::kStageCount; stage++) w.f32(chain.takeStagePeak(stage));
+  for (int stage = 0; stage < AudioChain::kStageCount; stage++) w.f32(meterStagePeak(kMeterApp, stage));
   w.f32(chain.takeLimiterGain());
   chain.resetCpuMax();
   sendFrame(Msg::kMeters, applink::kFlagEvent, 0, w);

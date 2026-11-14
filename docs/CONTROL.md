@@ -51,6 +51,13 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | `tuner test <Hz>` | The tuner hears a sine instead of the guitar (`tuner test 0` ends it) |
 | `cap` | Sends 3 s of the raw input (before the high-pass) as floats over USB |
 | `overload` | Wastes CPU for 400 blocks to test the overload protection (mutes for 1 s) |
+| `tft` | The touch screen: whether a display was found, on or off, the screen shown, and its commands |
+| `tft on`, `tft off`, `tft auto` | Draw and read touch always, never, or when a display is found at boot (the default); kept |
+| `tft cal` | Calibrate the touch panel: touch two crosses |
+| `tft tap <x> <y>` | Debug: a tap at a screen point (320 x 240), as a finger would |
+| `tft touch` | Debug: touch readings for 10 s |
+| `tft bench meters`, `full`, `off` | Debug: draw continuously to measure what drawing costs the audio (read it with `s`) |
+| `mem` | Memory: RAM1 code and what is left of its 32 KB step, RAM1 data, deepest stack use since boot, RAM2 and its heap, PSRAM, flash |
 | `amp selftest <n>` | Runs the loaded model on n floats sent over USB and returns the output |
 
 ## Settings table

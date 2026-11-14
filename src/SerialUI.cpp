@@ -7,6 +7,7 @@
 
 #include "AmpLibrary.h"
 #include "AudioChain.h"
+#include "Meters.h"
 #include <dsp/drums/DrumKit.h>
 #include <dsp/drums/DrumMachine.h>
 #include "DrumSongs.h"
@@ -15,6 +16,7 @@
 #include "MidiControl.h"
 #include "Params.h"
 #include "PresetLibrary.h"
+#include "Screen.h"
 #include "Tuner.h"
 #include "config.h"
 
@@ -54,6 +56,46 @@ static void argHint(int id, char* buf, int n) {
   }
 }
 
+// ---- Memory report ('mem') ----
+// The stack grows down from _estack toward _ebss (the core's MPU traps the 32 bytes at
+// _ebss). paintStack() fills the unused part with a pattern at boot; the deepest use since
+// then is where the pattern ends. Interrupts use the same stack, so they are counted.
+extern "C" {
+extern unsigned long _stext, _etext, _sdata, _ebss, _estack, _heap_start, _heap_end, _extram_start, _extram_end;
+extern unsigned long _flashimagelen;
+extern char* __brkval;
+extern uint8_t external_psram_size;  // MB, found by the core at boot
+}
+static const uint32_t kStackPaint = 0x5AC0FFEE;
+static uint32_t* stackFloor() { return (uint32_t*)(((uintptr_t)&_ebss + 64 + 3) & ~(uintptr_t)3); }
+
+void paintStack() {
+  uint32_t* top = (uint32_t*)__builtin_frame_address(0) - 64;  // well below this frame
+  for (uint32_t* p = stackFloor(); p < top; p++) *p = kStackPaint;
+}
+
+static void printMem() {
+  const uint32_t code = (uint32_t)&_etext - (uint32_t)&_stext;
+  const uint32_t step = (code + 0x7FFF) & ~0x7FFFu;  // RAM1 code takes whole 32 KB blocks
+  const uint32_t data = (uint32_t)&_ebss - (uint32_t)&_sdata;
+  const uint32_t stackSpace = (uint32_t)&_estack - (uint32_t)&_ebss;
+  const uint32_t* p = stackFloor();
+  while (p < (uint32_t*)&_estack && *p == kStackPaint) p++;
+  const uint32_t stackPeak = (uint32_t)&_estack - (uint32_t)p;
+  const uint32_t ram2Static = (uint32_t)&_heap_start - 0x20200000u;
+  const uint32_t heap = (uint32_t)&_heap_end - (uint32_t)&_heap_start;
+  const uint32_t heapTop = __brkval ? (uint32_t)__brkval - (uint32_t)&_heap_start : 0;  // ever taken
+  const uint32_t psram = (uint32_t)&_extram_end - (uint32_t)&_extram_start;
+  Serial.printf("RAM1 code: %lu B of a %lu KB step, %lu B left before the stack loses 32 KB\n", (unsigned long)code,
+                (unsigned long)(step >> 10), (unsigned long)(step - code));
+  Serial.printf("RAM1 data: %lu B\n", (unsigned long)data);
+  Serial.printf("Stack:     %lu B deepest since boot, of %lu B\n", (unsigned long)stackPeak, (unsigned long)stackSpace);
+  Serial.printf("RAM2:      %lu B fixed, heap %lu B of %lu B ever taken\n", (unsigned long)ram2Static,
+                (unsigned long)heapTop, (unsigned long)heap);
+  Serial.printf("PSRAM:     %lu B fixed of %d MB\n", (unsigned long)psram, (int)external_psram_size);
+  Serial.printf("Flash:     %lu B of 7936 KB\n", (unsigned long)&_flashimagelen);
+}
+
 void printHelp() {
   Serial.print("\nCommands:\n"
                "  l                     list IR files\n"
@@ -85,6 +127,8 @@ void printHelp() {
                "  midi                  the USB MIDI mapping (program change = preset, controllers)\n"
                "  cap                   debug: 3 s of the raw input as floats over USB\n"
                "  overload              debug: test the overload protection (mutes for 1 s)\n"
+               "  tft                   the touch screen: state and its commands (on, off, cal, debug)\n"
+               "  mem                   memory: code and data per region, deepest stack use, heap\n"
                "  drum loop <a> <b>|off  loop bars a..b of the song\n"
                "  drum train <step> <every> <target>  set the speed trainer and switch it on\n"
                "  m                     toggle the live level meter\n"
@@ -285,7 +329,7 @@ static void printStatus() {
   Serial.printf("Driver:    overruns %lu, FIFO errors %lu, overload mutes %lu\n", (unsigned long)drv.overruns,
                 (unsigned long)drv.fifoErrors, (unsigned long)drv.faults);
   Serial.printf("Levels:    in %.1f dBFS, out %.1f dBFS peak, clipped samples %lu\n",
-                toDb(chain.takeInputPeak()), toDb(chain.takeOutputPeak()),
+                toDb(meterInputPeak(kMeterShell)), toDb(meterOutputPeak(kMeterShell)),
                 (unsigned long)chain.clipCount());
   Serial.print("Settings:  ");
   printValues({kOutGain, kBypass}, true);
@@ -499,6 +543,10 @@ static void handleCommand(char* line) {
   } else if (!strcmp(line, "overload")) {
     Serial.println("Overload test: the audio callback wastes 1.2 block periods for 400 blocks.");
     testOverload();
+  } else if (!strcmp(line, "tft")) {
+    screenCommand(arg);
+  } else if (!strcmp(line, "mem")) {
+    printMem();
   } else if (!strcmp(line, "midi")) {
     printMidiMap();
   } else if (!strcmp(line, "l")) {
@@ -589,7 +637,7 @@ void serviceMeter() {
   static uint32_t last = 0;
   if (!g_meter || millis() - last < 200) return;
   last = millis();
-  float in = toDb(chain.takeInputPeak()), out = toDb(chain.takeOutputPeak());
+  float in = toDb(meterInputPeak(kMeterShell)), out = toDb(meterOutputPeak(kMeterShell));
   char bar[41];
   int n = constrain((int)((in + 60.0f) * 40.0f / 60.0f), 0, 40);
   memset(bar, '#', n);

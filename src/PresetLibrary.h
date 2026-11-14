@@ -26,7 +26,7 @@ bool presetEdited();
 // (nothing changes then). Keeps a preset being tried (previewPreset).
 bool recallPreset(int idx);
 
-// Trying presets from a UI's list (unused until there is one): previewPreset() plays preset idx,
+// Trying presets from a UI's list (the touch screen's): previewPreset() plays preset idx,
 // keeping the sound from before the first try (edits and all);
 // cancelPreview() goes back to it, keepPreview() keeps what plays. Every
 // other change to presets keeps.

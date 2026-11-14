@@ -1,0 +1,7 @@
+{
+  "name": "ui",
+  "version": "0.1.0",
+  "description": "The touch screen's screens, touch handling and drawing (strips of RGB565, no frame buffer). Portable, host-tested; fonts made by tools/make_font.py, blocks by tools/make_blocks_header.py.",
+  "frameworks": "*",
+  "platforms": "*"
+}

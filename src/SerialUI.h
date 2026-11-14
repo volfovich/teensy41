@@ -7,3 +7,5 @@ void printHelp();
 void serviceSerial();
 // Call from loop(): prints the level meter every 200 ms while it is enabled.
 void serviceMeter();
+// Call first in setup(): marks the unused stack space so 'mem' can report the deepest use.
+void paintStack();

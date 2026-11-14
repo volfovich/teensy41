@@ -62,6 +62,7 @@ Without a card the unit still plays: the amp uses a built-in example model and t
 | [docs/FIRMWARE.md](docs/FIRMWARE.md) | How the firmware is built up: modules, the two contexts, settings and presets, memory placement, build environments |
 | [docs/CONTROL.md](docs/CONTROL.md) | Reference: serial commands, the settings table, the USB MIDI map, test aids |
 | [docs/APP.md](docs/APP.md) | The macOS app as built: its parts, how it talks to the unit, the screen |
+| [docs/SCREEN.md](docs/SCREEN.md) | The unit's touch screen as built: screens, structure, what it costs, what is not checked |
 | [protocol/PROTOCOL.md](protocol/PROTOCOL.md) | The link protocol between the app and the unit |
 | [docs/HARDWARE.md](docs/HARDWARE.md) | Wiring, the two converter boards, clocking, bring-up |
 | [docs/TECHNOLOGIES.md](docs/TECHNOLOGIES.md) | Parts, toolchains, libraries, third-party code and licences |

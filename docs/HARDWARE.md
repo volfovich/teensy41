@@ -48,6 +48,29 @@ Notes:
 - The PCM1808 board has a 3.3V pad and a GND pad on each side. One of each is enough if the pairs are joined on the board; confirm with a continuity check.
 - Keep the MCLK wire short. It carries about 11.3 MHz.
 
+## Touch screen
+
+A 2.8-inch SPI display board (ILI9341, 240 x 320) with a resistive touch panel (XPT2046), on SPI0. **Wired by the author on 14 Nov 2026** and found by the firmware at boot; the firmware expects exactly these pins (`src/Screen.h`) and also runs without the display. Which way the backlight was wired (3.3 V direct, or VIN through 100 Ω) was not recorded. The software: [SCREEN.md](SCREEN.md).
+
+| Display pin | Teensy 4.1 pin | Note |
+| --- | --- | --- |
+| VCC | VIN (5 V) | The board has its own 3.3 V regulator (jumper J1 open) |
+| GND | GND | At the Teensy, not at a converter board's ground |
+| CS | 10 | |
+| RESET | 5 | |
+| DC | 9 | |
+| SDI (MOSI) and T_DIN | 11 | Shared by the display and the touch chip |
+| SCK and T_CLK | 13 | Shared; the Teensy's LED is on this pin and will flicker |
+| SDO (MISO) and T_DO | 12 | Shared |
+| LED | 3.3 V, or VIN through 100 Ω | Never 5 V without the resistor. Fixed brightness: no PWM dimming, so no switching noise on the supply |
+| T_CS | 4 | |
+| T_IRQ | 3 | |
+
+- Pins 7, 8, 20, 21 and 23 are the I2S and stay as they are. PJRC's usual touch pin (8) is the ADC's data line here, which is why touch is on 4 and 3.
+- Keep the wires short (under 10 cm) and away from the ADC board and the MCLK wire: the bus runs at 30 MHz.
+- The SD slot on the display board is not connected; the unit uses the Teensy's own.
+- The display's logic is 3.3 V. Do not bridge J1 while VCC is at 5 V.
+
 ## PCM1808 ADC board
 
 The board runs as a 24-bit I2S slave with its stock input filter removed.

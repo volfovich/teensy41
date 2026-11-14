@@ -102,18 +102,22 @@ The app writes files through `AppLink` (to a temporary file first, then renamed)
 
 The Teensy 4.1 has several kinds of memory with very different speeds. RAM1 is the tight one.
 
-| Region | Used (13 Nov 2026) | Holds |
+| Region | Used (14 Nov 2026) | Holds |
 | --- | --- | --- |
-| RAM1 code (ITCM) | 59 KB of a 64 KB step (5 KB left before the stack loses 32 KB) | The audio path only |
-| RAM1 data (DTCM) | 367 KB, 91 KB left for the stack | Amp history (87 KB), one delay line (144 KB), the convolver's spectra |
-| RAM2 (OCRAM, `DMAMEM`) | 466 KB, 58 KB heap | The other delay line, reverb, doubler, mod, file lists, load buffers |
-| PSRAM (`EXTMEM`, 8 MB) | under 1 MB | IR resampler table, app link buffers, the raw capture buffer |
-| Flash | 1.6 MB of 8 MB | Background code, the built-in model, drum kits |
+| RAM1 code (ITCM) | 58.4 KB of a 64 KB step (7.2 KB left before the stack loses 32 KB) | The audio path (39 KB), the USB interrupt, the maths and memory routines it uses |
+| RAM1 data (DTCM) | 370 KB, 88.4 KB left for the stack (deepest use measured: 17.5 KB) | One delay line (144 KB), the chain with the convolver's spectra (118 KB), amp history (90 KB) |
+| RAM2 (OCRAM, `DMAMEM`) | 425 KB, 99 KB heap (3 KB of it ever taken) | Reverb (148 KB), the other delay line (144 KB), drum songs and bass (54 KB), tuner, doubler and mod lines, the model being swapped in, the screen's strip (10 KB), USB and I2S buffers |
+| PSRAM (`EXTMEM`, 8 MB) | 0.73 MB | The raw capture buffer (575 KB), IR resampler table, IR load buffers, the four file lists, app link buffers |
+| Flash | 1.72 MB of 7.9 MB | Background code, the touch screen with its fonts, the built-in model, drum kits |
 
 - By default the Teensy core puts **all** code in RAM1. `tools/imxrt1062_t41_cold.ld` keeps background code (libc, SD, shell, app link, loaders) in flash instead. A file with interrupt code must never be added to its lists.
 - `tools/check_hot_code.sh` (after `pio run`) fails if an audio-path function ended up in flash, where it would run several times slower without any error.
 - The chain's constructors (they run once) and libm's double-precision sine, cosine and square root (only the IR loader uses doubles) are sent to flash by the same script; the single-precision maths stays in RAM1, because the drums' compressor and the effects' coefficient updates call it from the interrupt.
 - The delay and the reverb are each a bank of effects on one block of memory (`dsp/fx/DelayBank.h`, `ReverbBank.h`): the ported effect and the two written here. The bank passes the settings to all of them and runs one; `BankSwitch` in `dsp/fx/FxParts.h` does the fade, clear and restart between them. Their setup, clearing and coefficient code is in `.cpp` files marked `DSP_COLD` (flash); only `process()` is in RAM1.
+- The Teensy core's own start-up and background routines (clock, PWM and USB set-up, the EEPROM's byte access, the calendar, the fault handler, `SPI.begin`), `setup()` and `i2s32::begin()` are sent to flash by name in the same script (14 Nov 2026: 5.6 KB). What stays in RAM1 besides the audio path: the USB interrupt with its read and write paths, `memcpy`/`memset`/`str*`, single-precision maths, the 64-bit divide the drums' clock uses, and the core's flash-programming routines, which cannot run from the flash they write.
+- Data that only `loop()` touches is in the PSRAM: the IR load buffers and the lists of IR, model, preset and song files. Not there: anything the audio interrupt reads, which includes the weights of a model being swapped in (the interrupt copies them) and the drum song's events.
+- The shell's `mem` prints these sizes from the running unit, the deepest stack use since boot (`paintStack()` marks the free stack first thing in `setup()`) and how much heap was ever taken. Measured on 14 Nov 2026 after IR and model loads, preset changes, the tuner, a card rescan and the app link check: 17.5 KB of stack, so the next 32 KB step of RAM1 code would still leave 59.5 KB for a stack that needs under 20.
+- The touch screen (`src/Screen.cpp`, `src/Meters.cpp`, `lib/ui`, and the display, touch and SPI libraries) is all in flash and adds nothing to RAM1 code: [SCREEN.md](SCREEN.md).
 - RAM1 code grows in 32 KB steps taken from the stack's space. If "free for local variables" in the build output drops by 32 KB, background code has leaked into RAM1.
 - The amp's history must be a plain global (DTCM); in OCRAM the amp costs about 4 % more CPU.
 - `EXTMEM` memory is not cleared at boot, and a random read from it costs about 0.9 µs: use it block-wise.
@@ -132,5 +136,4 @@ The Teensy 4.1 has several kinds of memory with very different speeds. RAM1 is t
 The hardware-test environments extend `teensy41` and replace the firmware on the board until it is flashed again.
 
 ## Kept for later
-- `previewPreset()`, `cancelPreview()`, `keepPreview()`, `presetSaved()` in `PresetLibrary`: trying a preset before committing to it, for the planned touch screen.
 - Message numbers `FILE_RENAME` and `LOG` and the error `BUSY` in the protocol: reserved, not implemented.
