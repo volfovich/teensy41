@@ -4,7 +4,7 @@ The tracking page: what works and how that is known, what has not been checked, 
 
 ## Where things stand (end of 13 Nov 2026)
 
-**Added on 14 Nov 2026 (not committed when written; the unit runs this firmware):** the memory recap (`mem`, background code to flash, load buffers to the PSRAM); and the touch screen's first version, ([SCREEN.md](SCREEN.md)): 132 host test cases pass, the on-unit protocol check passes. The author wired the display the same day; it is found at boot, calibrated and in use. Waiting for the author there: the verdict on look and touch, and noise by ear.
+**Added on 14 Nov 2026 (not committed when written; the unit runs this firmware):** the memory recap (`mem`, background code to flash, load buffers to the PSRAM); and the touch screen's first version, ([SCREEN.md](SCREEN.md)): 133 host test cases pass, the on-unit protocol check passes. The author wired the display the same day; it is found at boot, calibrated and in use. Waiting for the author there: the verdict on look and touch, and noise by ear.
 
 Work was stopped here at the author's word. Everything described on this page is committed on the branch `i2s-driver-and-hld`, and the unit runs the firmware built from it.
 
@@ -103,7 +103,7 @@ Measured (13 Nov 2026, 32-sample blocks): a typical preset (amp, 4 k IR, reverb)
 
 ### Firmware
 - Try USB MIDI with a controller or a DAW.
-- The touch screen ([SCREEN.md](SCREEN.md)): wired and running since 14 Nov 2026; open: the author's verdict on look and touch, noise by ear. Then the second step: a screen for each block's settings, choosing model and IR, saving as new.
+- The touch screen ([SCREEN.md](SCREEN.md)): wired and running since 14 Nov 2026; with a settings screen for each block since the same day; open: the author's verdict on look and touch, noise by ear. Not there yet: choosing model and IR, saving as new, the master volume.
 - Lower latency, if wanted: a non-uniformly partitioned convolver, then 16-sample blocks again.
 - Later effects: compressor, parametric EQ, more Mod types (tremolo), more reverbs or delays (shimmer, ping-pong, reverse were offered and not chosen); a longer delay or a looper in PSRAM.
 

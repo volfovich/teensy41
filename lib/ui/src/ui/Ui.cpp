@@ -70,13 +70,13 @@ void Ui::target(Pass& p, Rect r, Action a, int arg) {
   }
 }
 
-void Ui::button(Pass& p, Rect r, const char* label, Action a, int arg, uint16_t colour) {
-  const bool down = pressed(a, arg);
-  if (part(p, r, Sig().s(label).i(down).i(colour).h)) {
-    p.canvas->roundRect(r, 6, down ? kPanelHi : (colour ? colour : kPanel));
-    p.canvas->textIn(r.inset(4), kFontMedium, label, colour && !down ? kDark : kText);
+void Ui::button(Pass& p, Rect r, const char* label, Action a, int arg, uint16_t colour, bool enabled) {
+  const bool down = enabled && pressed(a, arg);
+  if (part(p, r, Sig().s(label).i(down).i(colour).i(enabled).h)) {
+    p.canvas->roundRect(r, 6, down ? kPanelHi : (colour && enabled ? colour : kPanel));
+    p.canvas->textIn(r.inset(4), kFontMedium, label, !enabled ? kOff : (colour && !down ? kDark : kText));
   }
-  target(p, r, a, arg);
+  if (enabled) target(p, r, a, arg);
 }
 
 void Ui::arrowButton(Pass& p, Rect r, int dir, Action a) {
@@ -108,6 +108,7 @@ void Ui::layout(Pass& p) {
     case kPresets: layoutPresets(p); break;
     case kTuner: layoutTuner(p); break;
     case kConfirm: layoutConfirm(p); break;
+    case kBlockEdit: layoutBlock(p); break;
   }
 }
 
@@ -160,8 +161,68 @@ void Ui::layoutHome(Pass& p) {
     target(p, r, kBlock, i);
   }
 
-  button(p, R(4, 210, 154, 30), "TUNER", kOpenTuner);
-  button(p, R(162, 210, 154, 30), "PRESETS", kOpenList);
+  button(p, R(4, 210, 101, 30), "TUNER", kOpenTuner);
+  button(p, R(109, 210, 102, 30), "SAVE", kSaveNow, 0, kAmber, edited);  // only with something to save
+  button(p, R(215, 210, 101, 30), "PRESETS", kOpenList);
+}
+
+int Ui::shownSettings(int* idx) {
+  int n = 0;
+  SettingView v;
+  for (int i = 0; i < kBlocks[editBlock_].settingCount; i++)
+    if (m_.setting(editBlock_, i, &v)) idx[n++] = i;
+  return n;
+}
+
+// A block's settings: four to a page, each with minus and plus (holding repeats, then goes
+// faster); a toggle also flips by a tap on its name.
+void Ui::layoutBlock(Pass& p) {
+  const BlockDef& b = kBlocks[editBlock_];
+  const bool on = m_.blockOn(editBlock_);
+  button(p, R(4, 2, 64, 28), "BACK", kEditBack);
+  if (part(p, R(72, 2, 160, 28), Sig().s(b.name).h)) p.canvas->textIn(R(72, 2, 160, 28), kFontMedium, b.name, b.colour);
+  button(p, R(236, 2, 80, 28), on ? "ON" : "OFF", kEditOn, 0, on ? b.colour : 0);
+
+  int idx[kMaxBlockSettings];
+  const int count = shownSettings(idx), pages = count ? (count + kSettingsPerPage - 1) / kSettingsPerPage : 1;
+  if (editPage_ >= pages) editPage_ = pages - 1;
+  for (int row = 0; row < kSettingsPerPage; row++) {
+    const int n = editPage_ * kSettingsPerPage + row, y = 34 + row * 43;
+    const Rect minus = R(4, y, 48, 40), mid = R(56, y, 208, 40), plus = R(268, y, 48, 40);
+    SettingView v;
+    if (n >= count || !m_.setting(editBlock_, idx[n], &v)) {
+      part(p, minus, 0);  // the same parts on every page
+      part(p, mid, 0);
+      part(p, plus, 0);
+      continue;
+    }
+    const int i = idx[n];
+    button(p, minus, "-", kMinus, i);
+    const bool down = v.toggle && pressed(kFlip, i);
+    if (part(p, mid, Sig().i(i).s(v.label).s(v.text).i((int)(v.fraction * 192.0f)).i(v.bar).i(v.toggle && v.on).i(down).h)) {
+      p.canvas->roundRect(mid, 6, down ? kPanelHi : kPanel);
+      const int textW = Canvas::textWidth(kFontMedium, v.text);
+      const Rect line = R(mid.x + 8, mid.y + (v.bar ? 0 : 3), mid.w - 16, 34);
+      p.canvas->textIn(R(line.x, line.y, line.w - textW - 8, line.h), kFontSmall, v.label, kDim, kLeft);
+      p.canvas->textIn(line, kFontMedium, v.text, v.toggle && !v.on ? kDim : kText, kRight);
+      if (v.bar) {
+        const float f = v.fraction < 0.0f ? 0.0f : (v.fraction > 1.0f ? 1.0f : v.fraction);
+        p.canvas->fill(R(mid.x + 8, mid.y + 32, 192, 3), kOff);
+        p.canvas->fill(R(mid.x + 8, mid.y + 32, (int)(f * 192.0f + 0.5f), 3), b.colour);
+      }
+    }
+    if (v.toggle) target(p, mid, kFlip, i);
+    button(p, plus, "+", kPlus, i);
+  }
+  // More than a page: up, where we are, down.
+  const bool more = pages > 1;
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%d / %d", editPage_ + 1, pages);
+  if (more) arrowButton(p, R(4, 206, 100, 34), 2, kEditUp);
+  else part(p, R(4, 206, 100, 34), 0);
+  if (part(p, R(108, 206, 104, 34), more ? Sig().s(buf).h : 0) && more) p.canvas->textIn(R(108, 206, 104, 34), kFontSmall, buf, kDim);
+  if (more) arrowButton(p, R(216, 206, 100, 34), 3, kEditDown);
+  else part(p, R(216, 206, 100, 34), 0);
 }
 
 void Ui::layoutPresets(Pass& p) {
@@ -325,6 +386,26 @@ void Ui::fire(Action a, int arg) {
       go(kHome);
       break;
     case kCancel: go(back_); break;
+    case kSaveNow:
+      if (m_.presetEdited()) m_.save();
+      break;
+    case kEditBack: go(kHome); break;
+    case kEditOn: m_.toggleBlock(editBlock_); break;
+    case kMinus: m_.settingStep(editBlock_, arg, repeats_ > 10 ? -5 : -1); break;
+    case kPlus: m_.settingStep(editBlock_, arg, repeats_ > 10 ? 5 : 1); break;
+    case kFlip: {
+      SettingView v;
+      if (m_.setting(editBlock_, arg, &v)) m_.settingStep(editBlock_, arg, v.on ? -1 : 1);
+      break;
+    }
+    case kEditUp:
+      if (editPage_ > 0) editPage_--;
+      break;
+    case kEditDown: {
+      int idx[kMaxBlockSettings];
+      if ((editPage_ + 1) * kSettingsPerPage < shownSettings(idx)) editPage_++;
+      break;
+    }
     case kNone: break;
   }
 }
@@ -343,6 +424,7 @@ void Ui::touch(bool down, int x, int y, uint32_t ms) {
       held_ = true;
       inside_ = p.action != kNone;
       repeated_ = false;
+      repeats_ = 0;
       heldAction_ = p.action;
       heldArg_ = p.arg;
       heldRect_ = p.rect;
@@ -369,6 +451,21 @@ void Ui::tick(uint32_t ms) {
     repeatMs_ = ms;
     repeated_ = true;
     fire(heldAction_, heldArg_);
+  }
+  // Holding minus or plus: after 0.4 s ten single steps a second, after the tenth five at a time.
+  if (held_ && inside_ && (heldAction_ == kMinus || heldAction_ == kPlus) && screen_ == kBlockEdit &&
+      ms - pressMs_ >= 400 && ms - repeatMs_ >= 100) {
+    repeatMs_ = ms;
+    repeated_ = true;
+    repeats_++;
+    fire(heldAction_, heldArg_);
+  }
+  // Holding a block's tile for half a second opens its settings (a tap switches it).
+  if (held_ && inside_ && heldAction_ == kBlock && screen_ == kHome && !repeated_ && ms - pressMs_ >= 500) {
+    repeated_ = true;
+    editBlock_ = heldArg_;
+    editPage_ = 0;
+    go(kBlockEdit);
   }
   if (ms - meterMs_ >= 50) {
     // The meters: up at once, down 1.5 dB a reading (30 dB a second).

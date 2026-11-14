@@ -50,18 +50,76 @@ static bool g_active = false;   // the screens are drawn and touch is read
 // ---- The unit as the screens see it ----
 static float toDb(float lin) { return lin > 1e-6f ? 20.0f * log10f(lin) : -120.0f; }
 
+// A setting by its name in protocol/blocks.json: the serial key, or "@Name" for one
+// without a key. -1 if the table has none (a block definition newer than the firmware).
+static int findSetting(const char* ref) {
+  for (int id = 0; id < ui::kValueCount; id++) {
+    const ui::ParamDef& d = ui::paramDef(id);
+    if (ref[0] == '@' ? !strcmp(d.name, ref + 1) : (d.key && !strcmp(d.key, ref))) return id;
+  }
+  return -1;
+}
+
+// Saved settings change quietly, as from a MIDI controller; the others (the drums' play
+// switch, the song's loop) through setParam(), which they need.
+static void changeSetting(int id, int v) {
+  if (id < ui::kParamCount) setParamQuiet(id, v);
+  else setParam(id, v);
+}
+
 struct UnitModel : UiModel {
   int blockParam[kBlockCount];
+  int16_t settingId[kBlockCount][kMaxBlockSettings], onlyId[kBlockCount][kMaxBlockSettings];
 
   void begin() {
-    // Each block's switch by its serial key, as protocol/blocks.json names it.
     for (int b = 0; b < kBlockCount; b++) {
-      blockParam[b] = -1;
-      for (int id = 0; id < ui::kValueCount; id++) {
-        const char* key = ui::paramDef(id).key;
-        if (key && !strcmp(key, kBlocks[b].onKey)) blockParam[b] = id;
+      blockParam[b] = findSetting(kBlocks[b].onKey);
+      for (int i = 0; i < kBlocks[b].settingCount; i++) {
+        const BlockSetting& st = kBlocks[b].settings[i];
+        settingId[b][i] = (int16_t)findSetting(st.ref);
+        onlyId[b][i] = (int16_t)(st.onlyRef ? findSetting(st.onlyRef) : -1);
       }
     }
+  }
+  bool setting(int b, int i, SettingView* v) override {
+    const int id = settingId[b][i];
+    if (id < 0) return false;
+    const BlockSetting& st = kBlocks[b].settings[i];
+    if (st.onlyRef) {
+      // Shown only while the type or mode it belongs to is chosen ("|hall|plate|").
+      const ui::ParamDef& o = ui::paramDef(onlyId[b][i]);
+      const int ov = onlyId[b][i] >= 0 ? getParam(onlyId[b][i]) : -1;
+      if (ov < 0 || !o.choices || ov > o.max) return false;
+      char want[24];
+      snprintf(want, sizeof(want), "|%s|", o.choices[ov]);
+      if (!strstr(st.onlyChoices, want)) return false;
+    }
+    const ui::ParamDef& d = ui::paramDef(id);
+    // The short label, unless another setting of the block has the same one ("Volume" of
+    // the drums and of the bass): then the full name.
+    const char* label = d.label;
+    for (int j = 0; j < kBlocks[b].settingCount; j++)
+      if (j != i && settingId[b][j] >= 0 && !strcmp(ui::paramDef(settingId[b][j]).label, d.label)) label = d.name;
+    strlcpy(v->label, label, sizeof(v->label));
+    paramText(id, v->text, sizeof(v->text));
+    int lo, hi;
+    paramLimits(id, &lo, &hi);
+    const int val = getParam(id);
+    v->toggle = d.unit == ui::Unit::kOnOff;
+    v->on = val != 0;
+    v->bar = !v->toggle && !d.choices && d.unit != ui::Unit::kName && hi > lo;
+    v->fraction = hi > lo ? (float)(val - lo) / (float)(hi - lo) : 0.0f;
+    return true;
+  }
+  void settingStep(int b, int i, int steps) override {
+    const int id = settingId[b][i];
+    if (id < 0) return;
+    const ui::ParamDef& d = ui::paramDef(id);
+    int lo, hi;
+    paramLimits(id, &lo, &hi);
+    int v = d.unit == ui::Unit::kOnOff ? (steps > 0) : getParam(id) + steps * (d.step ? d.step : 1);
+    v = v < lo ? lo : (v > hi ? hi : v);
+    if (v != getParam(id)) changeSetting(id, v);
   }
   int presetCount() override { return ::presetCount(); }
   int presetCurrent() override { return ::presetCurrent(); }
@@ -77,10 +135,7 @@ struct UnitModel : UiModel {
   bool blockOn(int b) override { return blockParam[b] >= 0 && (getParam(blockParam[b]) != 0) != kBlocks[b].onInverted; }
   void toggleBlock(int b) override {
     const int id = blockParam[b];
-    if (id < 0) return;
-    // As a MIDI controller does: saved settings quietly, the others (the drums) with their message.
-    if (id < ui::kParamCount) setParamQuiet(id, !getParam(id));
-    else setParam(id, !getParam(id));
+    if (id >= 0) changeSetting(id, !getParam(id));
   }
   float inputDb() override { return toDb(meterInputPeak(kMeterScreen)); }
   float outputDb() override { return toDb(meterOutputPeak(kMeterScreen)); }
@@ -327,14 +382,14 @@ void serviceScreen() {
 
 // ---- Shell ----
 void screenCommand(const char* arg) {
-  static const char* const kScreens[] = {"home", "presets", "tuner", "question"};
+  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings"};
   if (!arg || !*arg) {
     Serial.printf("Touch screen: %s, %s (%s), touch %s, showing %s.\n", g_present ? "display found" : "no display found",
                   g_active ? "on" : "off", g_rec.mode == kAuto ? "automatic" : "forced",
                   g_rec.calibrated ? "calibrated" : "not calibrated", kScreens[g_ui.screen()]);
     Serial.println("  tft on | off | auto   draw and read touch always, never, or when a display is found at boot\n"
                    "  tft cal               calibrate the touch panel (two crosses)\n"
-                   "  tft tap <x> <y>       debug: a tap at a screen point, as a finger would\n"
+                   "  tft tap <x> <y> [ms]  debug: a touch at a screen point, as a finger would (80 ms, or as given)\n"
                    "  tft touch             debug: touch readings for 10 s\n"
                    "  tft bench meters|full|off  debug: draw to measure what drawing costs the audio");
     return;
@@ -350,8 +405,9 @@ void screenCommand(const char* arg) {
   } else if (!strncmp(arg, "tap ", 4)) {
     char* end;
     g_tapX = (int)strtol(arg + 4, &end, 10);
-    g_tapY = (int)strtol(end, nullptr, 10);
-    g_tapUntil = millis() + 80;
+    g_tapY = (int)strtol(end, &end, 10);
+    const long ms = strtol(end, nullptr, 10);
+    g_tapUntil = millis() + (ms > 0 && ms <= 10000 ? ms : 80);
     if (!g_active) Serial.println("The touch screen is off ('tft on').");
   } else if (!strcmp(arg, "touch")) {
     g_bench = kOff;

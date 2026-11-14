@@ -19,10 +19,23 @@ def rgb565(colour):
 
 def make():
     d = json.load(open(SRC))
-    rows = []
+    rows, tables, most = [], [], 0
     for b in d["blocks"] + [d["lane"]]:
-        rows.append('    {"%s", "%s", 0x%04X, "%s", %s},' % (
-            b["id"], b["short"], rgb565(b["colour"]), b["on"], "true" if b.get("onInverted") else "false"))
+        only = b.get("only", {})
+        entries = []
+        for section in b["sections"]:
+            for ref in section["settings"]:
+                if ref in only:
+                    (other, choices), = only[ref].items()
+                    entries.append('    {"%s", "%s", "|%s|"},' % (ref, other, "|".join(choices)))
+                else:
+                    entries.append('    {"%s", nullptr, nullptr},' % ref)
+        most = max(most, len(entries))
+        name = "k%sSettings" % b["id"].capitalize()
+        tables.append("static const BlockSetting %s[] = {\n%s\n};" % (name, "\n".join(entries)))
+        rows.append('    {"%s", "%s", "%s", 0x%04X, "%s", %s, %s, %d},' % (
+            b["id"], b["short"], b["name"], rgb565(b["colour"]), b["on"], "true" if b.get("onInverted") else "false",
+            name, len(entries)))
     m = d["meters"]
     return """// BlocksGen.h - made by tools/make_blocks_header.py from protocol/blocks.json; do not edit.
 #pragma once
@@ -31,24 +44,38 @@ def make():
 
 namespace ui_tft {
 
+// A setting of a block: its serial key, or "@Name" for one without a key. With onlyRef the
+// setting is shown only while that other setting has one of onlyChoices ("|a|b|").
+struct BlockSetting {
+  const char* ref;
+  const char* onlyRef;
+  const char* onlyChoices;
+};
+
 struct BlockDef {
   const char* id;
   const char* label;   // the tile's text
+  const char* name;    // the editor's title
   uint16_t colour;     // RGB565
   const char* onKey;   // the serial key of the block's switch
   bool onInverted;     // the switch is a bypass
+  const BlockSetting* settings;
+  int settingCount;
 };
+
+%s
 
 static const BlockDef kBlocks[] = {
 %s
 };
 static const int kBlockCount = %d;
+static const int kMaxBlockSettings = %d;
 
 static const float kMeterFloorDb = %sf, kMeterWarnDb = %sf, kMeterHotDb = %sf;
 static const uint16_t kMeterOk = 0x%04X, kMeterWarn = 0x%04X, kMeterHot = 0x%04X;
 
 }  // namespace ui_tft
-""" % ("\n".join(rows), len(rows), float(m["floorDb"]), float(m["warnDb"]), float(m["hotDb"]),
+""" % ("\n\n".join(tables), "\n".join(rows), len(rows), most, float(m["floorDb"]), float(m["warnDb"]), float(m["hotDb"]),
        rgb565(m["ok"]), rgb565(m["warn"]), rgb565(m["hot"]))
 
 

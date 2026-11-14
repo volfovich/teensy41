@@ -4,21 +4,24 @@ The unit's own screen as it is built: a 2.8-inch ILI9341 display (320 x 240 in l
 
 **State on 14 Nov 2026: the display is wired and running.** The author wired it and reported it works; the unit finds it at boot, touch was calibrated on the glass, and presets were changed from it. The screens are also checked by host tests and as pictures, and on the unit by taps sent over the shell (`tft tap`). The first noise reading is under "What it costs"; what the author has not yet said is under "What is not checked".
 
-## What it shows (first version: playing)
+## What it shows
 
 | Home | Preset list |
 | --- | --- |
 | ![home](img/screen/home_edited.png) | ![presets](img/screen/presets.png) |
-| Tuner | Unsaved changes |
-| ![tuner](img/screen/tuner_flat.png) | ![question](img/screen/confirm.png) |
+| A block's settings | Tuner |
+| ![block](img/screen/block_delay.png) | ![tuner](img/screen/tuner_flat.png) |
 
-- **Home:** input and output meters and the CPU load; the preset's number and name with previous and next (holding repeats); the chain as tiles in the app's colours, lit while the block is on, a tap switches it; Tuner and Presets.
+(The settings picture comes from the host test's made-up unit, which labels settings by their keys; the unit shows the table's labels: Type, Mix, Time, Repeats.)
+
+- **Home:** input and output meters and the CPU load; the preset's number and name with previous and next (holding repeats); the chain as tiles in the app's colours, lit while the block is on. A tap on a tile switches the block, **holding it for half a second opens its settings**. Tuner, Save (lit while the preset is edited: writes the sound over the recalled preset) and Presets.
+- **A block's settings** (added 14 Nov 2026): the settings `protocol/blocks.json` gives the block, four to a page, each with minus and plus. A tap is one step of the setting's own size (the table's `step`); holding repeats ten times a second and after the tenth goes five steps at a time. A toggle also flips by a tap on its name. Settings that do not apply to the chosen type or mode are left out, as in the app (the `only` rules). ON / OFF at the top is the block's switch. Labels are the table's short ones, or the full name where two in a block share one (the drums' and the bass's Volume).
 - **Preset list:** five to a page. A tap plays a preset without committing to it; OK keeps it, Back returns to the sound from before, edits included (`previewPreset`, `keepPreview`, `cancelPreview` in `src/PresetLibrary.h`).
 - **Unsaved changes:** leaving an edited preset (previous, next, or OK in the list) asks first: Save, Discard or Cancel.
 - **Tuner:** note, a needle (green within 3 cents) and the frequency; the guitar is muted while it is open, as with the shell's and the app's tuner.
 - A change made elsewhere (the app, MIDI, the shell) shows by itself: every pass the screen compares what it would show now with what is on the glass.
 
-Not in this version: editing a block's settings, choosing a model or an IR, saving as a new preset, the drums' settings.
+Not there: choosing a model or an IR, saving as a new preset, renaming and deleting presets, the master volume, the blocks' notes.
 
 ## How it is built
 
@@ -62,5 +65,5 @@ writes each screen as a PNG to `.pio/ui/`, drawn by the code the unit runs, with
 
 - The author's verdict on the picture and the touch: colours, sharpness, whether the 40 px tiles are comfortable to hit, anything to change in the layout.
 - **Noise by ear** with a high-gain preset, and a reading with the guitar plugged in and its volume down (the measurement above did not record what was at the input). Whether the backlight on its own adds noise was not separated from the bus.
-- The tuner screen and the unsaved-changes question on the glass (run by injected taps only).
+- The tuner screen, the unsaved-changes question and the blocks' settings screens on the glass (run by injected touches only: `tft tap <x> <y> <ms>`).
 - Possible later: sending strips by DMA, which would keep the bus busy while the audio runs (a whole screen in about 45 ms instead of 150).

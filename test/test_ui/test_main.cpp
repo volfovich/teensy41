@@ -77,6 +77,58 @@ struct FakeModel : UiModel {
     log += "toggle" + std::to_string(b) + " ";
     on[b] = !on[b];
   }
+  // Settings: every one 0 .. 100 in steps of 1, starting at 50, except the types and modes
+  // (choices by name) and a few toggles. The rules for what is shown come from kBlocks.
+  int val[kBlockCount][kMaxBlockSettings];
+  FakeModel() {
+    for (auto& b : val)
+      for (int& v : b) v = 50;
+    for (int b = 0; b < kBlockCount; b++)
+      for (int i = 0; i < kBlocks[b].settingCount; i++)
+        if (choices(kBlocks[b].settings[i].ref) || isToggle(kBlocks[b].settings[i].ref)) val[b][i] = 0;
+  }
+  static const char* const* choices(const char* ref) {
+    static const char* const dtype[] = {"digital", "tape", "analog", nullptr};
+    static const char* const rmode[] = {"hall", "gated", "plate", "spring", nullptr};
+    static const char* const mtype[] = {"chorus", "flanger", "ce2", "phase90", nullptr};
+    static const char* const gtype[] = {"nam", "hard", nullptr};
+    return !strcmp(ref, "dtype") ? dtype : (!strcmp(ref, "rmode") ? rmode : (!strcmp(ref, "mod type") ? mtype : (!strcmp(ref, "gate type") ? gtype : nullptr)));
+  }
+  static bool isToggle(const char* ref) {
+    return !strcmp(ref, "amp cal") || !strcmp(ref, "lim look") || !strcmp(ref, "drum train") || !strcmp(ref, "bass");
+  }
+  bool setting(int b, int i, SettingView* v) override {
+    const BlockSetting& st = kBlocks[b].settings[i];
+    if (st.onlyRef) {
+      for (int j = 0; j < kBlocks[b].settingCount; j++)
+        if (!strcmp(kBlocks[b].settings[j].ref, st.onlyRef)) {
+          const std::string want = std::string("|") + choices(st.onlyRef)[val[b][j]] + "|";
+          if (!strstr(st.onlyChoices, want.c_str())) return false;
+        }
+    }
+    snprintf(v->label, sizeof(v->label), "%s", st.ref);
+    v->toggle = isToggle(st.ref);
+    v->on = val[b][i] != 0;
+    const char* const* c = choices(st.ref);
+    v->bar = !v->toggle && !c;
+    v->fraction = val[b][i] / 100.0f;
+    if (c) snprintf(v->text, sizeof(v->text), "%s", c[val[b][i]]);
+    else if (v->toggle) snprintf(v->text, sizeof(v->text), "%s", v->on ? "ON" : "OFF");
+    else snprintf(v->text, sizeof(v->text), "%d%%", val[b][i]);
+    return true;
+  }
+  void settingStep(int b, int i, int steps) override {
+    const char* ref = kBlocks[b].settings[i].ref;
+    int hi = 100;
+    if (isToggle(ref)) hi = 1;
+    if (const char* const* c = choices(ref)) {
+      hi = -1;
+      while (c[hi + 1]) hi++;
+    }
+    int v = val[b][i] + steps;
+    val[b][i] = v < 0 ? 0 : (v > hi ? hi : v);
+    edited = true;
+  }
   float inputDb() override { return inDb; }
   float outputDb() override { return outDb; }
   int cpuPercent() override { return cpu; }
@@ -351,6 +403,98 @@ void test_preset_list_with_unsaved_edits() {
   TEST_ASSERT_TRUE(m.edited);
 }
 
+// Places on a block's settings screen.
+const int kMinusX = 28, kMidX = 160, kPlusX = 292, kEditTopY = 16, kEditBackX = 36, kEditOnX = 276;
+int setY(int row) { return 34 + row * 43 + 20; }
+void hold(Ui& ui, int x, int y, int ms) {
+  for (int t = 0; t <= ms; t += 10, g_ms += 10) ui.touch(true, x, y, g_ms), ui.tick(g_ms);
+  for (int i = 0; i < 8; i++, g_ms += 10) ui.touch(false, 0, 0, g_ms), ui.tick(g_ms);
+}
+
+void test_block_settings() {
+  FakeModel m;
+  Ui ui(m);
+  const int kDelay = 5;
+  // Holding a tile opens its settings and does not switch the block; a tap still switches.
+  hold(ui, tileX(kDelay), tileY(kDelay), 700);
+  TEST_ASSERT_EQUAL_INT(Ui::kBlockEdit, ui.screen());
+  TEST_ASSERT_EQUAL_INT(kDelay, ui.editedBlock());
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  TEST_ASSERT_FALSE(m.on[kDelay]);
+
+  // Rows: dtype, dmix, dtime, dfb. Plus and minus step once a tap.
+  tap(ui, kPlusX, setY(1));
+  tap(ui, kPlusX, setY(1));
+  tap(ui, kMinusX, setY(2));
+  TEST_ASSERT_EQUAL_INT(52, m.val[kDelay][1]);
+  TEST_ASSERT_EQUAL_INT(49, m.val[kDelay][2]);
+  TEST_ASSERT_TRUE(m.edited);
+
+  // Holding plus: single steps from 0.4 s every 0.1 s, five at a time after the tenth.
+  hold(ui, kPlusX, setY(3), 900);  // steps at 400 .. 900 ms: six
+  TEST_ASSERT_EQUAL_INT(56, m.val[kDelay][3]);
+  m.val[kDelay][3] = 0;
+  hold(ui, kPlusX, setY(3), 1900);  // sixteen repeats: ten single, six of five
+  TEST_ASSERT_EQUAL_INT(40, m.val[kDelay][3]);
+
+  // The type (row 0) changes which settings there are: digital has nine (three pages),
+  // analog six (two pages); the ones that do not apply are gone, the rest close up.
+  int painted;
+  Glass g;
+  g.paint(ui);
+  tap(ui, 260, 222);  // down
+  tap(ui, 260, 222);  // down: page 3 of 3 (dera alone)
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT_MESSAGE(51, m.val[kDelay][8], "page 3 shows dera in its first row");
+  tap(ui, 50, 222);  // up
+  tap(ui, 50, 222);
+  tap(ui, kPlusX, setY(0));
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT(2, m.val[kDelay][0]);  // analog
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT_MESSAGE(2, m.val[kDelay][0], "the last choice is the end");
+  tap(ui, 260, 222);  // page 2 of 2: dtone, dmod
+  tap(ui, kPlusX, setY(1));
+  TEST_ASSERT_EQUAL_INT(51, m.val[kDelay][5]);
+  tap(ui, kPlusX, setY(2));  // nothing in this row
+  tap(ui, 260, 222);         // no third page now
+  tap(ui, kPlusX, setY(1));
+  TEST_ASSERT_EQUAL_INT(52, m.val[kDelay][5]);
+  g.paint(ui);
+  painted = g.pixels;
+  g.paint(ui);
+  TEST_ASSERT_TRUE(painted > 0 && g.pixels == 0);
+
+  // ON / OFF at the top switches the block; BACK returns home.
+  m.log.clear();
+  tap(ui, kEditOnX, kEditTopY);
+  TEST_ASSERT_EQUAL_STRING("toggle5 ", m.log.c_str());
+  tap(ui, kEditBackX, kEditTopY);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+
+  // A toggle: plus is on, minus is off, a tap on its name flips. (The amp's 7th: amp cal.)
+  hold(ui, tileX(0), tileY(0), 700);
+  tap(ui, 260, 222);
+  TEST_ASSERT_EQUAL_INT(0, m.val[0][6]);
+  tap(ui, kMidX, setY(2));
+  TEST_ASSERT_EQUAL_INT(1, m.val[0][6]);
+  tap(ui, kPlusX, setY(2));
+  TEST_ASSERT_EQUAL_INT(1, m.val[0][6]);
+  tap(ui, kMinusX, setY(2));
+  TEST_ASSERT_EQUAL_INT(0, m.val[0][6]);
+  tap(ui, kMidX, setY(1));  // a number: a tap on its name does nothing
+  TEST_ASSERT_EQUAL_INT(50, m.val[0][5]);
+  tap(ui, kEditBackX, kEditTopY);
+
+  // Home: SAVE works while there is something to save, and only then.
+  m.log.clear();
+  TEST_ASSERT_TRUE(m.edited);
+  tap(ui, 160, 224);
+  TEST_ASSERT_EQUAL_STRING("save ", m.log.c_str());
+  tap(ui, 160, 224);
+  TEST_ASSERT_EQUAL_STRING("save ", m.log.c_str());
+}
+
 void test_tuner_opens_and_closes() {
   FakeModel m;
   Ui ui(m);
@@ -451,6 +595,23 @@ void test_write_pictures() {
     g.paint(ui);
     g.save("confirm");
   }
+  {
+    FakeModel m;
+    m.on[5] = true;
+    m.val[5][1] = 25;
+    m.val[5][3] = 35;
+    Ui ui(m);
+    hold(ui, tileX(5), tileY(5), 700);
+    Glass g;
+    g.paint(ui);
+    g.save("block_delay");
+    tap(ui, kEditBackX, kEditTopY);
+    hold(ui, tileX(0), tileY(0), 700);
+    tap(ui, 260, 222);
+    tap(ui, kMidX, setY(2));
+    g.paint(ui);
+    g.save("block_amp_page2");
+  }
 }
 
 }  // namespace
@@ -464,6 +625,7 @@ int main() {
   RUN_TEST(test_leaving_an_edited_preset_asks);
   RUN_TEST(test_preset_list_previews_keeps_and_goes_back);
   RUN_TEST(test_preset_list_with_unsaved_edits);
+  RUN_TEST(test_block_settings);
   RUN_TEST(test_tuner_opens_and_closes);
   RUN_TEST(test_long_names_fit);
   RUN_TEST(test_blocks_header_matches_blocks_json);

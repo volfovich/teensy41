@@ -1,5 +1,5 @@
-// Ui.h - the touch screen's screens: home (preset, chain, meters), preset list, tuner and
-// the save / discard question. Portable: it sees the unit only through UiModel, takes touch
+// Ui.h - the touch screen's screens: home (preset, chain, meters), preset list, a block's
+// settings, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
 // (src/Screen.cpp) and the host tests use the same code.
 //
@@ -26,6 +26,16 @@ struct TunerView {
   float hz = 0.0f;
 };
 
+// One setting of a block as its editor shows it.
+struct SettingView {
+  char label[24];        // "Mix"
+  char text[24];         // the value: "30%", "hall", "ON"
+  float fraction = 0.0f; // where the value is in its range, 0 .. 1
+  bool toggle = false;   // an on / off setting
+  bool on = false;       // a toggle's value
+  bool bar = false;      // a number with a range worth showing (not a toggle or a choice)
+};
+
 // What the screen needs from the unit. Preset indices are places in the list, 0-based.
 struct UiModel {
   virtual ~UiModel() {}
@@ -42,6 +52,11 @@ struct UiModel {
   virtual bool save() = 0;
   virtual bool blockOn(int block) = 0;           // block: index into kBlocks
   virtual void toggleBlock(int block) = 0;
+  // Setting i of a block (i: index into kBlocks[block].settings). False if it does not
+  // apply now (a dial of another mode or type) and is not shown.
+  virtual bool setting(int block, int i, SettingView* v) = 0;
+  // Moves it by a number of its own steps (clamped to its range); a toggle goes on (> 0) or off.
+  virtual void settingStep(int block, int i, int steps) = 0;
   virtual float inputDb() = 0;                   // peaks since the last call
   virtual float outputDb() = 0;
   virtual int cpuPercent() = 0;
@@ -51,8 +66,9 @@ struct UiModel {
 
 class Ui {
  public:
-  enum Screen { kHome, kPresets, kTuner, kConfirm };
-  static const int kRowsPerPage = 5;
+  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit };
+  static const int kRowsPerPage = 5;   // the preset list
+  static const int kSettingsPerPage = 4;
 
   explicit Ui(UiModel& model) : m_(model) {}
 
@@ -67,10 +83,12 @@ class Ui {
   void invalidate() { drawnCount_ = -1; }
 
   Screen screen() const { return screen_; }
+  int editedBlock() const { return editBlock_; }
 
  private:
   enum Action { kNone, kPrev, kNext, kOpenList, kBlock, kOpenTuner, kCloseTuner, kRow, kPageUp, kPageDown,
-                kListBack, kListOk, kSave, kDiscard, kCancel };
+                kListBack, kListOk, kSave, kDiscard, kCancel, kSaveNow, kEditBack, kEditOn, kMinus, kPlus, kFlip,
+                kEditUp, kEditDown };
   enum Mode { kMeasure, kPaint, kHit };
   struct Pass {
     Mode mode;
@@ -91,7 +109,7 @@ class Ui {
   bool part(Pass& p, Rect r, uint32_t sig);
   void target(Pass& p, Rect r, Action a, int arg = 0);
   bool pressed(Action a, int arg = 0) const { return held_ && inside_ && heldAction_ == a && heldArg_ == arg; }
-  void button(Pass& p, Rect r, const char* label, Action a, int arg = 0, uint16_t colour = 0);
+  void button(Pass& p, Rect r, const char* label, Action a, int arg = 0, uint16_t colour = 0, bool enabled = true);
   void arrowButton(Pass& p, Rect r, int dir, Action a);
   void meter(Pass& p, int x, int y, int labelW, const char* label, float db);
 
@@ -100,6 +118,9 @@ class Ui {
   void layoutPresets(Pass& p);
   void layoutTuner(Pass& p);
   void layoutConfirm(Pass& p);
+  void layoutBlock(Pass& p);
+  // The settings of the edited block that are shown now; returns how many.
+  int shownSettings(int* idx);
 
   void fire(Action a, int arg);
   void step(int dir);
@@ -131,6 +152,8 @@ class Ui {
   // Preset list.
   int page_ = 0;
   bool previewing_ = false, editedAtOpen_ = false;
+  // A block's settings.
+  int editBlock_ = 0, editPage_ = 0, repeats_ = 0;
   // The question.
   bool askKeep_ = false;
   int askTarget_ = -1;

@@ -54,7 +54,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | `tft` | The touch screen: whether a display was found, on or off, the screen shown, and its commands |
 | `tft on`, `tft off`, `tft auto` | Draw and read touch always, never, or when a display is found at boot (the default); kept |
 | `tft cal` | Calibrate the touch panel: touch two crosses |
-| `tft tap <x> <y>` | Debug: a tap at a screen point (320 x 240), as a finger would |
+| `tft tap <x> <y> [ms]` | Debug: a touch at a screen point (320 x 240), as a finger would: 80 ms, or as long as given (a hold) |
 | `tft touch` | Debug: touch readings for 10 s |
 | `tft bench meters`, `full`, `off` | Debug: draw continuously to measure what drawing costs the audio (read it with `s`) |
 | `mem` | Memory: RAM1 code and what is left of its 32 KB step, RAM1 data, deepest stack use since boot, RAM2 and its heap, PSRAM, flash |
