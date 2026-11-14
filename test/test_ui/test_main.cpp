@@ -97,6 +97,11 @@ struct FakeModel : UiModel {
   static bool isToggle(const char* ref) {
     return !strcmp(ref, "amp cal") || !strcmp(ref, "lim look") || !strcmp(ref, "drum train") || !strcmp(ref, "bass");
   }
+  static int find(int b, const char* ref) {
+    for (int i = 0; i < kBlocks[b].settingCount; i++)
+      if (!strcmp(kBlocks[b].settings[i].ref, ref)) return i;
+    return -1;
+  }
   bool setting(int b, int i, SettingView* v) override {
     const BlockSetting& st = kBlocks[b].settings[i];
     if (st.onlyRef) {
@@ -114,6 +119,7 @@ struct FakeModel : UiModel {
     v->fraction = val[b][i] / 100.0f;
     if (c) snprintf(v->text, sizeof(v->text), "%s", c[val[b][i]]);
     else if (v->toggle) snprintf(v->text, sizeof(v->text), "%s", v->on ? "ON" : "OFF");
+    else if (!strcmp(st.ref, "drum song")) snprintf(v->text, sizeof(v->text), "%s", val[b][i] == 50 ? "off" : "Blues 12 bar");
     else snprintf(v->text, sizeof(v->text), "%d%%", val[b][i]);
     return true;
   }
@@ -142,6 +148,8 @@ struct FakeModel : UiModel {
     edited = true;
     return true;
   }
+  int tempoNow = 100;
+  int drumTempoNow() override { return tempoNow; }
   float inputDb() override { return inDb; }
   float outputDb() override { return outDb; }
   int cpuPercent() override { return cpu; }
@@ -270,8 +278,7 @@ void test_home_steps_presets_and_toggles_blocks() {
   m.log.clear();
   tap(ui, tileX(1), tileY(1));
   tap(ui, tileX(8), tileY(8));
-  tap(ui, tileX(9), tileY(8));  // the wide tile's right half
-  TEST_ASSERT_EQUAL_STRING("toggle1 toggle8 toggle8 ", m.log.c_str());
+  TEST_ASSERT_EQUAL_STRING("toggle1 toggle8 ", m.log.c_str());
   m.log.clear();
   tap(ui, 160, 119);  // between the name and the tiles
   tap(ui, 65, 140);   // between two tiles
@@ -552,6 +559,58 @@ void test_choosing_a_model_and_an_ir() {
   TEST_ASSERT_EQUAL_INT(51, m.val[3][0]);
 }
 
+void test_speed_trainer_is_one_tap_from_home() {
+  FakeModel m;
+  Ui ui(m);
+  const int kDrums = kBlockCount - 1, kTrainX = tileX(9), kTrainY = tileY(8);
+  const int on = FakeModel::find(kDrums, "drum train"), bpm = FakeModel::find(kDrums, "bpm");
+  const int step = FakeModel::find(kDrums, "train step"), every = FakeModel::find(kDrums, "train every"),
+            target = FakeModel::find(kDrums, "train target");
+  TEST_ASSERT_TRUE(on >= 0 && bpm >= 0 && step >= 0 && every >= 0 && target >= 0);
+
+  tap(ui, kTrainX, kTrainY);
+  TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
+  TEST_ASSERT_EQUAL_STRING_MESSAGE("", m.log.c_str(), "opening it changes nothing");
+
+  // Its four rows on one page: start tempo, step, every, target.
+  tap(ui, kPlusX, setY(0));
+  tap(ui, kMinusX, setY(1));
+  tap(ui, kPlusX, setY(2));
+  tap(ui, kPlusX, setY(3));
+  hold(ui, kPlusX, setY(3), 900);
+  TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][bpm]);
+  TEST_ASSERT_EQUAL_INT(49, m.val[kDrums][step]);
+  TEST_ASSERT_EQUAL_INT(51, m.val[kDrums][every]);
+  TEST_ASSERT_EQUAL_INT(57, m.val[kDrums][target]);
+
+  // ON / OFF at the top is the trainer's switch; PLAY / STOP the drums'.
+  tap(ui, kEditOnX, kEditTopY);
+  TEST_ASSERT_EQUAL_INT(1, m.val[kDrums][on]);
+  tap(ui, kEditOnX, kEditTopY);
+  TEST_ASSERT_EQUAL_INT(0, m.val[kDrums][on]);
+  tap(ui, kEditOnX, kEditTopY);
+  tap(ui, 60, 222);
+  TEST_ASSERT_TRUE(m.on[kDrums]);
+  TEST_ASSERT_EQUAL_STRING("toggle8 ", m.log.c_str());
+
+  // While it plays the tempo it has reached shows, here and on the home tile; only that
+  // part is repainted when it changes.
+  Glass g;
+  g.paint(ui);
+  m.tempoNow = 105;
+  g.paint(ui);
+  TEST_ASSERT_EQUAL_INT(186 * 34, g.pixels);
+  tap(ui, kEditBackX, kEditTopY);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  g.paint(ui);
+  m.tempoNow = 110;
+  g.paint(ui);
+  TEST_ASSERT_EQUAL_INT(60 * 40, g.pixels);
+  tap(ui, kTrainX, kTrainY);
+  tap(ui, 60, 222);
+  TEST_ASSERT_FALSE(m.on[kDrums]);
+}
+
 void test_tuner_opens_and_closes() {
   FakeModel m;
   Ui ui(m);
@@ -670,6 +729,21 @@ void test_write_pictures() {
     g.paint(ui);
     g.save("files_models");
   }
+  {
+    FakeModel m;
+    const int d = kBlockCount - 1;
+    m.val[d][FakeModel::find(d, "drum train")] = 1;
+    m.on[d] = true;
+    m.tempoNow = 112;
+    Ui ui(m);
+    ui.tick(g_ms += 1000);
+    Glass g;
+    g.paint(ui);
+    g.save("home_trainer");
+    tap(ui, tileX(9), tileY(8));
+    g.paint(ui);
+    g.save("trainer");
+  }
 }
 
 }  // namespace
@@ -685,6 +759,7 @@ int main() {
   RUN_TEST(test_preset_list_with_unsaved_edits);
   RUN_TEST(test_block_settings);
   RUN_TEST(test_choosing_a_model_and_an_ir);
+  RUN_TEST(test_speed_trainer_is_one_tap_from_home);
   RUN_TEST(test_tuner_opens_and_closes);
   RUN_TEST(test_long_names_fit);
   RUN_TEST(test_blocks_header_matches_blocks_json);

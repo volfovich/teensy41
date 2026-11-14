@@ -155,6 +155,7 @@ struct UnitModel : UiModel {
     return buf;
   }
   bool fileLoad(FileKind k, int idx) override { return k == kFileModel ? loadAmpIndex(idx) : loadIRIndex(idx); }
+  int drumTempoNow() override { return (int)(chain.drums().tempoNow() + 0.5f); }
   float inputDb() override { return toDb(meterInputPeak(kMeterScreen)); }
   float outputDb() override { return toDb(meterOutputPeak(kMeterScreen)); }
   int cpuPercent() override { return (int)(chain.cpuPercent() + 0.5f); }
@@ -400,7 +401,7 @@ void serviceScreen() {
 
 // ---- Shell ----
 void screenCommand(const char* arg) {
-  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files"};
+  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer"};
   if (!arg || !*arg) {
     Serial.printf("Touch screen: %s, %s (%s), touch %s, showing %s.\n", g_present ? "display found" : "no display found",
                   g_active ? "on" : "off", g_rec.mode == kAuto ? "automatic" : "forced",

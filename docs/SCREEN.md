@@ -16,15 +16,20 @@ The unit's own screen as it is built: a 2.8-inch ILI9341 display (320 x 240 in l
 | --- | --- |
 | ![amp](img/screen/block_amp.png) | ![models](img/screen/files_models.png) |
 
+| Home while the trainer runs | The speed trainer |
+| --- | --- |
+| ![home](img/screen/home_trainer.png) | ![trainer](img/screen/trainer.png) |
+
 (The settings pictures come from the host test's made-up unit, which labels settings by their keys; the unit shows the table's labels: Type, Mix, Time, Repeats.)
 
-- **Home:** input and output meters and the CPU load; the preset's number and name with previous and next (holding repeats); the chain as tiles in the app's colours, lit while the block is on. A tap on a tile switches the block, **holding it for half a second opens its settings**. Tuner, Save (lit while the preset is edited: writes the sound over the recalled preset) and Presets.
+- **Home:** input and output meters and the CPU load; the preset's number and name with previous and next (holding repeats); the chain as tiles in the app's colours, lit while the block is on (DRUMS: while they play). A tap on a tile switches the block, **holding it for half a second opens its settings**. Tuner, Save (lit while the preset is edited: writes the sound over the recalled preset) and Presets.
 - **A block's settings** (added 14 Nov 2026): the settings `protocol/blocks.json` gives the block, four to a page, each with minus and plus. A tap is one step of the setting's own size (the table's `step`); holding repeats ten times a second and after the tenth goes five steps at a time. A toggle also flips by a tap on its name. Settings that do not apply to the chosen type or mode are left out, as in the app (the `only` rules). ON / OFF at the top is the block's switch. Labels are the table's short ones, or the full name where two in a block share one (the drums' and the bass's Volume).
 - **Preset list:** five to a page. A tap plays a preset without committing to it; OK keeps it, Back returns to the sound from before, edits included (`previewPreset`, `keepPreview`, `cancelPreview` in `src/PresetLibrary.h`).
 - **Unsaved changes:** leaving an edited preset (previous, next, or OK in the list) asks first: Save, Discard or Cancel.
 - **Tuner:** note, a needle (green within 3 cents) and the frequency; the guitar is muted while it is open, as with the shell's and the app's tuner.
 - A change made elsewhere (the app, MIDI, the shell) shows by itself: every pass the screen compares what it would show now with what is on the glass.
 
+- **Speed trainer** (added 14 Nov 2026, asked for by the author to be as easy to reach as possible): the TRAINER tile on the home screen opens it with one tap. One page: the trainer's switch at the top, the tempo it starts from, step, every and target with minus and plus, the drums' PLAY / STOP, and the tempo as it plays. The tile is lit while the trainer is switched on and shows the tempo reached while the drums play with it. With a drum song chosen the screen says so (the trainer is for styles). The values are the drum block's own settings, so they are also in the DRUMS tile's settings, the app and the shell.
 - **Model and IR** (added 14 Nov 2026): the Amp's and the Cab's settings begin with the file they play. The arrows load the previous or next file of the unit's list (round the ends); a tap on the name opens the list, five to a page, where a tap loads a file at once and the one that plays is lit. Names are shown without folder and extension, with spaces for underscores; long ones in the small font. A loaded file is an edit of the preset like any other (Save, or the question on leaving).
 
 Not there: saving as a new preset, renaming and deleting presets, the master volume, the blocks' notes.

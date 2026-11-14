@@ -110,6 +110,7 @@ void Ui::layout(Pass& p) {
     case kConfirm: layoutConfirm(p); break;
     case kBlockEdit: layoutBlock(p); break;
     case kFiles: layoutFiles(p); break;
+    case kTrainer: layoutTrainer(p); break;
   }
 }
 
@@ -147,19 +148,36 @@ void Ui::layoutHome(Pass& p) {
   }
   target(p, R(56, 22, 208, 96), kOpenList);
 
-  // The chain: a tile a block, lit while it is on. The last one (drums and bass) is two wide.
+  // The chain: a tile a block, lit while it is on (the drums: while they play).
+  const int drums = kBlockCount - 1;
   for (int i = 0; i < kBlockCount; i++) {
     const int col = i % 5, row = i / 5;
-    const bool wide = i == kBlockCount - 1 && col < 4;
-    const Rect r = R(4 + col * 63, 122 + row * 44, wide ? 60 + 63 * (4 - col) : 60, 40);
+    const Rect r = R(4 + col * 63, 122 + row * 44, 60, 40);
     const bool on = m_.blockOn(i), down = pressed(kBlock, i);
     if (part(p, r, Sig().i(i).i(on).i(down).h)) {
       const uint16_t c = kBlocks[i].colour;
       p.canvas->roundRect(r, 6, down ? kPanelHi : (on ? c : kPanel));
       if (!on) p.canvas->roundRect(R(r.x, r.y, 5, r.h), 2, mix(kPanel, c, 3));  // its colour stays as a stripe
-      p.canvas->textIn(r.inset(2), kFontSmall, kBlocks[i].label, on && !down ? kDark : kDim);
+      p.canvas->textIn(r.inset(2), kFontSmall, i == drums ? "DRUMS" : kBlocks[i].label, on && !down ? kDark : kDim);
     }
     target(p, r, kBlock, i);
+  }
+  // The speed trainer has the last place: lit while it is switched on, and while the
+  // drums play with it, it shows the tempo they have reached. A tap opens its screen.
+  {
+    const Rect r = R(4 + 4 * 63, 122 + 44, 60, 40);
+    const int onIdx = findSetting(drums, "drum train");
+    SettingView v;
+    const bool on = onIdx >= 0 && m_.setting(drums, onIdx, &v) && v.on, down = pressed(kOpenTrainer);
+    if (on && m_.blockOn(drums)) snprintf(buf, sizeof(buf), "%d BPM", m_.drumTempoNow());
+    else strcpy(buf, "TRAINER");
+    if (part(p, r, Sig().s(buf).i(on).i(down).h)) {
+      const uint16_t c = kBlocks[drums].colour;
+      p.canvas->roundRect(r, 6, down ? kPanelHi : (on ? c : kPanel));
+      if (!on) p.canvas->roundRect(R(r.x, r.y, 5, r.h), 2, mix(kPanel, c, 3));
+      p.canvas->textIn(r.inset(2), kFontSmall, buf, on && !down ? kDark : kDim);
+    }
+    target(p, r, kOpenTrainer);
   }
 
   button(p, R(4, 210, 101, 30), "TUNER", kOpenTuner);
@@ -217,6 +235,70 @@ int Ui::shownSettings(int* idx) {
   return n;
 }
 
+void Ui::settingRow(Pass& p, int row, int block, int i, const SettingView& v) {
+  const int y = 34 + row * 43;
+  const Rect minus = R(4, y, 48, 40), mid = R(56, y, 208, 40), plus = R(268, y, 48, 40);
+  button(p, minus, "-", kMinus, i);
+  const bool down = v.toggle && pressed(kFlip, i);
+  if (part(p, mid, Sig().i(i).s(v.label).s(v.text).i((int)(v.fraction * 192.0f)).i(v.bar).i(v.toggle && v.on).i(down).h)) {
+    p.canvas->roundRect(mid, 6, down ? kPanelHi : kPanel);
+    const int textW = Canvas::textWidth(kFontMedium, v.text);
+    const Rect line = R(mid.x + 8, mid.y + (v.bar ? 0 : 3), mid.w - 16, 34);
+    p.canvas->textIn(R(line.x, line.y, line.w - textW - 8, line.h), kFontSmall, v.label, kDim, kLeft);
+    p.canvas->textIn(line, kFontMedium, v.text, v.toggle && !v.on ? kDim : kText, kRight);
+    if (v.bar) {
+      const float f = v.fraction < 0.0f ? 0.0f : (v.fraction > 1.0f ? 1.0f : v.fraction);
+      p.canvas->fill(R(mid.x + 8, mid.y + 32, 192, 3), kOff);
+      p.canvas->fill(R(mid.x + 8, mid.y + 32, (int)(f * 192.0f + 0.5f), 3), kBlocks[block].colour);
+    }
+  }
+  if (v.toggle) target(p, mid, kFlip, i);
+  button(p, plus, "+", kPlus, i);
+}
+
+int Ui::findSetting(int block, const char* ref) {
+  for (int i = 0; i < kBlocks[block].settingCount; i++)
+    if (!strcmp(kBlocks[block].settings[i].ref, ref)) return i;
+  return -1;
+}
+
+// The speed trainer, one tap from home: its switch, the tempo it starts from, its three
+// settings, the drums' play button and the tempo as it plays. The settings are the drum
+// block's own (the last of kBlocks), so the app and the shell show the same values.
+void Ui::layoutTrainer(Pass& p) {
+  const int drums = kBlockCount - 1;
+  const BlockDef& b = kBlocks[drums];
+  static const char* const kRefs[4] = {"bpm", "train step", "train every", "train target"};
+  const int onIdx = findSetting(drums, "drum train"), songIdx = findSetting(drums, "drum song");
+  SettingView v;
+  const bool on = onIdx >= 0 && m_.setting(drums, onIdx, &v) && v.on;
+  const bool song = songIdx >= 0 && m_.setting(drums, songIdx, &v) && strcmp(v.text, "off") != 0;
+  const bool playing = m_.blockOn(drums);
+  button(p, R(4, 2, 64, 28), "BACK", kEditBack);
+  if (part(p, R(72, 2, 160, 28), 1)) p.canvas->textIn(R(72, 2, 160, 28), kFontMedium, "Speed trainer", b.colour);
+  button(p, R(236, 2, 80, 28), on ? "ON" : "OFF", kTrainerOn, 0, on ? b.colour : 0);
+  for (int row = 0; row < 4; row++) {
+    const int i = findSetting(drums, kRefs[row]);
+    const int y = 34 + row * 43;
+    if (i < 0 || !m_.setting(drums, i, &v)) {
+      part(p, R(4, y, 48, 40), 0);
+      part(p, R(56, y, 208, 40), 0);
+      part(p, R(268, y, 48, 40), 0);
+      continue;
+    }
+    if (row == 0) snprintf(v.label, sizeof(v.label), "Start tempo");
+    settingRow(p, row, drums, i, v);
+  }
+  button(p, R(4, 206, 120, 34), playing ? "STOP" : "PLAY", kPlay, 0, playing ? b.colour : 0);
+  // What it is doing now. A drum song plays at its own tempo: the trainer is for styles.
+  char buf[40];
+  if (song) snprintf(buf, sizeof(buf), "Not with a song");
+  else if (playing) snprintf(buf, sizeof(buf), "now %d BPM", m_.drumTempoNow());
+  else snprintf(buf, sizeof(buf), "stopped");
+  const Rect st = R(130, 206, 186, 34);
+  if (part(p, st, Sig().s(buf).i(song).h)) p.canvas->textIn(st, kFontMedium, buf, song ? kAmber : (playing ? kText : kDim));
+}
+
 // A block's settings: four to a page, each with minus and plus (holding repeats, then goes
 // faster); a toggle also flips by a tap on its name.
 void Ui::layoutBlock(Pass& p) {
@@ -255,23 +337,7 @@ void Ui::layoutBlock(Pass& p) {
       part(p, plus, 0);
       continue;
     }
-    const int i = idx[n];
-    button(p, minus, "-", kMinus, i);
-    const bool down = v.toggle && pressed(kFlip, i);
-    if (part(p, mid, Sig().i(i).s(v.label).s(v.text).i((int)(v.fraction * 192.0f)).i(v.bar).i(v.toggle && v.on).i(down).h)) {
-      p.canvas->roundRect(mid, 6, down ? kPanelHi : kPanel);
-      const int textW = Canvas::textWidth(kFontMedium, v.text);
-      const Rect line = R(mid.x + 8, mid.y + (v.bar ? 0 : 3), mid.w - 16, 34);
-      p.canvas->textIn(R(line.x, line.y, line.w - textW - 8, line.h), kFontSmall, v.label, kDim, kLeft);
-      p.canvas->textIn(line, kFontMedium, v.text, v.toggle && !v.on ? kDim : kText, kRight);
-      if (v.bar) {
-        const float f = v.fraction < 0.0f ? 0.0f : (v.fraction > 1.0f ? 1.0f : v.fraction);
-        p.canvas->fill(R(mid.x + 8, mid.y + 32, 192, 3), kOff);
-        p.canvas->fill(R(mid.x + 8, mid.y + 32, (int)(f * 192.0f + 0.5f), 3), b.colour);
-      }
-    }
-    if (v.toggle) target(p, mid, kFlip, i);
-    button(p, plus, "+", kPlus, i);
+    settingRow(p, row, editBlock_, idx[n], v);
   }
   // More than a page: up, where we are, down.
   const bool more = pages > 1;
@@ -465,6 +531,17 @@ void Ui::fire(Action a, int arg) {
       if ((editPage_ + 1) * kSettingsPerPage < shownSettings(idx) + (kBlocks[editBlock_].file != kFileNone)) editPage_++;
       break;
     }
+    case kOpenTrainer:
+      editBlock_ = kBlockCount - 1;  // its rows are the drum block's settings
+      go(kTrainer);
+      break;
+    case kTrainerOn: {
+      const int i = findSetting(kBlockCount - 1, "drum train");
+      SettingView v;
+      if (i >= 0 && m_.setting(kBlockCount - 1, i, &v)) m_.settingStep(kBlockCount - 1, i, v.on ? -1 : 1);
+      break;
+    }
+    case kPlay: m_.toggleBlock(kBlockCount - 1); break;
     case kFilePrev: fileStep(-1); break;
     case kFileNext: fileStep(1); break;
     case kOpenFiles: {
@@ -530,7 +607,7 @@ void Ui::tick(uint32_t ms) {
     fire(heldAction_, heldArg_);
   }
   // Holding minus or plus: after 0.4 s ten single steps a second, after the tenth five at a time.
-  if (held_ && inside_ && (heldAction_ == kMinus || heldAction_ == kPlus) && screen_ == kBlockEdit &&
+  if (held_ && inside_ && (heldAction_ == kMinus || heldAction_ == kPlus) && (screen_ == kBlockEdit || screen_ == kTrainer) &&
       ms - pressMs_ >= 400 && ms - repeatMs_ >= 100) {
     repeatMs_ = ms;
     repeated_ = true;

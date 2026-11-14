@@ -1,5 +1,5 @@
 // Ui.h - the touch screen's screens: home (preset, chain, meters), preset list, a block's
-// settings, the list of models or IRs, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
+// settings, the list of models or IRs, the speed trainer, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
 // (src/Screen.cpp) and the host tests use the same code.
 //
@@ -62,6 +62,7 @@ struct UiModel {
   virtual int fileCurrent(FileKind kind) = 0;              // -1 = none loaded
   virtual const char* fileName(FileKind kind, int idx) = 0;  // without folder and extension
   virtual bool fileLoad(FileKind kind, int idx) = 0;
+  virtual int drumTempoNow() = 0;                // BPM as it plays (the trainer raises it)
   virtual float inputDb() = 0;                   // peaks since the last call
   virtual float outputDb() = 0;
   virtual int cpuPercent() = 0;
@@ -71,7 +72,7 @@ struct UiModel {
 
 class Ui {
  public:
-  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles };
+  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer };
   static const int kRowsPerPage = 5;   // the preset list
   static const int kSettingsPerPage = 4;
 
@@ -93,7 +94,8 @@ class Ui {
  private:
   enum Action { kNone, kPrev, kNext, kOpenList, kBlock, kOpenTuner, kCloseTuner, kRow, kPageUp, kPageDown,
                 kListBack, kListOk, kSave, kDiscard, kCancel, kSaveNow, kEditBack, kEditOn, kMinus, kPlus, kFlip,
-                kEditUp, kEditDown, kFilePrev, kFileNext, kOpenFiles, kFileRow, kFilesBack, kFilesUp, kFilesDown };
+                kEditUp, kEditDown, kFilePrev, kFileNext, kOpenFiles, kFileRow, kFilesBack, kFilesUp, kFilesDown, kOpenTrainer,
+                kTrainerOn, kPlay };
   enum Mode { kMeasure, kPaint, kHit };
   struct Pass {
     Mode mode;
@@ -125,6 +127,11 @@ class Ui {
   void layoutConfirm(Pass& p);
   void layoutBlock(Pass& p);
   void layoutFiles(Pass& p);
+  void layoutTrainer(Pass& p);
+  // One setting with minus and plus in row `row` of the settings area.
+  void settingRow(Pass& p, int row, int block, int i, const SettingView& v);
+  // The place of a setting in a block by its name in blocks.json; -1 if it has none.
+  static int findSetting(int block, const char* ref);
   void fileStep(int dir);
   // The settings of the edited block that are shown now; returns how many.
   int shownSettings(int* idx);
