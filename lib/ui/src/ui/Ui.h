@@ -1,7 +1,11 @@
 // Ui.h - the touch screen's screens: home (preset, chain, meters), preset list, a block's
-// settings, the list of models or IRs, the speed trainer, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
+// settings, the list of models or IRs, the speed trainer, saving (over, or as a new preset with a
+// typed name), the master volume, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
 // (src/Screen.cpp) and the host tests use the same code.
+//
+// A value with a bar (a block's settings, the trainer's, the master volume) also follows a
+// finger dragged sideways along it; a tap on it changes nothing.
 //
 // How a screen is written: one layout function per screen names every part with its
 // rectangle. The same function runs in three ways: to note what each part would show now
@@ -50,6 +54,12 @@ struct UiModel {
   virtual void cancelPreview() = 0;
   virtual void keepPreview() = 0;
   virtual bool save() = 0;
+  // Saves the sound as a new preset, which becomes the recalled one ("" = "Preset NN").
+  virtual bool saveAs(const char* name) = 0;
+  // The master volume (the unit's last gain, for all presets), as a setting.
+  virtual void master(SettingView* v) = 0;
+  virtual void masterStep(int steps) = 0;
+  virtual void masterSet(float fraction) = 0;
   virtual bool blockOn(int block) = 0;           // block: index into kBlocks
   virtual void toggleBlock(int block) = 0;
   // Setting i of a block (i: index into kBlocks[block].settings). False if it does not
@@ -57,6 +67,8 @@ struct UiModel {
   virtual bool setting(int block, int i, SettingView* v) = 0;
   // Moves it by a number of its own steps (clamped to its range); a toggle goes on (> 0) or off.
   virtual void settingStep(int block, int i, int steps) = 0;
+  // Puts a setting with a bar at a place in its range (0 .. 1), on its nearest step.
+  virtual void settingSet(int block, int i, float fraction) = 0;
   // The files a block can load (kind: kFileModel or kFileIr), by place in the unit's list.
   virtual int fileCount(FileKind kind) = 0;
   virtual int fileCurrent(FileKind kind) = 0;              // -1 = none loaded
@@ -72,7 +84,8 @@ struct UiModel {
 
 class Ui {
  public:
-  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer };
+  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer, kSaveMenu, kName, kMaster };
+  static const int kNameMax = 24;      // a preset name's longest
   static const int kRowsPerPage = 5;   // the preset list
   static const int kSettingsPerPage = 4;
 
@@ -93,9 +106,10 @@ class Ui {
 
  private:
   enum Action { kNone, kPrev, kNext, kOpenList, kBlock, kOpenTuner, kCloseTuner, kRow, kPageUp, kPageDown,
-                kListBack, kListOk, kSave, kDiscard, kCancel, kSaveNow, kEditBack, kEditOn, kMinus, kPlus, kFlip,
+                kListBack, kListOk, kSave, kDiscard, kCancel, kEditBack, kEditOn, kMinus, kPlus, kFlip,
                 kEditUp, kEditDown, kFilePrev, kFileNext, kOpenFiles, kFileRow, kFilesBack, kFilesUp, kFilesDown, kOpenTrainer,
-                kTrainerOn, kPlay };
+                kTrainerOn, kPlay, kOpenSave, kSaveOver, kSaveNew, kKey, kCaps, kSpace, kDelete, kNameOk, kHome_,
+                kOpenMaster, kVolDown, kVolUp, kDrag, kDragVol };
   enum Mode { kMeasure, kPaint, kHit };
   struct Pass {
     Mode mode;
@@ -128,6 +142,9 @@ class Ui {
   void layoutBlock(Pass& p);
   void layoutFiles(Pass& p);
   void layoutTrainer(Pass& p);
+  void layoutSaveMenu(Pass& p);
+  void layoutName(Pass& p);
+  void layoutMaster(Pass& p);
   // One setting with minus and plus in row `row` of the settings area.
   void settingRow(Pass& p, int row, int block, int i, const SettingView& v);
   // The place of a setting in a block by its name in blocks.json; -1 if it has none.
@@ -137,6 +154,8 @@ class Ui {
   int shownSettings(int* idx);
 
   void fire(Action a, int arg);
+  // A finger sliding along a value: sets it from where the slide has got to.
+  void dragTo(int x);
   void step(int dir);
   void go(Screen s);
   void ask(bool keepPreview, int target);
@@ -158,6 +177,14 @@ class Ui {
   int heldArg_ = 0;
   Rect heldRect_ = {0, 0, 0, 0};
   uint32_t pressMs_ = 0, lastDownMs_ = 0, repeatMs_ = 0;
+  // Dragging a value (kDrag, kDragVol): it begins when the finger has moved kDragStart
+  // pixels sideways, and the value then follows the finger from where it was, the bar's
+  // width being the whole range. Each reading is used one reading late and the last one
+  // before the finger lifts is dropped: a resistive panel's point jumps as the pressure goes.
+  static const int kDragStart = 10;
+  bool dragging_ = false, dragPending_ = false;
+  int pressX_ = 0, dragX0_ = 0, dragWidth_ = 1, dragPendingX_ = 0;
+  float dragFrom_ = 0.0f;
   // Meters: read 20 times a second, the peak falls slowly.
   uint32_t meterMs_ = 0;
   float inDb_ = -100.0f, outDb_ = -100.0f;
@@ -168,6 +195,9 @@ class Ui {
   bool previewing_ = false, editedAtOpen_ = false;
   // A block's settings.
   int editBlock_ = 0, editPage_ = 0, repeats_ = 0, filePage_ = 0;
+  // The new preset's name as it is typed.
+  char name_[kNameMax + 1] = "";
+  bool upper_ = true, autoUpper_ = true, saveFailed_ = false;
   // The question.
   bool askKeep_ = false;
   int askTarget_ = -1;

@@ -148,6 +148,36 @@ struct FakeModel : UiModel {
     edited = true;
     return true;
   }
+  bool canSaveAs = true;
+  bool saveAs(const char* name) override {
+    log += std::string("saveAs[") + name + "] ";
+    if (!canSaveAs) return false;
+    char file[64];
+    snprintf(file, sizeof(file), "%02d %s", (int)names.size() + 1, name[0] ? name : "Preset");
+    names.push_back(file);
+    current = saved = (int)names.size() - 1;
+    edited = previewOn = false;
+    return true;
+  }
+  void settingSet(int b, int i, float fraction) override {
+    val[b][i] = (int)(fraction * 100.0f + 0.5f);
+    edited = true;
+    sets++;
+  }
+  int sets = 0;
+  void masterSet(float fraction) override { masterHalfDb = -120 + (int)(fraction * 120.0f + 0.5f); }
+  int masterHalfDb = 0;  // -120 (silent) .. 0
+  void master(SettingView* v) override {
+    snprintf(v->label, sizeof(v->label), "Master");
+    if (masterHalfDb <= -120) snprintf(v->text, sizeof(v->text), "silent");
+    else snprintf(v->text, sizeof(v->text), "%.1f dB", masterHalfDb / 2.0);
+    v->fraction = (masterHalfDb + 120) / 120.0f;
+    v->bar = true;
+  }
+  void masterStep(int steps) override {
+    masterHalfDb += steps;
+    masterHalfDb = masterHalfDb < -120 ? -120 : (masterHalfDb > 0 ? 0 : masterHalfDb);
+  }
   int tempoNow = 100;
   int drumTempoNow() override { return tempoNow; }
   float inputDb() override { return inDb; }
@@ -209,6 +239,7 @@ const int kPrevX = 28, kNextX = 292, kArrowY = 52, kNameX = 160, kNameY = 60;
 int tileX(int i) { return 4 + (i % 5) * 63 + 30; }
 int tileY(int i) { return 122 + (i / 5) * 44 + 20; }
 int rowY(int row) { return 24 + row * 36 + 17; }
+const int kTunerX = 40, kSaveBtnX = 114, kVolX = 283;  // the home screen's bottom line (with PRESETS at 240)
 const int kBarY = 222, kBackX = 40, kUpX = 120, kDownX = 200, kOkX = 278;
 const int kDlgY = 166, kSaveX = 58, kDiscardX = 160, kCancelX = 262;
 
@@ -507,13 +538,182 @@ void test_block_settings() {
   TEST_ASSERT_EQUAL_INT(50, m.val[0][5]);
   tap(ui, kEditBackX, kEditTopY);
 
-  // Home: SAVE works while there is something to save, and only then.
-  m.log.clear();
+}
+
+// A finger put down at (x0, y), slid to (x1, y1) in steps of 2 pixels and lifted. The last
+// reading before the lift is at (liftX, y1): a resistive panel's point jumps there.
+void drag(Ui& ui, int x0, int y, int x1, int y1, int liftX = -1) {
+  const int n = (x1 > x0 ? x1 - x0 : x0 - x1) / 2;
+  for (int i = 0; i < 5; i++, g_ms += 10) ui.touch(true, x0, y, g_ms), ui.tick(g_ms);
+  for (int i = 1; i <= n; i++, g_ms += 10) ui.touch(true, x0 + (x1 - x0) * i / n, y + (y1 - y) * i / n, g_ms), ui.tick(g_ms);
+  for (int i = 0; i < 5; i++, g_ms += 10) ui.touch(true, x1, y1, g_ms), ui.tick(g_ms);
+  if (liftX >= 0) ui.touch(true, liftX, y1, g_ms), ui.tick(g_ms), g_ms += 10;
+  for (int i = 0; i < 8; i++, g_ms += 10) ui.touch(false, 0, 0, g_ms), ui.tick(g_ms);
+}
+
+void test_dragging_a_value() {
+  FakeModel m;
+  Ui ui(m);
+  const int kDelay = 5;
+  hold(ui, tileX(kDelay), tileY(kDelay), 700);
+  // Rows: dtype (a choice), dmix, dtime, dfb; all numbers at 50 of 0 .. 100, the bar 192 px.
+  // The first 10 px begin the drag, the rest move the value: 58 px = 48 px = 25 of 100.
+  drag(ui, 120, setY(1), 178, setY(1));
+  TEST_ASSERT_EQUAL_INT(75, m.val[kDelay][1]);
   TEST_ASSERT_TRUE(m.edited);
-  tap(ui, 160, 224);
+  drag(ui, 200, setY(1), 104, setY(1));  // back by 86 px = 45
+  TEST_ASSERT_EQUAL_INT(30, m.val[kDelay][1]);
+  // Past the ends it stays at the end, and comes back with the finger.
+  drag(ui, 100, setY(2), 310, setY(2));
+  TEST_ASSERT_EQUAL_INT(100, m.val[kDelay][2]);
+  drag(ui, 250, setY(2), 60, setY(2));
+  TEST_ASSERT_EQUAL_INT(6, m.val[kDelay][2]);  // 100 less 180 px of 192
+  // Once begun, the finger may leave the row: the other rows are not touched.
+  drag(ui, 100, setY(3), 148, setY(1));
+  TEST_ASSERT_EQUAL_INT(70, m.val[kDelay][3]);
+  TEST_ASSERT_EQUAL_INT(30, m.val[kDelay][1]);
+  // A tap, and a finger that wanders less than 10 px, change nothing.
+  m.sets = 0;
+  tap(ui, kMidX, setY(1));
+  drag(ui, 150, setY(1), 158, setY(1));
+  TEST_ASSERT_EQUAL_INT(0, m.sets);
+  // The jump of the last reading as the finger lifts is dropped.
+  drag(ui, 100, setY(1), 130, setY(1), 250);
+  TEST_ASSERT_EQUAL_INT(40, m.val[kDelay][1]);
+  // A choice is not dragged, and sliding off minus or plus still only lets the button go.
+  drag(ui, 100, setY(0), 200, setY(0));
+  TEST_ASSERT_EQUAL_INT(0, m.val[kDelay][0]);
+  drag(ui, kPlusX, setY(1), 150, setY(1));
+  TEST_ASSERT_EQUAL_INT(40, m.val[kDelay][1]);
+  // What changed is repainted: the row, nothing else.
+  Glass g;
+  g.paint(ui);
+  drag(ui, 100, setY(1), 130, setY(1));
+  g.paint(ui);
+  TEST_ASSERT_TRUE(g.pixels > 0 && g.pixels <= 208 * 40);
+  tap(ui, kEditBackX, kEditTopY);
+
+  // The master volume: its bar is 280 px for 120 half-dB steps.
+  tap(ui, kVolX, kBarY);
+  drag(ui, 250, 70, 120, 100);  // 120 px left = 51 steps
+  TEST_ASSERT_EQUAL_INT(-51, m.masterHalfDb);
+  drag(ui, 30, 100, 310, 100);
+  TEST_ASSERT_EQUAL_INT(0, m.masterHalfDb);
+  tap(ui, 160, 70);
+  TEST_ASSERT_EQUAL_INT(0, m.masterHalfDb);
+  tap(ui, 36, 16);
+
+  // The trainer's rows are dragged the same way.
+  const int drums = kBlockCount - 1;
+  tap(ui, 4 + 4 * 63 + 30, 122 + 44 + 20);
+  TEST_ASSERT_EQUAL_INT(Ui::kTrainer, ui.screen());
+  drag(ui, 120, setY(0), 178, setY(0));
+  TEST_ASSERT_EQUAL_INT(75, m.val[drums][FakeModel::find(drums, "bpm")]);
+}
+
+// Places on the save menu and the keyboard.
+const int kMenuX = 160, kOverY = 77, kNewY = 131, kMenuCancelY = 204;
+void key(Ui& ui, int row, int col) { tap(ui, 4 + col * 313 / 10 + 14, 36 + row * 42 + 20); }
+void type(Ui& ui, const char* text) {
+  static const char* const rows[4] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL-", "ZXCVBNM"};
+  for (; *text; text++) {
+    if (*text == ' ') {
+      key(ui, 3, 8);
+      continue;
+    }
+    for (int row = 0; row < 4; row++)
+      for (int col = 0; rows[row][col]; col++)
+        if (rows[row][col] == (*text >= 'a' && *text <= 'z' ? *text - 32 : *text)) key(ui, row, col);
+  }
+}
+
+void test_save_over_and_as_new() {
+  FakeModel m;
+  Ui ui(m);
+  // Nothing changed: saving over is not offered, a new preset is.
+  tap(ui, kSaveBtnX, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kSaveMenu, ui.screen());
+  tap(ui, kMenuX, kOverY);
+  TEST_ASSERT_EQUAL_INT(Ui::kSaveMenu, ui.screen());
+  tap(ui, kMenuX, kMenuCancelY);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+
+  // Edited: over the recalled preset.
+  m.edited = true;
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kMenuX, kOverY);
   TEST_ASSERT_EQUAL_STRING("save ", m.log.c_str());
-  tap(ui, 160, 224);
-  TEST_ASSERT_EQUAL_STRING("save ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+
+  // As new: the first letter of a word is upper case, the rest lower; Aa changes that for
+  // what follows; delete takes the last character; spaces at the end are dropped.
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kMenuX, kNewY);
+  TEST_ASSERT_EQUAL_INT(Ui::kName, ui.screen());
+  type(ui, "blues lead x");
+  key(ui, 3, 9);  // delete the x
+  key(ui, 3, 7);  // lower case from here
+  type(ui, "jcm");
+  key(ui, 3, 7);  // and upper
+  type(ui, "x800 ");
+  tap(ui, 240, kBarY);
+  TEST_ASSERT_EQUAL_STRING("saveAs[Blues Lead jcmX800] ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("08 Blues Lead jcmX800", m.names[m.current].c_str());
+
+  // No more than 24 characters; no name at all is allowed; Cancel saves nothing.
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kMenuX, kNewY);
+  type(ui, "123456789012345678901234567890");
+  tap(ui, 240, kBarY);
+  TEST_ASSERT_EQUAL_STRING("saveAs[123456789012345678901234] ", m.log.c_str());
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kMenuX, kNewY);
+  tap(ui, 240, kBarY);
+  TEST_ASSERT_EQUAL_STRING("saveAs[] ", m.log.c_str());
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kMenuX, kNewY);
+  type(ui, "abc");
+  tap(ui, 80, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+
+  // The unit cannot save (no card): the screen stays and says so; typing clears the message.
+  m.canSaveAs = false;
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kMenuX, kNewY);
+  type(ui, "a");
+  tap(ui, 240, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kName, ui.screen());
+  Glass g;
+  g.paint(ui);
+  type(ui, "b");
+  g.paint(ui);
+  TEST_ASSERT_TRUE(g.pixels >= 312 * 30);
+}
+
+void test_master_volume() {
+  FakeModel m;
+  Ui ui(m);
+  tap(ui, kVolX, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kMaster, ui.screen());
+  tap(ui, 87, 152);
+  tap(ui, 87, 152);
+  TEST_ASSERT_EQUAL_INT(-2, m.masterHalfDb);
+  tap(ui, 233, 152);
+  tap(ui, 233, 152);
+  tap(ui, 233, 152);
+  TEST_ASSERT_EQUAL_INT_MESSAGE(0, m.masterHalfDb, "0 dB is the top");
+  hold(ui, 87, 152, 1900);  // ten single steps, then six of five
+  TEST_ASSERT_EQUAL_INT(-40, m.masterHalfDb);
+  TEST_ASSERT_FALSE_MESSAGE(m.edited, "the master volume is not part of a preset");
+  tap(ui, 36, 16);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
 }
 
 void test_choosing_a_model_and_an_ir() {
@@ -614,7 +814,7 @@ void test_speed_trainer_is_one_tap_from_home() {
 void test_tuner_opens_and_closes() {
   FakeModel m;
   Ui ui(m);
-  tap(ui, 80, kBarY);
+  tap(ui, kTunerX, kBarY);
   TEST_ASSERT_EQUAL_INT(Ui::kTuner, ui.screen());
   TEST_ASSERT_TRUE(m.tunerIsOpen);
   Glass g;
@@ -691,7 +891,7 @@ void test_write_pictures() {
   {
     FakeModel m;
     Ui ui(m);
-    tap(ui, 80, kBarY);
+    tap(ui, kTunerX, kBarY);
     Glass g;
     g.paint(ui);
     g.save("tuner_idle");
@@ -744,6 +944,24 @@ void test_write_pictures() {
     g.paint(ui);
     g.save("trainer");
   }
+  {
+    FakeModel m;
+    m.edited = true;
+    Ui ui(m);
+    tap(ui, kSaveBtnX, kBarY);
+    Glass g;
+    g.paint(ui);
+    g.save("save_menu");
+    tap(ui, kMenuX, kNewY);
+    type(ui, "blues lead");
+    g.paint(ui);
+    g.save("name");
+    tap(ui, 80, kBarY);
+    tap(ui, kVolX, kBarY);
+    m.masterHalfDb = -12;
+    g.paint(ui);
+    g.save("master");
+  }
 }
 
 }  // namespace
@@ -760,6 +978,9 @@ int main() {
   RUN_TEST(test_block_settings);
   RUN_TEST(test_choosing_a_model_and_an_ir);
   RUN_TEST(test_speed_trainer_is_one_tap_from_home);
+  RUN_TEST(test_save_over_and_as_new);
+  RUN_TEST(test_master_volume);
+  RUN_TEST(test_dragging_a_value);
   RUN_TEST(test_tuner_opens_and_closes);
   RUN_TEST(test_long_names_fit);
   RUN_TEST(test_blocks_header_matches_blocks_json);

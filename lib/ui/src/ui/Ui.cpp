@@ -111,6 +111,9 @@ void Ui::layout(Pass& p) {
     case kBlockEdit: layoutBlock(p); break;
     case kFiles: layoutFiles(p); break;
     case kTrainer: layoutTrainer(p); break;
+    case kSaveMenu: layoutSaveMenu(p); break;
+    case kName: layoutName(p); break;
+    case kMaster: layoutMaster(p); break;
   }
 }
 
@@ -180,9 +183,76 @@ void Ui::layoutHome(Pass& p) {
     target(p, r, kOpenTrainer);
   }
 
-  button(p, R(4, 210, 101, 30), "TUNER", kOpenTuner);
-  button(p, R(109, 210, 102, 30), "SAVE", kSaveNow, 0, kAmber, edited);  // only with something to save
-  button(p, R(215, 210, 101, 30), "PRESETS", kOpenList);
+  button(p, R(4, 210, 74, 30), "TUNER", kOpenTuner);
+  button(p, R(82, 210, 64, 30), "SAVE", kOpenSave, 0, edited ? kAmber : 0);  // lit with something to save
+  button(p, R(150, 210, 96, 30), "PRESETS", kOpenList);
+  button(p, R(250, 210, 66, 30), "VOL", kOpenMaster);
+}
+
+// SAVE on the home screen: over the recalled preset, or as a new one.
+void Ui::layoutSaveMenu(Pass& p) {
+  const int cur = m_.presetCurrent();
+  const bool canOver = cur >= 0 && m_.presetEdited();
+  if (part(p, R(10, 8, 300, 34), 1)) p.canvas->textIn(R(10, 8, 300, 34), kFontLarge, "Save", kText);
+  char buf[64];
+  if (cur >= 0) snprintf(buf, sizeof(buf), "Over %s", m_.presetName(cur));
+  else snprintf(buf, sizeof(buf), "Over the preset");
+  button(p, R(20, 54, 280, 46), buf, kSaveOver, 0, kAmber, canOver);  // nothing changed: nothing to save over
+  button(p, R(20, 108, 280, 46), "As a new preset", kSaveNew, 0, kMeterOk);
+  button(p, R(20, 182, 280, 44), "CANCEL", kHome_);
+}
+
+namespace {
+// The keyboard: three rows of ten, then seven letters with the upper / lower key, space
+// and delete.
+const char* const kKeyRows[4] = {"1234567890", "QWERTYUIOP", "ASDFGHJKL-", "ZXCVBNM"};
+inline Rect keyRect(int row, int col) { return R(4 + col * 313 / 10, 36 + row * 42, 29, 40); }
+}  // namespace
+
+// The new preset's name: typed on a keyboard, upper case for the first letter and lower
+// after it unless the Aa key says otherwise. Empty is allowed (the unit names it "Preset NN").
+void Ui::layoutName(Pass& p) {
+  const Rect field = R(4, 2, 312, 30);
+  if (part(p, field, Sig().s(name_).i(saveFailed_).h)) {
+    p.canvas->roundRect(field, 6, kPanel);
+    char buf[kNameMax + 2];
+    snprintf(buf, sizeof(buf), "%s_", name_);
+    if (saveFailed_) p.canvas->textIn(field.inset(8), kFontSmall, "Could not save (card missing or 99 presets)", kAmber, kLeft);
+    else if (!name_[0]) p.canvas->textIn(field.inset(8), kFontSmall, "Name of the new preset (or none)", kDim, kLeft);
+    else p.canvas->textIn(field.inset(8), kFontMedium, buf, kText, kLeft);
+  }
+  for (int row = 0; row < 4; row++)
+    for (int col = 0; kKeyRows[row][col]; col++) {
+      char c = kKeyRows[row][col];
+      if (!upper_ && c >= 'A' && c <= 'Z') c = (char)(c + 32);
+      const char label[2] = {c, 0};
+      button(p, keyRect(row, col), label, kKey, row * 10 + col);
+    }
+  button(p, keyRect(3, 7), upper_ ? "a" : "A", kCaps);  // what a tap changes to
+  button(p, keyRect(3, 8), "_", kSpace);
+  button(p, keyRect(3, 9), "<", kDelete);
+  button(p, R(4, 206, 154, 34), "CANCEL", kHome_);
+  button(p, R(162, 206, 154, 34), "SAVE", kNameOk, 0, kMeterOk);
+}
+
+// The master volume: the unit's last gain, the same for all presets.
+void Ui::layoutMaster(Pass& p) {
+  SettingView v;
+  m_.master(&v);
+  button(p, R(4, 2, 64, 28), "BACK", kHome_);
+  if (part(p, R(72, 2, 244, 28), 1)) p.canvas->textIn(R(72, 2, 244, 28), kFontMedium, "Master volume", kText);
+  const bool down = pressed(kDragVol);
+  if (part(p, R(20, 40, 280, 50), Sig().s(v.text).i(down).h)) p.canvas->textIn(R(20, 40, 280, 50), kFontLarge, v.text, down ? kMeterOk : kText);
+  const float f = v.fraction < 0.0f ? 0.0f : (v.fraction > 1.0f ? 1.0f : v.fraction);
+  const int lit = (int)(f * 280.0f + 0.5f);
+  if (part(p, R(20, 98, 280, 10), lit)) {
+    p.canvas->roundRect(R(20, 98, 280, 10), 4, kOff);
+    if (lit > 0) p.canvas->roundRect(R(20, 98, lit < 8 ? 8 : lit, 10), 4, kMeterOk);
+  }
+  target(p, R(20, 36, 280, 80), kDragVol);  // the value and its bar: dragged sideways
+  button(p, R(20, 122, 134, 60), "-", kVolDown);
+  button(p, R(166, 122, 134, 60), "+", kVolUp);
+  if (part(p, R(20, 192, 280, 22), 2)) p.canvas->textIn(R(20, 192, 280, 22), kFontSmall, "One level for all presets, after everything else", kDim);
 }
 
 // The list of models or IRs: a tap loads one at once (the one that plays is lit).
@@ -239,7 +309,7 @@ void Ui::settingRow(Pass& p, int row, int block, int i, const SettingView& v) {
   const int y = 34 + row * 43;
   const Rect minus = R(4, y, 48, 40), mid = R(56, y, 208, 40), plus = R(268, y, 48, 40);
   button(p, minus, "-", kMinus, i);
-  const bool down = v.toggle && pressed(kFlip, i);
+  const bool down = (v.toggle && pressed(kFlip, i)) || (v.bar && pressed(kDrag, i));
   if (part(p, mid, Sig().i(i).s(v.label).s(v.text).i((int)(v.fraction * 192.0f)).i(v.bar).i(v.toggle && v.on).i(down).h)) {
     p.canvas->roundRect(mid, 6, down ? kPanelHi : kPanel);
     const int textW = Canvas::textWidth(kFontMedium, v.text);
@@ -253,6 +323,7 @@ void Ui::settingRow(Pass& p, int row, int block, int i, const SettingView& v) {
     }
   }
   if (v.toggle) target(p, mid, kFlip, i);
+  else if (v.bar) target(p, mid, kDrag, i);  // dragged sideways
   button(p, plus, "+", kPlus, i);
 }
 
@@ -300,7 +371,8 @@ void Ui::layoutTrainer(Pass& p) {
 }
 
 // A block's settings: four to a page, each with minus and plus (holding repeats, then goes
-// faster); a toggle also flips by a tap on its name.
+// faster); a toggle also flips by a tap on its name, a value with a bar follows a finger
+// dragged along it.
 void Ui::layoutBlock(Pass& p) {
   const BlockDef& b = kBlocks[editBlock_];
   const bool on = m_.blockOn(editBlock_);
@@ -511,9 +583,61 @@ void Ui::fire(Action a, int arg) {
       go(kHome);
       break;
     case kCancel: go(back_); break;
-    case kSaveNow:
-      if (m_.presetEdited()) m_.save();
+    case kOpenSave: go(kSaveMenu); break;
+    case kSaveOver:
+      m_.save();
+      go(kHome);
       break;
+    case kSaveNew:
+      name_[0] = 0;
+      upper_ = autoUpper_ = true;
+      saveFailed_ = false;
+      go(kName);
+      break;
+    case kKey: {
+      const size_t n = strlen(name_);
+      char c = kKeyRows[arg / 10][arg % 10];
+      if (!upper_ && c >= 'A' && c <= 'Z') c = (char)(c + 32);
+      if (n < (size_t)kNameMax) {
+        name_[n] = c;
+        name_[n + 1] = 0;
+        if (autoUpper_ && c >= 'A' && c <= 'Z') upper_ = false;  // after a word's first letter: lower case
+        autoUpper_ = false;
+      }
+      saveFailed_ = false;
+      break;
+    }
+    case kCaps:
+      upper_ = !upper_;
+      autoUpper_ = false;  // the player's choice stays until the next word
+      break;
+    case kSpace: {
+      const size_t n = strlen(name_);
+      if (n > 0 && n < (size_t)kNameMax && name_[n - 1] != ' ') {
+        name_[n] = ' ';
+        name_[n + 1] = 0;
+        upper_ = autoUpper_ = true;  // a new word
+      }
+      break;
+    }
+    case kDelete: {
+      const size_t n = strlen(name_);
+      if (n > 0) name_[n - 1] = 0;
+      if (n <= 1 || name_[n - 2] == ' ') upper_ = autoUpper_ = true;  // at a word's start again
+      saveFailed_ = false;
+      break;
+    }
+    case kNameOk: {
+      size_t n = strlen(name_);
+      while (n > 0 && name_[n - 1] == ' ') name_[--n] = 0;
+      if (m_.saveAs(name_)) go(kHome);
+      else saveFailed_ = true;
+      break;
+    }
+    case kHome_: go(kHome); break;
+    case kOpenMaster: go(kMaster); break;
+    case kVolDown: m_.masterStep(repeats_ > 10 ? -5 : -1); break;
+    case kVolUp: m_.masterStep(repeats_ > 10 ? 5 : 1); break;
     case kEditBack: go(kHome); break;
     case kEditOn: m_.toggleBlock(editBlock_); break;
     case kMinus: m_.settingStep(editBlock_, arg, repeats_ > 10 ? -5 : -1); break;
@@ -560,8 +684,17 @@ void Ui::fire(Action a, int arg) {
     case kFilesDown:
       if ((filePage_ + 1) * kRowsPerPage < m_.fileCount(kBlocks[editBlock_].file)) filePage_++;
       break;
+    case kDrag:
+    case kDragVol:  // a tap on a value changes nothing
     case kNone: break;
   }
+}
+
+void Ui::dragTo(int x) {
+  float f = dragFrom_ + (float)(x - dragX0_) / (float)dragWidth_;
+  f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+  if (heldAction_ == kDragVol) m_.masterSet(f);
+  else m_.settingSet(editBlock_, heldArg_, f);
 }
 
 // ---- Touch ----
@@ -583,6 +716,25 @@ void Ui::touch(bool down, int x, int y, uint32_t ms) {
       heldArg_ = p.arg;
       heldRect_ = p.rect;
       pressMs_ = repeatMs_ = ms;
+      dragging_ = dragPending_ = false;
+      pressX_ = x;
+      if (heldAction_ == kDrag || heldAction_ == kDragVol) {
+        SettingView v;
+        v.fraction = 0.0f;
+        if (heldAction_ == kDragVol) m_.master(&v);
+        else m_.setting(editBlock_, heldArg_, &v);
+        dragFrom_ = v.fraction;
+        dragWidth_ = heldAction_ == kDragVol ? 280 : 192;  // the bars' widths
+      }
+    } else if (dragging_) {
+      if (dragPending_) dragTo(dragPendingX_);
+      dragPendingX_ = x;
+      dragPending_ = true;
+    } else if ((heldAction_ == kDrag || heldAction_ == kDragVol) && inside_ && (x - pressX_ >= kDragStart || pressX_ - x >= kDragStart)) {
+      // The value follows from here, so it does not jump by the pixels that began the drag;
+      // the finger may then wander off the row.
+      dragging_ = true;
+      dragX0_ = x;
     } else if (heldAction_ != kNone) {
       // Sliding off the button lets it go; a resistive panel wanders a little, so the
       // button counts as 8 pixels larger while it is held.
@@ -594,7 +746,8 @@ void Ui::touch(bool down, int x, int y, uint32_t ms) {
   // Up: only after 40 ms without contact (the panel bounces).
   if (!held_ || ms - lastDownMs_ < 40) return;
   held_ = false;
-  if (inside_ && !repeated_) fire(heldAction_, heldArg_);
+  if (inside_ && !repeated_ && !dragging_) fire(heldAction_, heldArg_);
+  dragging_ = false;
   heldAction_ = kNone;
 }
 
@@ -607,8 +760,9 @@ void Ui::tick(uint32_t ms) {
     fire(heldAction_, heldArg_);
   }
   // Holding minus or plus: after 0.4 s ten single steps a second, after the tenth five at a time.
-  if (held_ && inside_ && (heldAction_ == kMinus || heldAction_ == kPlus) && (screen_ == kBlockEdit || screen_ == kTrainer) &&
-      ms - pressMs_ >= 400 && ms - repeatMs_ >= 100) {
+  const bool stepper = ((heldAction_ == kMinus || heldAction_ == kPlus) && (screen_ == kBlockEdit || screen_ == kTrainer)) ||
+                       ((heldAction_ == kVolDown || heldAction_ == kVolUp || heldAction_ == kDelete) && (screen_ == kMaster || screen_ == kName));
+  if (held_ && inside_ && stepper && ms - pressMs_ >= 400 && ms - repeatMs_ >= 100) {
     repeatMs_ = ms;
     repeated_ = true;
     repeats_++;

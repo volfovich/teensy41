@@ -123,6 +123,16 @@ struct UnitModel : UiModel {
     v = v < lo ? lo : (v > hi ? hi : v);
     if (v != getParam(id)) changeSetting(id, v);
   }
+  void settingSet(int b, int i, float fraction) override {
+    const int id = settingId[b][i];
+    if (id < 0) return;
+    int lo, hi;
+    paramLimits(id, &lo, &hi);
+    const int step = ui::paramDef(id).step ? ui::paramDef(id).step : 1;
+    int v = lo + (int)(fraction * (float)(hi - lo) / (float)step + 0.5f) * step;
+    v = v < lo ? lo : (v > hi ? hi : v);
+    if (v != getParam(id)) changeSetting(id, v);
+  }
   int presetCount() override { return ::presetCount(); }
   int presetCurrent() override { return ::presetCurrent(); }
   int presetSaved() override { return ::presetSaved(); }
@@ -134,6 +144,27 @@ struct UnitModel : UiModel {
   void cancelPreview() override { ::cancelPreview(); }
   void keepPreview() override { ::keepPreview(); }
   bool save() override { return savePreset(); }
+  bool saveAs(const char* name) override { return newPreset(name); }
+  void master(SettingView* v) override {
+    int lo, hi;
+    paramLimits(ui::kMaster, &lo, &hi);
+    strlcpy(v->label, ui::paramDef(ui::kMaster).label, sizeof(v->label));
+    paramText(ui::kMaster, v->text, sizeof(v->text));
+    v->fraction = (float)(getParam(ui::kMaster) - lo) / (float)(hi - lo);
+    v->bar = true;
+  }
+  void masterStep(int steps) override {
+    int lo, hi;
+    paramLimits(ui::kMaster, &lo, &hi);
+    const int v = getParam(ui::kMaster) + steps;
+    setParamQuiet(ui::kMaster, v < lo ? lo : (v > hi ? hi : v));
+  }
+  void masterSet(float fraction) override {
+    int lo, hi;
+    paramLimits(ui::kMaster, &lo, &hi);
+    const int v = lo + (int)(fraction * (float)(hi - lo) + 0.5f);
+    if (v != getParam(ui::kMaster)) setParamQuiet(ui::kMaster, v < lo ? lo : (v > hi ? hi : v));
+  }
   bool blockOn(int b) override { return blockParam[b] >= 0 && (getParam(blockParam[b]) != 0) != kBlocks[b].onInverted; }
   void toggleBlock(int b) override {
     const int id = blockParam[b];
@@ -188,6 +219,10 @@ static uint32_t g_touchMs = 0;
 // A tap asked for over the shell ('tft tap'): down until g_tapUntil.
 static uint32_t g_tapUntil = 0;
 static int g_tapX = 0, g_tapY = 0;
+// 'tft drag': the tap's point moves to g_dragX, g_dragY between g_dragStart and 150 ms before the end.
+static bool g_drag = false;
+static int g_dragX = 0, g_dragY = 0;
+static uint32_t g_dragStart = 0;
 
 // Reads the panel at most every 10 ms. True with the raw point while it is touched.
 static bool readTouch(uint32_t now, int* rawX, int* rawY, bool* fresh) {
@@ -382,8 +417,15 @@ void serviceScreen() {
 
   if (g_tapUntil) {
     const bool down = now < g_tapUntil;
-    g_ui.touch(down, g_tapX, g_tapY, now);
-    if (!down && now - g_tapUntil > 100) g_tapUntil = 0;
+    int x = g_tapX, y = g_tapY;
+    if (g_drag) {  // rests 100 ms, moves, rests 150 ms
+      const int32_t span = (int32_t)(g_tapUntil - g_dragStart) - 250, at = (int32_t)(now - g_dragStart) - 100;
+      const int32_t k = at <= 0 ? 0 : (at >= span ? span : at);
+      x += (g_dragX - g_tapX) * k / span;
+      y += (g_dragY - g_tapY) * k / span;
+    }
+    g_ui.touch(down, x, y, now);
+    if (!down && now - g_tapUntil > 100) g_tapUntil = 0, g_drag = false;
   } else if (g_present) {
     int rx, ry, x, y;
     bool fresh;
@@ -401,7 +443,7 @@ void serviceScreen() {
 
 // ---- Shell ----
 void screenCommand(const char* arg) {
-  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer"};
+  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume"};
   if (!arg || !*arg) {
     Serial.printf("Touch screen: %s, %s (%s), touch %s, showing %s.\n", g_present ? "display found" : "no display found",
                   g_active ? "on" : "off", g_rec.mode == kAuto ? "automatic" : "forced",
@@ -409,6 +451,7 @@ void screenCommand(const char* arg) {
     Serial.println("  tft on | off | auto   draw and read touch always, never, or when a display is found at boot\n"
                    "  tft cal               calibrate the touch panel (two crosses)\n"
                    "  tft tap <x> <y> [ms]  debug: a touch at a screen point, as a finger would (80 ms, or as given)\n"
+                   "  tft drag <x0> <y0> <x1> <y1> [ms]  debug: a finger sliding from one point to another (600 ms, or as given)\n"
                    "  tft touch             debug: touch readings for 10 s\n"
                    "  tft bench meters|full|off  debug: draw to measure what drawing costs the audio");
     return;
@@ -426,7 +469,19 @@ void screenCommand(const char* arg) {
     g_tapX = (int)strtol(arg + 4, &end, 10);
     g_tapY = (int)strtol(end, &end, 10);
     const long ms = strtol(end, nullptr, 10);
+    g_drag = false;
     g_tapUntil = millis() + (ms > 0 && ms <= 10000 ? ms : 80);
+    if (!g_active) Serial.println("The touch screen is off ('tft on').");
+  } else if (!strncmp(arg, "drag ", 5)) {
+    char* end;
+    g_tapX = (int)strtol(arg + 5, &end, 10);
+    g_tapY = (int)strtol(end, &end, 10);
+    g_dragX = (int)strtol(end, &end, 10);
+    g_dragY = (int)strtol(end, &end, 10);
+    const long ms = strtol(end, nullptr, 10);
+    g_drag = true;
+    g_dragStart = millis();
+    g_tapUntil = g_dragStart + (ms >= 300 && ms <= 10000 ? ms : 600);
     if (!g_active) Serial.println("The touch screen is off ('tft on').");
   } else if (!strcmp(arg, "touch")) {
     g_bench = kOff;
