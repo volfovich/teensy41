@@ -316,7 +316,7 @@ export function presetAction(action: PresetAction, name?: string) {
 async function startPreview(): Promise<() => void> {
   const snapshot = (await import("./demo-snapshot.json")).default as Snapshot;
   Object.assign(device, structuredClone(snapshot));
-  device.models = [device.files.model, "/AMP/Recto Modern Red.nam", "/AMP/Deluxe Reverb clean.nam", "/AMP/5150 Block Letter.nam"].filter(Boolean).sort().map((path) => ({ path, size: 665758 }));
+  device.models = [device.files.model, "/AMP/Recto Modern Red.nam", "/AMP/Deluxe Reverb clean.nam", "/AMP/5150 Block Letter.nam", "/AMP/JCM_800_2203_OD8008_Boosted_Amp_Gain_39.nam", "/AMP/JCM_800_2203_OD8008_Boosted_Amp_Gain_5.nam"].filter(Boolean).sort().map((path) => ({ path, size: 665758 }));
   device.irs = [device.files.ir, "/IR/Mesa OS 4x12 V30.wav", "/IR/Greenback 2x12.wav"].filter(Boolean).sort().map((path) => ({ path, size: 96044 }));
   device.modelInfo = { name: "", gearMake: "Marshall", gearModel: "JCM 800 2203", gearType: "amp", toneType: "hi_gain", sampleRate: 48000, loudness: -20.6, inputLevelDbu: 12, outputLevelDbu: null, calibrationDb: -9.3, levelDb: 8.6 };
   // A made-up cab: a few decaying resonances for the picture, a speaker-like curve for the response.
@@ -334,7 +334,7 @@ async function startPreview(): Promise<() => void> {
   });
   device.irInfo = { sampleRate: 96000, channels: 2, bits: 24, frames: 19968, length: 3992, resampled: true, cut: true, gain: 0.44, wave, response };
   device.card = { totalKb: 31154688, freeKb: 31020032 };
-  device.presets = ["01 Recto", device.files.preset || "02 Crunch", "03 Vintage clean"].map((name) => ({ name, number: Number(name.slice(0, 2)) }));
+  device.presets = [device.files.preset || "01 Recto", "02 Crunch", "03 Vintage clean", "04 A name of twenty-four ch"].map((name) => ({ name, number: Number(name.slice(0, 2)) }));
   preview.on = true;
   const t0 = performance.now();
   const timer = setInterval(() => {

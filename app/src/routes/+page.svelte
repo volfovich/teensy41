@@ -208,7 +208,7 @@
       if (e.key === "Escape") (answerRecall(false), cancelOffer(), answerRestore(false));
       return; // a question is open: it has the keyboard
     }
-    if (t.closest("input, select, button, [role=slider]")) return;
+    if (t.closest("input, select, button, [role=slider], [role=separator]")) return;
     if (e.key === "l" || e.key === "L") {
       toggleLevels();
     } else if (e.key === "t" || e.key === "T") {
@@ -226,6 +226,45 @@
     else if (e.key === "ArrowRight" || e.key === "ArrowDown") stepPreset(1);
     else return;
     e.preventDefault();
+  }
+
+  // A setting that decides which others are shown (a type or a mode, `only` in blocks.json)
+  // gets a line of its own above the dials, so the dials below never change lines with it.
+  const selectorKeys = (b: Block) => new Set(Object.values(b.def.only ?? {}).flatMap((o) => Object.keys(o)));
+  const shownIn = (b: Block, settings: Setting[], selectors: boolean) => {
+    const keys = selectorKeys(b);
+    return settings.filter((s) => keys.has(s.key) === selectors && settingShown(b, s, device.settings, device.values));
+  };
+
+  // The library column's width: drag its edge (or focus it and use the arrows); double-click
+  // puts it back. Remembered. The chain keeps the room it needs (the style's min()).
+  const LIB_DEFAULT = 240, LIB_MIN = 180, LIB_MAX = 560;
+  const storedWidth = typeof localStorage === "undefined" ? 0 : Number(localStorage.getItem("libraryWidth"));
+  let libWidth = $state(storedWidth >= LIB_MIN && storedWidth <= LIB_MAX ? storedWidth : LIB_DEFAULT);
+  let resizing = $state(false);
+  function setLibWidth(w: number, keep = true) {
+    libWidth = Math.round(Math.min(LIB_MAX, Math.max(LIB_MIN, w)));
+    if (keep) localStorage.setItem("libraryWidth", String(libWidth));
+  }
+  function gripDown(e: PointerEvent) {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    resizing = true;
+    e.preventDefault();
+  }
+  function gripMove(e: PointerEvent) {
+    if (resizing) setLibWidth(e.clientX, false);
+  }
+  function gripUp() {
+    if (resizing) setLibWidth(libWidth);
+    resizing = false;
+  }
+  function gripKey(e: KeyboardEvent) {
+    if (e.key === "ArrowLeft") setLibWidth(libWidth - 16);
+    else if (e.key === "ArrowRight") setLibWidth(libWidth + 16);
+    else if (e.key === "Home") setLibWidth(LIB_DEFAULT);
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   const laneChips = ["bpm", "drum style", "drum kit", "drum song", "bass key"];
@@ -336,8 +375,8 @@
     <div class="alert soft">{notice.text}</div>
   {/if}
 
-  <div class="columns">
-  <aside aria-label="Library" class:dropping={dropping.on}>
+  <div class="columns" class:resizing>
+  <aside aria-label="Library" class:dropping={dropping.on} style:--w="{libWidth}px">
     <div class="brand">VOLFOVICH <b>NAM FORGE</b></div>
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected={tab === "presets"} onclick={() => (tab = "presets")}>Presets</button>
@@ -446,6 +485,24 @@
     {/if}
     {/if}
   </aside>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="grip"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Library width"
+    aria-valuemin={LIB_MIN}
+    aria-valuemax={LIB_MAX}
+    aria-valuenow={libWidth}
+    tabindex="0"
+    title="Drag to make the library wider or narrower; double-click for the usual width"
+    onpointerdown={gripDown}
+    onpointermove={gripMove}
+    onpointerup={gripUp}
+    onpointercancel={gripUp}
+    ondblclick={() => setLibWidth(LIB_DEFAULT)}
+    onkeydown={gripKey}
+  ></div>
   <div class="main">
 
   <section class="chain" aria-label="Signal chain">
@@ -453,9 +510,9 @@
     {#each blocks.chain as b (b.def.id)}
       <div class="wire" class:live={meters.inputPeak > 0.003}></div>
       <div class="tile" class:off={!isOn(b)} class:selected={selected.def.id === b.def.id} class:ringing={!isOn(b) && blockActive(b, meters)} style:--c={b.def.colour}>
-        <button class="body" onclick={() => (selectedId = b.def.id)} aria-pressed={selected.def.id === b.def.id}>
+        <button class="body" title={b.def.file ? summary(b) : undefined} onclick={() => (selectedId = b.def.id)} aria-pressed={selected.def.id === b.def.id}>
           <span class="short">{b.def.short}</span>
-          <span class="summary">{summary(b)}</span>
+          <span class="summary" class:two={!!b.def.file}>{summary(b)}</span>
           {#if b.def.id === "gate" && isOn(b)}
             <span class="gate" class:open={meters.gateGain > 0.5} title={meters.gateGain > 0.5 ? "Open" : "Closed"}></span>
           {/if}
@@ -526,8 +583,15 @@
     {#each selected.sections as sec (sec.title)}
       <div class="section">
         {#if sec.title}<h3>{sec.title}</h3>{/if}
+        {#if shownIn(selected, sec.settings, true).length}
+          <div class="selectors">
+            {#each shownIn(selected, sec.settings, true) as s (s.id)}
+              <Control inline setting={s} value={value(s.id, s.default)} colour={selected.def.colour} onchange={(v) => setParam(s.id, v)} />
+            {/each}
+          </div>
+        {/if}
         <div class="controls">
-          {#each sec.settings.filter((s) => settingShown(selected, s, device.settings, device.values)) as s (s.id)}
+          {#each shownIn(selected, sec.settings, false) as s (s.id)}
             <Control setting={s} value={value(s.id, s.default)} colour={selected.def.colour} onchange={(v) => setParam(s.id, v)} />
           {/each}
         </div>
@@ -647,12 +711,26 @@
     line-height: 1;
     padding: 0 0 2px;
   }
-  .save {
+  /* One look for every plain button: the header's, the library's, the dialogs', the editor's. */
+  .save,
+  .row button,
+  .choose,
+  .more {
     border: 1px solid #353b47;
     background: #22262e;
     border-radius: 7px;
     padding: 4px 11px;
+    line-height: 18px;
     white-space: nowrap;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .save:hover:not(:disabled),
+  .row button:hover:not(:disabled),
+  .choose:hover,
+  .more:hover,
+  .step:hover:not(:disabled) {
+    background: #2b303a;
+    border-color: #454c5a;
   }
   .save:not(:disabled):first-of-type,
   .primary {
@@ -685,10 +763,13 @@
     letter-spacing: 0;
     white-space: normal;
     margin-bottom: 8px;
+    text-align: center;
   }
   .ask-box p {
     margin: 0 0 10px;
     color: #c3c8d1;
+    text-align: center;
+    overflow-wrap: anywhere;
   }
   .ask-box ul {
     margin: 0 0 14px;
@@ -698,11 +779,13 @@
     overflow-y: auto;
   }
   .ask-box .row {
+    justify-content: center;
     gap: 8px;
-    margin-top: 14px;
+    margin-top: 16px;
   }
   .ask-box .row button {
-    padding: 6px 12px;
+    min-width: 84px;
+    padding: 6px 14px;
   }
   .alert.soft {
     background: #3a2f17;
@@ -715,20 +798,43 @@
     display: flex;
   }
   .main {
+    container: main / inline-size;
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
   }
   aside {
-    width: 208px;
+    /* As wide as it was dragged, but the chain's eight tiles keep their room. */
+    width: max(180px, min(var(--w), 100vw - 880px));
+    box-sizing: border-box;
     flex: none;
     display: flex;
     flex-direction: column;
     padding: 16px 12px 12px;
     background: #14171c;
-    border-right: 1px solid #2a2e37;
     overflow-y: auto;
+  }
+  /* The library's edge: a line that can be dragged. */
+  .grip {
+    flex: none;
+    width: 7px;
+    margin: 0 -3px;
+    z-index: 2;
+    cursor: col-resize;
+    background: linear-gradient(90deg, transparent 3px, #2a2e37 3px, #2a2e37 4px, transparent 4px);
+    outline: none;
+    touch-action: none;
+  }
+  .grip:hover,
+  .grip:focus-visible,
+  .resizing .grip {
+    background: linear-gradient(90deg, transparent 2px, #ffb347 2px, #ffb347 5px, transparent 5px);
+  }
+  .columns.resizing {
+    cursor: col-resize;
+    user-select: none;
+    -webkit-user-select: none;
   }
   aside .brand {
     padding: 0 8px 14px;
@@ -878,11 +984,13 @@
     color: #8a92a0;
     font-size: 11.5px;
   }
+  /* Names wrap instead of being cut: file names are long and their ends tell them apart. */
   .pname {
     flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
     font-weight: 600;
   }
   .mark {
@@ -902,12 +1010,6 @@
     margin-top: 10px;
     padding: 10px 6px 0;
     border-top: 1px solid #2a2e37;
-  }
-  .row button {
-    border: 1px solid #353b47;
-    background: #22262e;
-    border-radius: 7px;
-    padding: 4px 10px;
   }
   .row .danger {
     border-color: #ff4d4d;
@@ -1063,14 +1165,23 @@
   .tile.off .short {
     color: #aab2bf;
   }
-  /* A narrow window: seven tiles get tight, so the names shrink to stay clear of the switch. */
-  @media (max-width: 1200px) {
+  /* Little room for the chain (a narrow window or a wide library): the tiles get tight, so
+     the names and the switches shrink to stay clear of each other. */
+  @container main (max-width: 1010px) {
     .short {
       font-size: 11px;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
     }
     .tile .body {
       padding-left: 9px;
+      padding-right: 8px;
+    }
+    .tile .power {
+      top: 6px;
+      right: 5px;
+      width: 22px;
+      height: 22px;
+      padding: 4px;
     }
   }
   .summary {
@@ -1080,6 +1191,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A file's name gets two lines on its tile (the whole of it is in the editor's heading). */
+  .summary.two {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
   }
   .save.lit {
     background: #2d323c;
@@ -1179,12 +1300,6 @@
     color: #8a92a0;
     margin-right: 3px;
   }
-  .more {
-    background: #22262e;
-    border: 1px solid #353b47;
-    border-radius: 7px;
-    padding: 4px 10px;
-  }
   .more.selected {
     border-color: #aab2bf;
   }
@@ -1215,7 +1330,7 @@
     color: color-mix(in srgb, var(--c) 70%, #fff);
     white-space: nowrap;
   }
-  .file {
+  .head .file {
     color: #c3c8d1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1223,10 +1338,6 @@
   }
   .choose {
     flex: none;
-    border: 1px solid #353b47;
-    background: #22262e;
-    border-radius: 7px;
-    padding: 3px 10px;
   }
   .grow {
     flex: 1;
@@ -1296,6 +1407,13 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: #8a92a0;
+  }
+  .selectors {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 26px;
+    margin: 4px 0 18px;
   }
   .controls {
     display: flex;

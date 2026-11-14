@@ -5,7 +5,9 @@
   import { Unit, type Setting } from "$lib/types";
   import Knob from "./Knob.svelte";
 
-  let { setting, value, colour, onchange }: { setting: Setting; value: number; colour: string; onchange: (v: number) => void } = $props();
+  // inline: the label beside the control instead of under it, without the height of a dial
+  // (for a type or mode selector on its own line).
+  let { setting, value, colour, onchange, inline = false }: { setting: Setting; value: number; colour: string; onchange: (v: number) => void; inline?: boolean } = $props();
 
   const kind = $derived(
     setting.unit === Unit.OnOff ? "switch"
@@ -19,7 +21,7 @@
 {#if kind === "knob"}
   <Knob {setting} {value} {colour} {onchange} />
 {:else}
-  <div class="field" style:--c={colour}>
+  <div class="field" class:inline style:--c={colour}>
     {#if kind === "switch"}
       <button class="switch" class:on={value !== 0} role="switch" aria-checked={value !== 0} aria-label={setting.name} onclick={() => onchange(value ? 0 : 1)}>
         <span></span>
@@ -53,7 +55,19 @@
     justify-content: flex-end;
     gap: 6px;
     min-width: 84px;
-    min-height: 104px;
+    /* No height of its own: the row lines the labels up along its bottom, so a field stands
+       level with a dial's label beside it, and a row without dials stays low. */
+  }
+  .field.inline {
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 0;
+  }
+  .field.inline > :not(.label) {
+    margin-bottom: 0;
   }
   .label {
     font-size: 10.5px;
@@ -71,7 +85,7 @@
   .switch {
     width: 44px;
     height: 24px;
-    margin-bottom: 14px;
+    margin-bottom: 8px;
     border-radius: 12px;
     border: 1px solid #353b47;
     background: #22262e;
@@ -98,7 +112,7 @@
   }
   .buttons {
     display: flex;
-    margin-bottom: 12px;
+    margin-bottom: 6px;
     border: 1px solid #353b47;
     border-radius: 7px;
     overflow: hidden;
@@ -120,7 +134,7 @@
     color: #fff;
   }
   select {
-    margin-bottom: 12px;
+    margin-bottom: 6px;
     background: #22262e;
     border: 1px solid #353b47;
     border-radius: 7px;
@@ -129,7 +143,7 @@
   .stepper {
     display: flex;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 6px;
     border: 1px solid #353b47;
     border-radius: 7px;
     background: #22262e;
