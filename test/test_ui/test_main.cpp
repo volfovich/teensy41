@@ -129,6 +129,19 @@ struct FakeModel : UiModel {
     val[b][i] = v < 0 ? 0 : (v > hi ? hi : v);
     edited = true;
   }
+  std::vector<std::string> models = {"built-in", "01 - CHUG NORRIS RAW", "JCM 800 2203 Amp Gain 3", "JCM 800 2203 Amp Gain 5",
+                                     "JCM 800 2203 OD8008 Boosted Amp Gain 39", "TRCK SSS Clean BAL CAB", "TW TC DI Drive with BB"};
+  std::vector<std::string> irs = {"OH 112 Deluxe OX12K", "OH 412 RECT", "OH Hair-Metal"};
+  int model = 4, ir = 2;
+  int fileCount(FileKind k) override { return (int)(k == kFileModel ? models : irs).size(); }
+  int fileCurrent(FileKind k) override { return k == kFileModel ? model : ir; }
+  const char* fileName(FileKind k, int idx) override { return (k == kFileModel ? models : irs)[idx].c_str(); }
+  bool fileLoad(FileKind k, int idx) override {
+    log += (k == kFileModel ? "model" : "ir") + std::to_string(idx) + " ";
+    (k == kFileModel ? model : ir) = idx;
+    edited = true;
+    return true;
+  }
   float inputDb() override { return inDb; }
   float outputDb() override { return outDb; }
   int cpuPercent() override { return cpu; }
@@ -472,17 +485,18 @@ void test_block_settings() {
   tap(ui, kEditBackX, kEditTopY);
   TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
 
-  // A toggle: plus is on, minus is off, a tap on its name flips. (The amp's 7th: amp cal.)
+  // A toggle: plus is on, minus is off, a tap on its name flips. (The amp's 7th: amp cal,
+  // on its second page in the last row, because the amp's first row is its model.)
   hold(ui, tileX(0), tileY(0), 700);
   tap(ui, 260, 222);
   TEST_ASSERT_EQUAL_INT(0, m.val[0][6]);
-  tap(ui, kMidX, setY(2));
+  tap(ui, kMidX, setY(3));
   TEST_ASSERT_EQUAL_INT(1, m.val[0][6]);
-  tap(ui, kPlusX, setY(2));
+  tap(ui, kPlusX, setY(3));
   TEST_ASSERT_EQUAL_INT(1, m.val[0][6]);
-  tap(ui, kMinusX, setY(2));
+  tap(ui, kMinusX, setY(3));
   TEST_ASSERT_EQUAL_INT(0, m.val[0][6]);
-  tap(ui, kMidX, setY(1));  // a number: a tap on its name does nothing
+  tap(ui, kMidX, setY(2));  // a number: a tap on its name does nothing
   TEST_ASSERT_EQUAL_INT(50, m.val[0][5]);
   tap(ui, kEditBackX, kEditTopY);
 
@@ -493,6 +507,49 @@ void test_block_settings() {
   TEST_ASSERT_EQUAL_STRING("save ", m.log.c_str());
   tap(ui, 160, 224);
   TEST_ASSERT_EQUAL_STRING("save ", m.log.c_str());
+}
+
+void test_choosing_a_model_and_an_ir() {
+  FakeModel m;
+  Ui ui(m);
+  // The amp's first row is its model: the arrows step through the list, round the ends.
+  hold(ui, tileX(0), tileY(0), 700);
+  tap(ui, kPlusX, setY(0));
+  tap(ui, kPlusX, setY(0));
+  tap(ui, kPlusX, setY(0));
+  tap(ui, kMinusX, setY(0));
+  TEST_ASSERT_EQUAL_STRING("model5 model6 model0 model6 ", m.log.c_str());
+  tap(ui, kPlusX, setY(1));  // the row after it is the first setting
+  TEST_ASSERT_EQUAL_INT(51, m.val[0][0]);
+
+  // A tap on the name opens the list on the page of the one that plays; a row loads at once.
+  m.log.clear();
+  tap(ui, kMidX, setY(0));
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  tap(ui, 160, rowY(1));  // page 2: models 5 and 6; this is the one that plays
+  TEST_ASSERT_EQUAL_STRING_MESSAGE("", m.log.c_str(), "the one that plays is not loaded again");
+  tap(ui, 160, rowY(0));
+  tap(ui, 160, rowY(3));   // no file in this row
+  tap(ui, 160, kBarY);     // up
+  tap(ui, 160, rowY(2));
+  TEST_ASSERT_EQUAL_STRING("model5 model2 ", m.log.c_str());
+  tap(ui, 40, kBarY);      // back to the amp's settings
+  TEST_ASSERT_EQUAL_INT(Ui::kBlockEdit, ui.screen());
+  TEST_ASSERT_EQUAL_INT(0, ui.editedBlock());
+  tap(ui, kEditBackX, kEditTopY);
+
+  // The cab has its IR the same way; a block without a file starts with its settings.
+  m.log.clear();
+  hold(ui, tileX(2), tileY(2), 700);
+  tap(ui, kMinusX, setY(0));
+  tap(ui, kMidX, setY(0));
+  tap(ui, 160, rowY(0));
+  TEST_ASSERT_EQUAL_STRING("ir1 ir0 ", m.log.c_str());
+  tap(ui, 40, kBarY);
+  tap(ui, kEditBackX, kEditTopY);
+  hold(ui, tileX(3), tileY(3), 700);  // the doubler
+  tap(ui, kPlusX, setY(0));
+  TEST_ASSERT_EQUAL_INT(51, m.val[3][0]);
 }
 
 void test_tuner_opens_and_closes() {
@@ -607,10 +664,11 @@ void test_write_pictures() {
     g.save("block_delay");
     tap(ui, kEditBackX, kEditTopY);
     hold(ui, tileX(0), tileY(0), 700);
-    tap(ui, 260, 222);
-    tap(ui, kMidX, setY(2));
     g.paint(ui);
-    g.save("block_amp_page2");
+    g.save("block_amp");
+    tap(ui, kMidX, setY(0));
+    g.paint(ui);
+    g.save("files_models");
   }
 }
 
@@ -626,6 +684,7 @@ int main() {
   RUN_TEST(test_preset_list_previews_keeps_and_goes_back);
   RUN_TEST(test_preset_list_with_unsaved_edits);
   RUN_TEST(test_block_settings);
+  RUN_TEST(test_choosing_a_model_and_an_ir);
   RUN_TEST(test_tuner_opens_and_closes);
   RUN_TEST(test_long_names_fit);
   RUN_TEST(test_blocks_header_matches_blocks_json);

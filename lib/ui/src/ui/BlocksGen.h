@@ -13,6 +13,9 @@ struct BlockSetting {
   const char* onlyChoices;
 };
 
+// The file a block loads and shows, if any.
+enum FileKind { kFileModel, kFileIr, kFileNone };
+
 struct BlockDef {
   const char* id;
   const char* label;   // the tile's text
@@ -22,6 +25,7 @@ struct BlockDef {
   bool onInverted;     // the switch is a bypass
   const BlockSetting* settings;
   int settingCount;
+  FileKind file;
 };
 
 static const BlockSetting kAmpSettings[] = {
@@ -110,15 +114,15 @@ static const BlockSetting kDrumsSettings[] = {
 };
 
 static const BlockDef kBlocks[] = {
-    {"amp", "AMP", "Amp", 0xFC47, "amp", false, kAmpSettings, 7},
-    {"gate", "GATE", "Noise gate", 0x8EAA, "gate", false, kGateSettings, 3},
-    {"cab", "CAB", "Cab", 0xD54B, "b", true, kCabSettings, 2},
-    {"doubler", "DBL", "Doubler", 0x3E5B, "dbl", false, kDoublerSettings, 2},
-    {"mod", "MOD", "Mod", 0x3EB4, "mod", false, kModSettings, 6},
-    {"delay", "DELAY", "Delay", 0x5C7F, "dl", false, kDelaySettings, 9},
-    {"reverb", "REVERB", "Reverb", 0xB3FF, "rv", false, kReverbSettings, 8},
-    {"limiter", "LIMIT", "Limiter", 0xE68D, "lim", false, kLimiterSettings, 3},
-    {"drums", "DRUMS + BASS", "Drums and bass", 0xFAEF, "drum", false, kDrumsSettings, 18},
+    {"amp", "AMP", "Amp", 0xFC47, "amp", false, kAmpSettings, 7, kFileModel},
+    {"gate", "GATE", "Noise gate", 0x8EAA, "gate", false, kGateSettings, 3, kFileNone},
+    {"cab", "CAB", "Cab", 0xD54B, "b", true, kCabSettings, 2, kFileIr},
+    {"doubler", "DBL", "Doubler", 0x3E5B, "dbl", false, kDoublerSettings, 2, kFileNone},
+    {"mod", "MOD", "Mod", 0x3EB4, "mod", false, kModSettings, 6, kFileNone},
+    {"delay", "DELAY", "Delay", 0x5C7F, "dl", false, kDelaySettings, 9, kFileNone},
+    {"reverb", "REVERB", "Reverb", 0xB3FF, "rv", false, kReverbSettings, 8, kFileNone},
+    {"limiter", "LIMIT", "Limiter", 0xE68D, "lim", false, kLimiterSettings, 3, kFileNone},
+    {"drums", "DRUMS + BASS", "Drums and bass", 0xFAEF, "drum", false, kDrumsSettings, 18, kFileNone},
 };
 static const int kBlockCount = 9;
 static const int kMaxBlockSettings = 18;

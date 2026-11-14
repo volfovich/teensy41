@@ -33,9 +33,9 @@ def make():
         most = max(most, len(entries))
         name = "k%sSettings" % b["id"].capitalize()
         tables.append("static const BlockSetting %s[] = {\n%s\n};" % (name, "\n".join(entries)))
-        rows.append('    {"%s", "%s", "%s", 0x%04X, "%s", %s, %s, %d},' % (
+        rows.append('    {"%s", "%s", "%s", 0x%04X, "%s", %s, %s, %d, %s},' % (
             b["id"], b["short"], b["name"], rgb565(b["colour"]), b["on"], "true" if b.get("onInverted") else "false",
-            name, len(entries)))
+            name, len(entries), {"model": "kFileModel", "ir": "kFileIr"}.get(b.get("file"), "kFileNone")))
     m = d["meters"]
     return """// BlocksGen.h - made by tools/make_blocks_header.py from protocol/blocks.json; do not edit.
 #pragma once
@@ -52,6 +52,9 @@ struct BlockSetting {
   const char* onlyChoices;
 };
 
+// The file a block loads and shows, if any.
+enum FileKind { kFileModel, kFileIr, kFileNone };
+
 struct BlockDef {
   const char* id;
   const char* label;   // the tile's text
@@ -61,6 +64,7 @@ struct BlockDef {
   bool onInverted;     // the switch is a bypass
   const BlockSetting* settings;
   int settingCount;
+  FileKind file;
 };
 
 %s

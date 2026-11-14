@@ -1,5 +1,5 @@
 // Ui.h - the touch screen's screens: home (preset, chain, meters), preset list, a block's
-// settings, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
+// settings, the list of models or IRs, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
 // (src/Screen.cpp) and the host tests use the same code.
 //
@@ -57,6 +57,11 @@ struct UiModel {
   virtual bool setting(int block, int i, SettingView* v) = 0;
   // Moves it by a number of its own steps (clamped to its range); a toggle goes on (> 0) or off.
   virtual void settingStep(int block, int i, int steps) = 0;
+  // The files a block can load (kind: kFileModel or kFileIr), by place in the unit's list.
+  virtual int fileCount(FileKind kind) = 0;
+  virtual int fileCurrent(FileKind kind) = 0;              // -1 = none loaded
+  virtual const char* fileName(FileKind kind, int idx) = 0;  // without folder and extension
+  virtual bool fileLoad(FileKind kind, int idx) = 0;
   virtual float inputDb() = 0;                   // peaks since the last call
   virtual float outputDb() = 0;
   virtual int cpuPercent() = 0;
@@ -66,7 +71,7 @@ struct UiModel {
 
 class Ui {
  public:
-  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit };
+  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles };
   static const int kRowsPerPage = 5;   // the preset list
   static const int kSettingsPerPage = 4;
 
@@ -88,7 +93,7 @@ class Ui {
  private:
   enum Action { kNone, kPrev, kNext, kOpenList, kBlock, kOpenTuner, kCloseTuner, kRow, kPageUp, kPageDown,
                 kListBack, kListOk, kSave, kDiscard, kCancel, kSaveNow, kEditBack, kEditOn, kMinus, kPlus, kFlip,
-                kEditUp, kEditDown };
+                kEditUp, kEditDown, kFilePrev, kFileNext, kOpenFiles, kFileRow, kFilesBack, kFilesUp, kFilesDown };
   enum Mode { kMeasure, kPaint, kHit };
   struct Pass {
     Mode mode;
@@ -119,6 +124,8 @@ class Ui {
   void layoutTuner(Pass& p);
   void layoutConfirm(Pass& p);
   void layoutBlock(Pass& p);
+  void layoutFiles(Pass& p);
+  void fileStep(int dir);
   // The settings of the edited block that are shown now; returns how many.
   int shownSettings(int* idx);
 
@@ -153,7 +160,7 @@ class Ui {
   int page_ = 0;
   bool previewing_ = false, editedAtOpen_ = false;
   // A block's settings.
-  int editBlock_ = 0, editPage_ = 0, repeats_ = 0;
+  int editBlock_ = 0, editPage_ = 0, repeats_ = 0, filePage_ = 0;
   // The question.
   bool askKeep_ = false;
   int askTarget_ = -1;

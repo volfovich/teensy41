@@ -109,6 +109,7 @@ void Ui::layout(Pass& p) {
     case kTuner: layoutTuner(p); break;
     case kConfirm: layoutConfirm(p); break;
     case kBlockEdit: layoutBlock(p); break;
+    case kFiles: layoutFiles(p); break;
   }
 }
 
@@ -166,6 +167,48 @@ void Ui::layoutHome(Pass& p) {
   button(p, R(215, 210, 101, 30), "PRESETS", kOpenList);
 }
 
+// The list of models or IRs: a tap loads one at once (the one that plays is lit).
+void Ui::layoutFiles(Pass& p) {
+  const FileKind kind = kBlocks[editBlock_].file;
+  const int count = m_.fileCount(kind), pages = count ? (count + kRowsPerPage - 1) / kRowsPerPage : 1;
+  if (filePage_ >= pages) filePage_ = pages - 1;
+  char buf[32];
+  const char* title = kind == kFileModel ? "AMP MODELS" : "CAB IRS";
+  if (part(p, R(8, 0, 150, 24), Sig().s(title).h)) p.canvas->textIn(R(8, 0, 150, 24), kFontSmall, title, kDim, kLeft);
+  snprintf(buf, sizeof(buf), "%d / %d", filePage_ + 1, pages);
+  if (part(p, R(232, 0, 80, 24), Sig().s(buf).h)) p.canvas->textIn(R(232, 0, 80, 24), kFontSmall, buf, kDim, kRight);
+  const int cur = m_.fileCurrent(kind);
+  for (int row = 0; row < kRowsPerPage; row++) {
+    const int idx = filePage_ * kRowsPerPage + row;
+    const Rect r = R(4, 24 + row * 36, 312, 34);
+    if (idx >= count) {
+      part(p, r, 0);
+      continue;
+    }
+    const char* name = m_.fileName(kind, idx);
+    const bool playing = idx == cur, down = pressed(kFileRow, idx);
+    if (part(p, r, Sig().i(idx).s(name).i(playing).i(down).h)) {
+      p.canvas->roundRect(r, 6, down ? kPanelHi : (playing ? kAccent : kPanel));
+      // Long file names get the small font, so more of them shows.
+      const Rect in = R(r.x + 10, r.y, r.w - 20, r.h);
+      const Font& f = Canvas::textWidth(kFontMedium, name) <= in.w ? kFontMedium : kFontSmall;
+      p.canvas->textIn(in, f, name, playing ? kDark : kText, kLeft);
+    }
+    target(p, r, kFileRow, idx);
+  }
+  button(p, R(4, 206, 100, 34), "BACK", kFilesBack);
+  arrowButton(p, R(108, 206, 102, 34), 2, kFilesUp);
+  arrowButton(p, R(214, 206, 102, 34), 3, kFilesDown);
+}
+
+void Ui::fileStep(int dir) {
+  const FileKind kind = kBlocks[editBlock_].file;
+  const int count = m_.fileCount(kind);
+  if (kind == kFileNone || !count) return;
+  const int cur = m_.fileCurrent(kind);
+  m_.fileLoad(kind, cur < 0 ? 0 : (cur + dir + count) % count);
+}
+
 int Ui::shownSettings(int* idx) {
   int n = 0;
   SettingView v;
@@ -183,14 +226,30 @@ void Ui::layoutBlock(Pass& p) {
   if (part(p, R(72, 2, 160, 28), Sig().s(b.name).h)) p.canvas->textIn(R(72, 2, 160, 28), kFontMedium, b.name, b.colour);
   button(p, R(236, 2, 80, 28), on ? "ON" : "OFF", kEditOn, 0, on ? b.colour : 0);
 
+  // The amp and the cab begin with the file they play: previous and next, or a tap for the list.
+  const int fileRow = b.file != kFileNone ? 1 : 0;
   int idx[kMaxBlockSettings];
-  const int count = shownSettings(idx), pages = count ? (count + kSettingsPerPage - 1) / kSettingsPerPage : 1;
+  const int count = shownSettings(idx) + fileRow, pages = count ? (count + kSettingsPerPage - 1) / kSettingsPerPage : 1;
   if (editPage_ >= pages) editPage_ = pages - 1;
   for (int row = 0; row < kSettingsPerPage; row++) {
-    const int n = editPage_ * kSettingsPerPage + row, y = 34 + row * 43;
+    const int n = editPage_ * kSettingsPerPage + row - fileRow, y = 34 + row * 43;
     const Rect minus = R(4, y, 48, 40), mid = R(56, y, 208, 40), plus = R(268, y, 48, 40);
     SettingView v;
-    if (n >= count || !m_.setting(editBlock_, idx[n], &v)) {
+    if (n < 0) {
+      const int cur = m_.fileCurrent(b.file);
+      const char* name = cur >= 0 ? m_.fileName(b.file, cur) : "none";
+      const bool down = pressed(kOpenFiles);
+      arrowButton(p, minus, 0, kFilePrev);
+      if (part(p, mid, Sig().s(name).i(b.file).i(down).h)) {
+        p.canvas->roundRect(mid, 6, down ? kPanelHi : kPanel);
+        p.canvas->textIn(R(mid.x + 8, mid.y + 2, mid.w - 16, 16), kFontSmall, b.file == kFileModel ? "Model" : "IR", kDim, kLeft);
+        p.canvas->textIn(R(mid.x + 8, mid.y + 17, mid.w - 16, 20), kFontSmall, name, kText, kLeft);
+      }
+      target(p, mid, kOpenFiles);
+      arrowButton(p, plus, 1, kFileNext);
+      continue;
+    }
+    if (n >= count - fileRow || !m_.setting(editBlock_, idx[n], &v)) {
       part(p, minus, 0);  // the same parts on every page
       part(p, mid, 0);
       part(p, plus, 0);
@@ -403,9 +462,27 @@ void Ui::fire(Action a, int arg) {
       break;
     case kEditDown: {
       int idx[kMaxBlockSettings];
-      if ((editPage_ + 1) * kSettingsPerPage < shownSettings(idx)) editPage_++;
+      if ((editPage_ + 1) * kSettingsPerPage < shownSettings(idx) + (kBlocks[editBlock_].file != kFileNone)) editPage_++;
       break;
     }
+    case kFilePrev: fileStep(-1); break;
+    case kFileNext: fileStep(1); break;
+    case kOpenFiles: {
+      const int cur = m_.fileCurrent(kBlocks[editBlock_].file);
+      filePage_ = cur > 0 ? cur / kRowsPerPage : 0;
+      go(kFiles);
+      break;
+    }
+    case kFileRow:
+      if (arg != m_.fileCurrent(kBlocks[editBlock_].file)) m_.fileLoad(kBlocks[editBlock_].file, arg);
+      break;
+    case kFilesBack: go(kBlockEdit); break;
+    case kFilesUp:
+      if (filePage_ > 0) filePage_--;
+      break;
+    case kFilesDown:
+      if ((filePage_ + 1) * kRowsPerPage < m_.fileCount(kBlocks[editBlock_].file)) filePage_++;
+      break;
     case kNone: break;
   }
 }

@@ -13,7 +13,9 @@
 
 #include <ui/Ui.h>
 
+#include "AmpLibrary.h"
 #include "AudioChain.h"
+#include "IRLibrary.h"
 #include "Meters.h"
 #include "Params.h"
 #include "PresetLibrary.h"
@@ -137,6 +139,22 @@ struct UnitModel : UiModel {
     const int id = blockParam[b];
     if (id >= 0) changeSetting(id, !getParam(id));
   }
+  int fileCount(FileKind k) override { return k == kFileModel ? ampCount() : irCount(); }
+  int fileCurrent(FileKind k) override { return k == kFileModel ? ampCurrent() : irCurrent(); }
+  // The file's name as it reads best on a small screen: no folder, no extension, spaces
+  // for underscores.
+  const char* fileName(FileKind k, int idx) override {
+    static char buf[64];
+    const char* path = k == kFileModel ? ampPath(idx) : irPath(idx);
+    const char* slash = strrchr(path, '/');
+    strlcpy(buf, slash ? slash + 1 : path, sizeof(buf));
+    char* dot = strrchr(buf, '.');
+    if (dot && dot != buf && strlen(dot) <= 5) *dot = 0;
+    for (char* c = buf; *c; c++)
+      if (*c == '_') *c = ' ';
+    return buf;
+  }
+  bool fileLoad(FileKind k, int idx) override { return k == kFileModel ? loadAmpIndex(idx) : loadIRIndex(idx); }
   float inputDb() override { return toDb(meterInputPeak(kMeterScreen)); }
   float outputDb() override { return toDb(meterOutputPeak(kMeterScreen)); }
   int cpuPercent() override { return (int)(chain.cpuPercent() + 0.5f); }
@@ -382,7 +400,7 @@ void serviceScreen() {
 
 // ---- Shell ----
 void screenCommand(const char* arg) {
-  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings"};
+  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files"};
   if (!arg || !*arg) {
     Serial.printf("Touch screen: %s, %s (%s), touch %s, showing %s.\n", g_present ? "display found" : "no display found",
                   g_active ? "on" : "off", g_rec.mode == kAuto ? "automatic" : "forced",
