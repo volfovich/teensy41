@@ -235,9 +235,8 @@ static void printBpm() {
                                      (unsigned long)(100.0f * g_scanFrame / (float)(fileReader().frames() + 1)));
   else if (!g_info.hasGrid()) Serial.println("Track BPM: no steady beat found (track bpm <value> sets one)");
   else
-    Serial.printf("Track BPM %.2f%s, %d beats in a bar, first beat at %.3f s%s\n", g_info.bpm,
-                  g_info.confidence >= 0.5f ? "" : " (unsure)", g_info.beatsPerBar, g_info.firstBeat,
-                  g_info.barSet ? "" : " (bar 1 not set: track bar)");
+    Serial.printf("Track BPM %.2f%s, %d beats in a bar, first beat at %.3f s\n", g_info.bpm,
+                  g_info.confidence >= 0.5f ? "" : " (unsure)", g_info.beatsPerBar, g_info.firstBeat);
 }
 
 static void scanDone() {
@@ -249,8 +248,6 @@ static void scanDone() {
   g_info.bpm = r.found ? r.bpm : 0.0f;
   g_info.firstBeat = r.found ? r.firstBeat : 0.0f;
   g_info.confidence = r.confidence;
-  g_info.barSet = false;
-  g_info.barBeat = 0;
   saveInfo();
   Serial.printf("Scan done (%lu ms to work it out). ", (unsigned long)(millis() - t0));
   printBpm();
@@ -288,12 +285,12 @@ static void placeReader() {
 
 // ---- The beat grid ----
 
-// A loop point: the nearest bar line (once bar 1 is set) or beat, if the track has a grid
-// and snapping is on; otherwise as it is.
+// A loop point: the nearest beat, if the track has a grid and snapping is on; otherwise
+// as it is.
 static uint32_t snapped(uint32_t frame) {
   if (!g_info.hasGrid() || !g_info.snap) return frame;
   const double t = (double)frame / kSampleRate;
-  const double at = g_info.beatTime(g_info.barSet ? g_info.nearestBarLine(t) : g_info.nearestBeat(t));
+  const double at = g_info.beatTime(g_info.nearestBeat(t));
   return at <= 0.0 ? 0 : (uint32_t)lround(at * kSampleRate);
 }
 
@@ -462,9 +459,17 @@ bool selectTrack(int id) {
   g_player.setTempo(g_info.tempo);
   g_info.tempo = g_player.tempo();
   g_tempoPending = false;
-  if (g_info.loopTo > 0.0f && g_player.setLoop(toFrames(g_info.loopFrom), toFrames(g_info.loopTo))) {
-    g_markA = (int32_t)g_player.loopA();
-    g_markB = (int32_t)g_player.loopB();
+  // The loop's points as they were left; the loop itself only if it was on.
+  if (g_info.loopTo > 0.0f) {
+    if (g_info.looping && g_player.setLoop(toFrames(g_info.loopFrom), toFrames(g_info.loopTo))) {
+      g_markA = (int32_t)g_player.loopA();
+      g_markB = (int32_t)g_player.loopB();
+    } else if (!g_info.looping && toFrames(g_info.loopTo) <= g_player.length()) {
+      g_markA = (int32_t)toFrames(g_info.loopFrom);
+      g_markB = (int32_t)toFrames(g_info.loopTo);
+    } else {
+      g_info.loopFrom = g_info.loopTo = 0.0f;  // no section of this file
+    }
   }
   if (!g_info.scanned) startScan();
   char len[16];
@@ -573,8 +578,6 @@ void trackSetBpm(float bpm) {
   g_info.firstBeat = (float)(keep - floor(keep / period) * period);
   g_info.scanned = true;  // a tempo given by hand stands; the scan does not run over it
   g_scanning = false;
-  g_info.barSet = false;
-  g_info.barBeat = 0;
   infoChanged();
   printBpm();
 }
@@ -582,20 +585,8 @@ void trackSetBpm(float bpm) {
 void trackScaleBpm(bool twice) {
   if (!g_open || !g_info.hasGrid()) return;
   g_info.bpm = twice ? g_info.bpm * 2.0f : g_info.bpm * 0.5f;  // the first beat stays a beat
-  g_info.barSet = false;
-  g_info.barBeat = 0;
   infoChanged();
   printBpm();
-}
-
-void trackBarHere() {
-  if (!g_open || !g_info.hasGrid()) {
-    Serial.println("The track has no beat grid (track bpm).");
-    return;
-  }
-  g_info.setBarOneAt(trackPosition());
-  infoChanged();
-  Serial.printf("Bar 1 starts at %.3f s\n", g_info.beatTime(g_info.barBeat));
 }
 
 void trackBeatsPerBar(int n) {
@@ -609,7 +600,7 @@ void trackSnap(bool on) {
   if (!g_open) return;
   g_info.snap = on;
   infoChanged();
-  Serial.printf("Loop points %s\n", on ? "go to the nearest beat (bar line once bar 1 is set)" : "stay where they are set");
+  Serial.printf("Loop points %s\n", on ? "go to the nearest beat" : "stay where they are set");
 }
 
 void trackRescan() {
@@ -631,10 +622,14 @@ float trackPosition() { return toSeconds(g_player.position()); }
 float trackLength() { return toSeconds(g_player.length()); }
 
 
-// The loop as it now is goes into the track's file.
+// The loop as it now is goes into the track's file: its points while it holds; switched
+// off, the points it had stay.
 static void loopChanged() {
-  g_info.loopFrom = g_player.looping() ? toSeconds(g_player.loopA()) : 0.0f;
-  g_info.loopTo = g_player.looping() ? toSeconds(g_player.loopB()) : 0.0f;
+  g_info.looping = g_player.looping();
+  if (g_info.looping) {
+    g_info.loopFrom = toSeconds(g_player.loopA());
+    g_info.loopTo = toSeconds(g_player.loopB());
+  }
   infoChanged();
 }
 
@@ -646,6 +641,27 @@ bool trackLoop(float from, float to) {
   printLoop();
   return true;
 }
+
+bool trackLoopFrom(int bar, int beat, int bars) {
+  if (!g_open || !g_info.hasGrid() || bar < 1 || beat < 1 || beat > g_info.beatsPerBar || bars < 1) return false;
+  const long first = g_info.barLine(bar) + (beat - 1);
+  const double from = g_info.beatTime(first);
+  double to = g_info.beatTime(first + (long)bars * g_info.beatsPerBar);
+  if (from < 0.0 || from >= trackLength()) return false;
+  if (to > trackLength()) to = trackLength();  // the last bar may run past the file's end
+  return trackLoop((float)from, (float)to);
+}
+
+bool trackLoopAsBars(int* bar, int* beat, int* bars) {
+  if (!g_open || !g_info.hasGrid() || !(g_info.loopTo > 0.0f)) return false;
+  g_info.barAndBeat(g_info.nearestBeat(g_info.loopFrom), bar, beat);
+  const double beats = ((double)g_info.loopTo - (double)g_info.loopFrom) / g_info.period();
+  const int n = (int)lround(beats / g_info.beatsPerBar);
+  *bars = n < 1 ? 1 : n;
+  return true;
+}
+
+int trackBeatsInBar() { return g_info.beatsPerBar; }
 
 bool trackLoopBars(int first, int last) {
   if (!g_open || !g_info.hasGrid() || last < first) return false;
@@ -678,13 +694,39 @@ bool trackLoopNow(float* from, float* to) {
   return true;
 }
 
-bool trackLoopStartMarked() { return g_markA >= 0 && !g_player.looping(); }
+bool trackLoopPoints(float* from, float* to) {
+  if (!g_open || !(g_info.loopTo > 0.0f)) return false;
+  *from = g_info.loopFrom;
+  *to = g_info.loopTo;
+  return true;
+}
+
+bool trackLoopStartMarked() { return g_markA >= 0 && g_markB < 0; }
+bool trackPlayerLooping() { return g_player.looping(); }
 
 void trackLoopOff() {
-  g_markA = g_markB = -1;
+  if (!g_open || !g_player.looping()) return;
   g_player.clearLoop();
   loopChanged();
-  Serial.println("Track loop off");
+  Serial.println("Track loop off (its points are kept: track loop on)");
+}
+
+bool trackLoopOn() {
+  if (!g_open || !(g_info.loopTo > 0.0f) || !g_player.setLoop(toFrames(g_info.loopFrom), toFrames(g_info.loopTo))) return false;
+  g_markA = (int32_t)g_player.loopA();
+  g_markB = (int32_t)g_player.loopB();
+  loopChanged();
+  printLoop();
+  return true;
+}
+
+void trackLoopClear() {
+  if (!g_open) return;
+  g_markA = g_markB = -1;
+  g_player.clearLoop();
+  g_info.loopFrom = g_info.loopTo = 0.0f;
+  loopChanged();
+  Serial.println("Track loop off, its points forgotten");
 }
 
 // The shell's place in the list: the rows numbered, folders with a slash, > at the open
@@ -740,6 +782,8 @@ void printTrackStatus() {
                 timeText(g_player.position(), at, sizeof(at)), timeText(g_player.length(), len, sizeof(len)));
   if (g_player.looping())
     Serial.printf(", loop %s - %s", timeText(g_player.loopA(), a, sizeof(a)), timeText(g_player.loopB(), b, sizeof(b)));
+  else if (g_info.loopTo > 0.0f)
+    Serial.printf(", loop %s - %s (off)", timeText(toFrames(g_info.loopFrom), a, sizeof(a)), timeText(toFrames(g_info.loopTo), b, sizeof(b)));
   if (trackTempoPercent() != 100) Serial.printf(", tempo %d%%", trackTempoPercent());
   int bar, beat;
   if (g_scanning) Serial.printf(", scanning for the tempo %d%%", trackScanPercent());

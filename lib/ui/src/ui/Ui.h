@@ -52,14 +52,25 @@ struct TrackView {
   char name[40] = "";       // without folder and extension
   bool playing = false;
   float position = 0.0f, length = 0.0f;  // seconds
-  bool looping = false;
-  float loopFrom = 0.0f, loopTo = 0.0f;  // seconds
-  bool markA = false;       // the loop's start is marked and waits for its end
+  bool loopSet = false;     // the loop has its two points (it may be switched off)
+  bool looping = false;     // and is on
+  float loopFrom = 0.0f, loopTo = 0.0f;  // its points, seconds
+  bool markA = false;       // a start is marked and waits for its end
   int tempoPercent = 100;   // of the track's own tempo
   float bpm = 0.0f;         // the track's own tempo; 0: not known
   bool sure = true;         // false: the scan found no steady beat to rely on
   int scanPercent = 100;    // under 100: the scan for the tempo is still on its way
   int bar = 0, beat = 0;    // where the track is (with a tempo known)
+};
+
+// The backing track's loop told in bars, for the screen that sets it so.
+struct LoopBarsView {
+  bool set = false;       // the loop has its points
+  bool looping = false;   // and is on
+  int bar = 1, beat = 1;  // where it starts
+  int bars = 4;           // how long it is
+  int beatsInBar = 4;
+  float from = 0.0f, to = 0.0f;  // seconds
 };
 
 // A row of the backing tracks' list: a folder, or a track.
@@ -143,10 +154,13 @@ struct UiModel {
   virtual void trackStop() = 0;                  // and back to the start
   virtual void trackSeek(float seconds) = 0;
   virtual void trackLoopMark(bool end) = 0;      // the loop's start or end where the track is now
-  virtual void trackLoopOff() = 0;
+  virtual void trackLoopSwitch() = 0;            // the loop off (its points stay), or on again
+  // The loop in bars (the track's tempo must be known), and setting it so: `bars` bars
+  // from a bar and a beat in it. False if that is no section of the track.
+  virtual void trackLoopBars(LoopBarsView* v) = 0;
+  virtual bool trackLoopBarsSet(int bar, int beat, int bars) = 0;
   virtual void trackTempoStep(int percent) = 0;  // slower (< 0) or faster, at the same pitch
   virtual void trackBpmScale(bool twice) = 0;    // the track's own tempo is half / twice what was found
-  virtual void trackBarHere() = 0;               // bar 1 starts where the track is now
   virtual void trackVolume(SettingView* v) = 0;  // its level, as a setting
   virtual void trackVolumeStep(int steps) = 0;
 };
@@ -154,7 +168,7 @@ struct UiModel {
 class Ui {
  public:
   enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer, kSaveMenu, kName, kMaster, kDeleteAsk, kChoices,
-                kTracks };
+                kTracks, kLoopBars };
   static const int kNameMax = 24;      // a preset name's longest
   static const int kRowsPerPage = 5;   // the preset list
   static const int kSettingsPerPage = 4;
@@ -181,8 +195,8 @@ class Ui {
                 kTrainerOn, kPlay, kOpenSave, kSaveOver, kSaveNew, kKey, kCaps, kSpace, kDelete, kNameOk, kHome_,
                 kOpenMaster, kVolDown, kVolUp, kDrag, kDragVol, kRename, kAskDelete,
                 kDeleteYes, kTrainerPage, kOpenChoices, kChoiceRow, kChoicesBack, kChoicesUp, kChoicesDown,
-                kOpenTracks, kOpenTrackList, kTrackFind, kNameCancel, kTrackPlay, kTrackStop, kTrackA, kTrackB, kTrackLoopOff, kTrackSlower,
-                kTrackFaster, kTrackHalf, kTrackDouble, kTrackBar, kTrackVolDown, kTrackVolUp, kDragSeek };
+                kOpenTracks, kOpenTrackList, kTrackFind, kNameCancel, kTrackPlay, kTrackStop, kTrackA, kTrackB, kTrackLoop, kTrackSlower,
+                kTrackFaster, kTrackHalf, kTrackDouble, kOpenLoopBars, kLoopBack, kLoopStart, kLoopLength, kLoopHere, kTrackVolDown, kTrackVolUp, kDragSeek };
   enum Mode { kMeasure, kPaint, kHit };
   struct Pass {
     Mode mode;
@@ -225,6 +239,8 @@ class Ui {
   void layoutDelete(Pass& p);
   void layoutChoices(Pass& p);
   void layoutTracks(Pass& p);
+  void layoutLoopBars(Pass& p);
+  void openLoopBars();
   // A value between minus and plus (the tracks screen's tempo and volume).
   void valueRow(Pass& p, int y, int h, const char* label, const char* text, float fraction, uint16_t colour, Action minus,
                 Action plus);
@@ -287,6 +303,8 @@ class Ui {
   bool trackList_ = false;
   uint32_t nowMs_ = 0, seekMs_ = 0;
   float seekTo_ = -1.0f;  // where the finger has got to and the track has not yet (a part of its length)
+  // The loop set in bars: where it starts and how long it is, as shown.
+  int loopBar_ = 1, loopBeat_ = 1, loopLen_ = 4;
   // The new preset's name as it is typed.
   char name_[kNameMax + 1] = "";
   bool upper_ = true, autoUpper_ = true, saveFailed_ = false;

@@ -131,6 +131,7 @@ void Ui::layout(Pass& p) {
     case kDeleteAsk: layoutDelete(p); break;
     case kChoices: layoutChoices(p); break;
     case kTracks: layoutTracks(p); break;
+    case kLoopBars: layoutLoopBars(p); break;
   }
 }
 
@@ -500,6 +501,73 @@ void Ui::layoutFiles(Pass& p) {
   arrowButton(p, R(214, 206, 102, 34), 3, kFilesDown);
 }
 
+namespace {
+// The lengths a loop set in bars can have.
+const int kLoopLengths[] = {1, 2, 4, 8, 16, 32};
+}  // namespace
+
+// The loop set in bars is opened: with the loop as it is, or, without one, four bars
+// from the bar the track is in (not set until something is touched).
+void Ui::openLoopBars() {
+  TrackView t;
+  m_.track(&t);
+  LoopBarsView v;
+  m_.trackLoopBars(&v);
+  loopBar_ = v.set ? v.bar : (t.bar >= 1 ? t.bar : 1);
+  loopBeat_ = v.set ? v.beat : 1;
+  loopLen_ = v.set ? v.bars : 4;
+  if (loopBar_ < 1) loopBar_ = 1, loopBeat_ = 1;
+  go(kLoopBars);
+}
+
+// The backing track's loop set in bars: where it starts, as a bar and a beat in it (a
+// beat or a bar back and on; HERE: the bar the track is in), and how many bars it is
+// long (1, 2, 4 ... 32). Every change sets the loop at once, so it is heard. LOOP
+// switches it, PLAY plays, as on the track's screen.
+void Ui::layoutLoopBars(Pass& p) {
+  TrackView t;
+  m_.track(&t);
+  LoopBarsView v;
+  m_.trackLoopBars(&v);
+  char buf[80], a[16], b[16];
+  button(p, R(4, 2, 64, 28), "BACK", kLoopBack);
+  if (part(p, R(72, 2, 172, 28), 1)) p.canvas->textIn(R(72, 2, 172, 28), kFontMedium, "Loop by bars", kText);
+  button(p, R(248, 2, 68, 28), "HERE", kLoopHere, 0, 0, t.bar >= 1);
+
+  if (part(p, R(8, 32, 150, 16), 2)) p.canvas->textIn(R(8, 32, 150, 16), kFontSmall, "Starts at bar . beat", kDim, kLeft);
+  button(p, R(4, 50, 46, 42), "<<", kLoopStart, -2);
+  button(p, R(54, 50, 46, 42), "<", kLoopStart, -1);
+  snprintf(buf, sizeof(buf), "%d.%d", loopBar_, loopBeat_);
+  if (part(p, R(104, 50, 112, 42), Sig().s(buf).i(v.set).h)) {
+    p.canvas->roundRect(R(104, 50, 112, 42), 6, kPanel);
+    p.canvas->textIn(R(104, 50, 112, 42), kFontLarge, buf, v.set ? kText : kDim);
+  }
+  button(p, R(220, 50, 46, 42), ">", kLoopStart, 1);
+  button(p, R(270, 50, 46, 42), ">>", kLoopStart, 2);
+
+  if (part(p, R(8, 96, 150, 16), 3)) p.canvas->textIn(R(8, 96, 150, 16), kFontSmall, "Length", kDim, kLeft);
+  button(p, R(54, 114, 46, 42), "-", kLoopLength, -1, 0, loopLen_ > kLoopLengths[0]);
+  snprintf(buf, sizeof(buf), loopLen_ == 1 ? "%d bar" : "%d bars", loopLen_);
+  if (part(p, R(104, 114, 112, 42), Sig().s(buf).i(v.set).h)) {
+    p.canvas->roundRect(R(104, 114, 112, 42), 6, kPanel);
+    p.canvas->textIn(R(104, 114, 112, 42), kFontMedium, buf, v.set ? kText : kDim);
+  }
+  button(p, R(220, 114, 46, 42), "+", kLoopLength, 1, 0, loopLen_ < kLoopLengths[5]);
+
+  // What that is: from and to (the end's beat is the first that is not played), and as times.
+  if (v.set) {
+    clockText(v.from, a, sizeof(a));
+    clockText(v.to, b, sizeof(b));
+    snprintf(buf, sizeof(buf), "%d.%d to %d.%d     %s - %s", loopBar_, loopBeat_, loopBar_ + loopLen_, loopBeat_, a, b);
+  } else {
+    snprintf(buf, sizeof(buf), "No loop yet: touch a value or LOOP");
+  }
+  if (part(p, R(4, 162, 312, 26), Sig().s(buf).h)) p.canvas->textIn(R(4, 162, 312, 26), kFontSmall, buf, v.set ? kText : kDim);
+
+  button(p, R(4, 198, 154, 40), "LOOP", kTrackLoop, 0, v.looping ? kTrack : 0);
+  button(p, R(162, 198, 154, 40), t.playing ? "PAUSE" : "PLAY", kTrackPlay, 0, t.playing ? kTrack : 0, t.open);
+}
+
 // A value between minus and plus, as a setting's row is, for values that are not a block's
 // settings.
 void Ui::valueRow(Pass& p, int y, int h, const char* label, const char* text, float fraction, uint16_t colour, Action minus,
@@ -522,8 +590,8 @@ void Ui::valueRow(Pass& p, int y, int h, const char* label, const char* text, fl
 // The backing track, top to bottom: its name (a tap opens the list of tracks); where it is,
 // as time and as bar and beat, over a bar that shows the loop and takes a finger (a tap
 // goes there, a slide moves from where it is); play or pause, stop, the loop's two marks
-// and its end; the tempo; the track's own tempo as found, with half, double and "bar 1 is
-// here"; and its volume.
+// and its switch; the tempo; the track's own tempo as found, with half and double; and its
+// volume.
 void Ui::layoutTracks(Pass& p) {
   TrackView t;
   m_.track(&t);
@@ -548,21 +616,31 @@ void Ui::layoutTracks(Pass& p) {
   if (part(p, R(8, 32, 120, 22), Sig().s(buf).i(t.open).h)) p.canvas->textIn(R(8, 32, 120, 22), kFontSmall, t.open ? buf : "", kText, kLeft);
   if (!t.open) buf[0] = 0;
   else if (t.bpm > 0.0f && t.bar >= 1) snprintf(buf, sizeof(buf), "bar %d  beat %d", t.bar, t.beat);
-  else if (t.bpm > 0.0f) snprintf(buf, sizeof(buf), "before bar 1");
+  else if (t.bpm > 0.0f) snprintf(buf, sizeof(buf), "before the first beat");
   else buf[0] = 0;
-  if (part(p, R(132, 32, 180, 22), Sig().s(buf).h)) p.canvas->textIn(R(132, 32, 180, 22), kFontSmall, buf, kDim, kRight);
   {
-    // 300 pixels for the whole track; the loop lighter; what is played in the track's colour.
+    // Where it is in bars: a tap (with the tempo known) opens the loop set in bars.
+    const bool grid = t.open && t.bpm > 0.0f, down = pressed(kOpenLoopBars);
+    const Rect r = R(172, 31, 144, 21);
+    if (part(p, R(132, 31, 184, 21), Sig().s(buf).i(grid).i(down).h)) {
+      if (grid) p.canvas->roundRect(r, 6, down ? kPanelHi : kPanel);
+      p.canvas->textIn(R(132, 31, 176, 21), kFontSmall, buf, grid ? kText : kDim, kRight);
+    }
+    if (grid) target(p, R(160, 30, 156, 22), kOpenLoopBars);
+  }
+  {
+    // 300 pixels for the whole track; the loop lighter (fainter while it is switched off);
+    // what is played in the track's colour.
     const Rect r = R(8, 54, 304, 22);
     const float len = t.length > 0.0f ? t.length : 1.0f;
     const float at = seekTo_ >= 0.0f ? seekTo_ : t.position / len;  // the finger's place while it slides
     const int x = (int)(300.0f * (at < 0.0f ? 0.0f : (at > 1.0f ? 1.0f : at)) + 0.5f);
-    const int la = t.looping ? (int)(300.0f * t.loopFrom / len + 0.5f) : 0, lb = t.looping ? (int)(300.0f * t.loopTo / len + 0.5f) : 0;
+    const int la = t.loopSet ? (int)(300.0f * t.loopFrom / len + 0.5f) : 0, lb = t.loopSet ? (int)(300.0f * t.loopTo / len + 0.5f) : 0;
     const bool down = pressed(kDragSeek);
-    if (part(p, r, Sig().i(x).i(la).i(lb).i(t.looping).i(t.open).i(down).h)) {
+    if (part(p, r, Sig().i(x).i(la).i(lb).i(t.loopSet).i(t.looping).i(t.open).i(down).h)) {
       Canvas& c = *p.canvas;
       c.roundRect(R(r.x, r.y + 6, r.w, 10), 4, down ? kPanelHi : kOff);
-      if (t.looping && lb > la) c.fill(R(r.x + 2 + la, r.y + 6, lb - la, 10), mix(kOff, kTrack, 2));
+      if (t.loopSet && lb > la) c.fill(R(r.x + 2 + la, r.y + 6, lb - la, 10), mix(kOff, kTrack, t.looping ? 2 : 1));
       if (t.open) {
         c.fill(R(r.x + 2, r.y + 9, x, 4), kTrack);
         c.roundRect(R(r.x + x, r.y + 1, 4, 20), 2, kText);
@@ -574,9 +652,11 @@ void Ui::layoutTracks(Pass& p) {
   // Play or pause, stop, and the loop.
   button(p, R(4, 80, 84, 40), t.playing ? "PAUSE" : "PLAY", kTrackPlay, 0, t.playing ? kTrack : 0, t.open);
   button(p, R(92, 80, 62, 40), "STOP", kTrackStop, 0, 0, t.open);
-  button(p, R(162, 80, 38, 40), "A", kTrackA, 0, t.looping || t.markA ? kTrack : 0, t.open);
-  button(p, R(204, 80, 38, 40), "B", kTrackB, 0, t.looping ? kTrack : 0, t.open);
-  button(p, R(246, 80, 70, 40), "LOOP", kTrackLoopOff, 0, t.looping ? kTrack : 0, t.looping);
+  // A and B are lit while their point is set; LOOP while the loop is on. LOOP switches it
+  // off and on again: the points stay.
+  button(p, R(162, 80, 38, 40), "A", kTrackA, 0, t.loopSet || t.markA ? kTrack : 0, t.open);
+  button(p, R(204, 80, 38, 40), "B", kTrackB, 0, t.loopSet ? kTrack : 0, t.open);
+  button(p, R(246, 80, 70, 40), "LOOP", kTrackLoop, 0, t.looping ? kTrack : 0, t.loopSet);
 
   // The tempo, in percent of the track's own, with what that is in BPM once it is known.
   if (t.bpm > 0.0f) snprintf(buf, sizeof(buf), "%d%%  %.0f BPM", t.tempoPercent, (double)(t.bpm * (float)t.tempoPercent / 100.0f));
@@ -588,12 +668,10 @@ void Ui::layoutTracks(Pass& p) {
   else if (t.scanPercent < 100) snprintf(buf, sizeof(buf), "finding %d%%", t.scanPercent);
   else if (t.bpm > 0.0f) snprintf(buf, sizeof(buf), "%.1f BPM%s", (double)t.bpm, t.sure ? "" : " ?");
   else snprintf(buf, sizeof(buf), "no beat");
-  if (part(p, R(4, 168, 120, 34), Sig().s(buf).h))
-    p.canvas->textIn(R(8, 168, 116, 34), Canvas::textWidth(kFontMedium, buf) <= 116 ? kFontMedium : kFontSmall, buf, t.sure ? kText : kAmber, kLeft);
+  if (part(p, R(4, 168, 216, 34), Sig().s(buf).h)) p.canvas->textIn(R(8, 168, 208, 34), kFontMedium, buf, t.sure ? kText : kAmber, kLeft);
   const bool grid = t.open && t.bpm > 0.0f;
-  button(p, R(128, 168, 44, 34), "/2", kTrackHalf, 0, 0, grid);
-  button(p, R(176, 168, 44, 34), "x2", kTrackDouble, 0, 0, grid);
-  button(p, R(224, 168, 92, 34), "BAR 1", kTrackBar, 0, 0, grid);
+  button(p, R(224, 168, 44, 34), "/2", kTrackHalf, 0, 0, grid);
+  button(p, R(272, 168, 44, 34), "x2", kTrackDouble, 0, 0, grid);
 
   SettingView v;
   m_.trackVolume(&v);
@@ -1135,12 +1213,57 @@ void Ui::fire(Action a, int arg) {
     case kTrackStop: m_.trackStop(); break;
     case kTrackA: m_.trackLoopMark(false); break;
     case kTrackB: m_.trackLoopMark(true); break;
-    case kTrackLoopOff: m_.trackLoopOff(); break;
+    case kTrackLoop: {
+      // On the loop-by-bars screen with no loop yet: what is shown becomes the loop.
+      LoopBarsView v;
+      m_.trackLoopBars(&v);
+      if (screen_ == kLoopBars && !v.set) m_.trackLoopBarsSet(loopBar_, loopBeat_, loopLen_);
+      else m_.trackLoopSwitch();
+      break;
+    }
+    case kOpenLoopBars: openLoopBars(); break;
+    case kLoopBack: go(kTracks); break;
+    case kLoopHere: {
+      TrackView t;
+      m_.track(&t);
+      if (t.bar >= 1 && m_.trackLoopBarsSet(t.bar, 1, loopLen_)) loopBar_ = t.bar, loopBeat_ = 1;
+      break;
+    }
+    case kLoopStart: {
+      // A beat (1) or a bar (2) back or on; what is no place in the track changes nothing.
+      LoopBarsView v;
+      m_.trackLoopBars(&v);
+      int bar = loopBar_, beat = loopBeat_;
+      if (arg == 2 || arg == -2) bar += arg / 2;
+      else beat += arg;
+      if (beat < 1) beat = v.beatsInBar, bar--;
+      if (beat > v.beatsInBar) beat = 1, bar++;
+      if (bar >= 1 && m_.trackLoopBarsSet(bar, beat, loopLen_)) loopBar_ = bar, loopBeat_ = beat;
+      break;
+    }
+    case kLoopLength: {
+      // To the next length down or up of 1, 2, 4 ... 32 (a loop set by ear may have any).
+      int len = loopLen_;
+      if (arg < 0) {
+        for (int i = 5; i >= 0; i--)
+          if (kLoopLengths[i] < loopLen_) {
+            len = kLoopLengths[i];
+            break;
+          }
+      } else {
+        for (int i = 0; i < 6; i++)
+          if (kLoopLengths[i] > loopLen_) {
+            len = kLoopLengths[i];
+            break;
+          }
+      }
+      if (len != loopLen_ && m_.trackLoopBarsSet(loopBar_, loopBeat_, len)) loopLen_ = len;
+      break;
+    }
     case kTrackSlower: m_.trackTempoStep(repeats_ > 10 ? -5 : -1); break;
     case kTrackFaster: m_.trackTempoStep(repeats_ > 10 ? 5 : 1); break;
     case kTrackHalf: m_.trackBpmScale(false); break;
     case kTrackDouble: m_.trackBpmScale(true); break;
-    case kTrackBar: m_.trackBarHere(); break;
     case kTrackVolDown: m_.trackVolumeStep(repeats_ > 10 ? -5 : -1); break;
     case kTrackVolUp: m_.trackVolumeStep(repeats_ > 10 ? 5 : 1); break;
     case kDragSeek: {
@@ -1248,7 +1371,7 @@ void Ui::touch(bool down, int x, int y, uint32_t ms) {
 void Ui::tick(uint32_t ms) {
   // Holding previous / next or a page button repeats: after 0.6 s, then every 0.3 s.
   if (held_ && inside_ && (heldAction_ == kPrev || heldAction_ == kNext || heldAction_ == kPageUp || heldAction_ == kPageDown ||
-                             heldAction_ == kFilesUp || heldAction_ == kFilesDown) &&
+                             heldAction_ == kFilesUp || heldAction_ == kFilesDown || heldAction_ == kLoopStart) &&
       screen_ != kConfirm && ms - pressMs_ >= 600 && ms - repeatMs_ >= 300) {
     repeatMs_ = ms;
     repeated_ = true;
@@ -1264,6 +1387,16 @@ void Ui::tick(uint32_t ms) {
     repeated_ = true;
     repeats_++;
     fire(heldAction_, heldArg_);
+  }
+  // Holding LOOP on the track's screen for half a second opens the loop set in bars (a tap
+  // switches the loop), if the track's tempo is known.
+  if (held_ && inside_ && heldAction_ == kTrackLoop && screen_ == kTracks && !repeated_ && ms - pressMs_ >= 500) {
+    TrackView t;
+    m_.track(&t);
+    if (t.open && t.bpm > 0.0f) {
+      repeated_ = true;
+      openLoopBars();
+    }
   }
   // Holding a block's tile for half a second opens its settings (a tap switches it).
   if (held_ && inside_ && heldAction_ == kBlock && screen_ == kHome && !repeated_ && ms - pressMs_ >= 500) {

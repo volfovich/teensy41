@@ -10,8 +10,9 @@
 // and the effects and before the master volume; its level is the setting "track vol".
 //
 // Each track is scanned once for its tempo and beats (dsp/player/BeatScan.h), while it is
-// open and not playing; what was found, and the tempo, loop and bar 1 the track was left
-// with, are kept in a small file beside it ("song.mp3.trk").
+// open and not playing; what was found, and the tempo and loop the track was left
+// with (its points also while the loop is switched off), are kept in a small file beside
+// it ("song.mp3.trk").
 //
 // WAV files (any bit depth, mono or stereo) and MP3 files. A file that is not at 48 kHz is
 // resampled while it plays (dsp/player/ResampledSource.h).
@@ -66,18 +67,24 @@ void trackShowBpm();  // prints it
 bool trackBpmSure();     // the scan's confidence is 0.5 or more
 int trackScanPercent();  // 100: done; -1: no track
 // Sets the tempo by hand (the beat nearest to where the track is stays in place), halves
-// or doubles it, says that bar 1 starts where the track is now, sets the beats in a bar.
+// or doubles it, sets the beats in a bar.
 void trackSetBpm(float bpm);
 void trackScaleBpm(bool twice);
-void trackBarHere();
 void trackBeatsPerBar(int n);
-// Loop points go to the nearest beat, or bar line once bar 1 is set (on by default).
+// Loop points go to the nearest beat (on by default).
 void trackSnap(bool on);
 // Scans the open track again.
 void trackRescan();
 // Where the track is, in bars and beats; false without a beat grid.
 bool trackBarBeat(int* bar, int* beat);
-// Loops bars first..last (bar 1 = where bar 1 was set, or the first beat).
+// Loops `bars` bars from a bar and a beat in it (both from 1); false if that is no
+// section of the track or it has no beat grid. And the loop's points told that way
+// (start to the nearest beat, length to the nearest bar, 1 or more); false without a
+// loop or a grid.
+bool trackLoopFrom(int bar, int beat, int bars);
+bool trackLoopAsBars(int* bar, int* beat, int* bars);
+int trackBeatsInBar();
+// Loops bars first..last (bar 1 starts with the first beat).
 bool trackLoopBars(int first, int last);
 float trackPosition();  // seconds
 float trackLength();    // seconds
@@ -85,11 +92,18 @@ float trackLength();    // seconds
 bool trackLoop(float from, float to);
 // Marks the loop's start or end where the track is now; the loop holds once both are set.
 void trackLoopMark(bool end);
+// The loop off, its points kept; on again with the points it had (false: there are none);
+// off and its points forgotten.
 void trackLoopOff();
+bool trackLoopOn();
+void trackLoopClear();
+// The loop's points (seconds), whether it is on or off; false if there are none.
+bool trackLoopPoints(float* from, float* to);
 // The loop that holds (seconds); false if there is none. And: the loop's start is marked
 // and waits for its end.
 bool trackLoopNow(float* from, float* to);
 bool trackLoopStartMarked();
+bool trackPlayerLooping();  // the loop is on
 // The "Track:" line of the status.
 void printTrackStatus();
 // The shell's place in the list: its rows, numbered, with > at the open track.

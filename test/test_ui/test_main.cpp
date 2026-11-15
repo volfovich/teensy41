@@ -329,16 +329,44 @@ struct FakeModel : UiModel {
     log += end ? "markB " : "markA ";
     if (!end) {
       tv.loopFrom = tv.position;
-      tv.markA = !tv.looping;
-    } else if (tv.markA || tv.looping) {
+      tv.markA = !tv.loopSet;
+    } else if (tv.markA || tv.loopSet) {
       tv.loopTo = tv.position;
-      tv.looping = tv.loopTo > tv.loopFrom;
+      tv.loopSet = tv.looping = tv.loopTo > tv.loopFrom;
       tv.markA = false;
     }
   }
-  void trackLoopOff() override {
-    log += "loopOff ";
-    tv.looping = tv.markA = false;
+  // The loop in bars: four beats to a bar, the first beat at 0.
+  void trackLoopBars(LoopBarsView* v) override {
+    *v = LoopBarsView();
+    v->set = tv.loopSet && tv.bpm > 0.0f;
+    v->looping = tv.looping;
+    if (!v->set) return;
+    const float beat = 60.0f / tv.bpm;
+    const int first = (int)lrintf(tv.loopFrom / beat);
+    v->bar = first / 4 + 1;
+    v->beat = first % 4 + 1;
+    v->bars = (int)lrintf((tv.loopTo - tv.loopFrom) / beat / 4.0f);
+    if (v->bars < 1) v->bars = 1;
+    v->from = tv.loopFrom;
+    v->to = tv.loopTo;
+  }
+  bool trackLoopBarsSet(int bar, int beat, int bars) override {
+    if (tv.bpm <= 0.0f || bar < 1 || beat < 1 || beat > 4 || bars < 1) return false;
+    const float len = 60.0f / tv.bpm, from = (float)((bar - 1) * 4 + beat - 1) * len;
+    if (from >= tv.length) return false;
+    log += "loop[" + std::to_string(bar) + "." + std::to_string(beat) + " x" + std::to_string(bars) + "] ";
+    tv.loopFrom = from;
+    tv.loopTo = from + (float)(bars * 4) * len;
+    if (tv.loopTo > tv.length) tv.loopTo = tv.length;
+    tv.loopSet = tv.looping = true;
+    tv.markA = false;
+    return true;
+  }
+  void trackLoopSwitch() override {
+    if (!tv.loopSet) return;
+    tv.looping = !tv.looping;
+    log += tv.looping ? "loopOn " : "loopOff ";
   }
   void trackTempoStep(int percent) override {
     tv.tempoPercent += percent;
@@ -348,7 +376,6 @@ struct FakeModel : UiModel {
     log += twice ? "double " : "half ";
     tv.bpm = twice ? tv.bpm * 2 : tv.bpm / 2;
   }
-  void trackBarHere() override { log += "bar1 "; }
   void trackVolume(SettingView* v) override {
     *v = SettingView();
     snprintf(v->label, sizeof(v->label), "Volume");
@@ -928,6 +955,11 @@ void test_random_use_keeps_the_glass_true() {
       // The way home, so that every screen is opened many times.
       tap(ui, 36, 16);
       tap(ui, 40, 222);
+      // And now and then on to a screen that random taps seldom find: the track's loop in bars.
+      if (!rnd(4)) {
+        tap(ui, 155, 222);  // TRACK on home
+        tap(ui, 250, 41);   // the bar and beat readout
+      }
       check(step, "back");
     } else {
       // The unit changes by itself: the drums' beat and tempo, levels, the limiter, a block
@@ -946,6 +978,9 @@ void test_random_use_keeps_the_glass_true() {
         m.settingStep(b, i, rnd(3) - 1);
       }
       if (!rnd(6)) m.model = rnd((int)m.models.size()), m.ir = rnd((int)m.irs.size());
+      // A track is open (from the shell, say), its tempo is found or not, and it moves on.
+      if (!rnd(5)) m.tv.open = true, m.tv.length = 245.0f, m.tv.bpm = rnd(3) ? 60.0f + (float)rnd(120) : 0.0f, m.tv.scanPercent = 100;
+      if (!rnd(4)) m.tv.bar = rnd(60), m.tv.beat = 1 + rnd(4), m.tv.position = (float)rnd(240);
       m.view.valid = rnd(2);
       m.view.note = rnd(12);
       m.view.cents = (float)(rnd(100) - 50);
@@ -953,7 +988,7 @@ void test_random_use_keeps_the_glass_true() {
       check(step, "the unit changed");
     }
   }
-  for (int s = Ui::kHome; s <= Ui::kTracks; s++) {
+  for (int s = Ui::kHome; s <= Ui::kLoopBars; s++) {
     char msg[64];
     snprintf(msg, sizeof(msg), "screen %d was never looked at", s);
     TEST_ASSERT_TRUE_MESSAGE(seen[s] > 0, msg);
@@ -1312,7 +1347,7 @@ void test_the_backing_track_screen() {
   tap(ui, kTrackPlayX, kTransportY);
   tap(ui, kMarkAX, kTransportY);
   tap(ui, 160, kSeekY);
-  tap(ui, 150, kBpmY);
+  tap(ui, 246, kBpmY);
   TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
   TEST_ASSERT_TRUE(m.seeks.empty());
   // The name opens the list of tracks; a tap opens one and comes back.
@@ -1352,8 +1387,16 @@ void test_the_backing_track_screen() {
   m.tv.position = 45.0f;
   tap(ui, kMarkBX, kTransportY);
   TEST_ASSERT_TRUE(m.tv.looping);
+  // LOOP switches it off and on again; its points stay where they were set.
   tap(ui, kLoopX, kTransportY);
-  TEST_ASSERT_EQUAL_STRING("markA markB loopOff ", m.log.c_str());
+  TEST_ASSERT_FALSE(m.tv.looping);
+  TEST_ASSERT_TRUE(m.tv.loopSet);
+  tap(ui, kLoopX, kTransportY);
+  TEST_ASSERT_TRUE(m.tv.looping);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 30.0f, m.tv.loopFrom);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 45.0f, m.tv.loopTo);
+  tap(ui, kLoopX, kTransportY);
+  TEST_ASSERT_EQUAL_STRING("markA markB loopOff loopOn loopOff ", m.log.c_str());
   // The tempo: a step a tap, faster while held.
   tap(ui, kMinusX, kTempoY);
   TEST_ASSERT_EQUAL_INT(99, m.tv.tempoPercent);
@@ -1363,15 +1406,14 @@ void test_the_backing_track_screen() {
   TEST_ASSERT_EQUAL_INT(150, m.tv.tempoPercent);
   // The track's own tempo: nothing to correct until it is known.
   m.log.clear();
-  tap(ui, 150, kBpmY);
-  tap(ui, 270, kBpmY);
+  tap(ui, 246, kBpmY);
+  tap(ui, 294, kBpmY);
   TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
   m.tv.scanPercent = 100;
   m.tv.bpm = 97.0f;
-  tap(ui, 150, kBpmY);
-  tap(ui, 198, kBpmY);
-  tap(ui, 270, kBpmY);
-  TEST_ASSERT_EQUAL_STRING("half double bar1 ", m.log.c_str());
+  tap(ui, 246, kBpmY);
+  tap(ui, 294, kBpmY);
+  TEST_ASSERT_EQUAL_STRING("half double ", m.log.c_str());
   // Its volume.
   tap(ui, kPlusX, kTrackVolY);
   tap(ui, kPlusX, kTrackVolY);
@@ -1485,6 +1527,98 @@ void test_the_track_list_folders_and_find() {
   tap(ui, 239, kBarY);
   TEST_ASSERT_EQUAL_STRING("saveAs[Ab] ", m.log.c_str());
   TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+}
+
+// The backing track's loop set in bars.
+void test_the_loop_set_in_bars() {
+  FakeModel m;
+  Ui ui(m);
+  Glass g;
+  const int kReadoutX = 250, kReadoutY = 41, kStartY = 71, kLenY = 135, kLoopRowY = 218;
+  const int kBarBackX = 27, kBeatBackX = 77, kBeatOnX = 243, kBarOnX = 293, kHereX = 282;
+  tap(ui, kTrackX, kBarY);
+  tap(ui, kTrackNameX, kTrackTopY);
+  tap(ui, 160, rowY(2));  // a track; its tempo is not known yet
+  m.log.clear();
+  // Without the tempo there are no bars: the readout opens nothing.
+  tap(ui, kReadoutX, kReadoutY);
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+  // 120 BPM: a beat is 0.5 s, a bar 2 s. The track is in bar 6 (10 s to 12 s).
+  m.tv.scanPercent = 100;
+  m.tv.bpm = 120.0f;
+  m.tv.position = 11.2f;
+  m.tv.bar = 6;
+  m.tv.beat = 3;
+  tap(ui, kReadoutX, kReadoutY);
+  TEST_ASSERT_EQUAL_INT(Ui::kLoopBars, ui.screen());
+  g.paint(ui);
+  // Nothing is set by opening it. LOOP makes what is shown the loop: 4 bars from bar 6.
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  tap(ui, 80, kLoopRowY);
+  TEST_ASSERT_EQUAL_STRING("loop[6.1 x4] ", m.log.c_str());
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 10.0f, m.tv.loopFrom);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 18.0f, m.tv.loopTo);
+  // The start: a beat on, a beat back over the bar's line, a bar on, a bar back.
+  m.log.clear();
+  tap(ui, kBeatOnX, kStartY);
+  tap(ui, kBeatBackX, kStartY);
+  tap(ui, kBeatBackX, kStartY);
+  tap(ui, kBarOnX, kStartY);
+  tap(ui, kBarBackX, kStartY);
+  TEST_ASSERT_EQUAL_STRING("loop[6.2 x4] loop[6.1 x4] loop[5.4 x4] loop[6.4 x4] loop[5.4 x4] ", m.log.c_str());
+  // The length jumps through 1, 2, 4, 8, 16, 32 and stops at both ends.
+  m.log.clear();
+  tap(ui, kBeatOnX, kLenY);
+  tap(ui, kBeatOnX, kLenY);
+  tap(ui, kBeatOnX, kLenY);
+  tap(ui, kBeatOnX, kLenY);  // 32 is the longest
+  for (int i = 0; i < 6; i++) tap(ui, kBeatBackX, kLenY);  // 1 is the shortest
+  TEST_ASSERT_EQUAL_STRING("loop[5.4 x8] loop[5.4 x16] loop[5.4 x32] loop[5.4 x16] loop[5.4 x8] loop[5.4 x4] loop[5.4 x2] loop[5.4 x1] ",
+                           m.log.c_str());
+  // Holding a start button goes on stepping. Before bar 1 there is nothing: it stops at 1.1.
+  m.log.clear();
+  hold(ui, kBarBackX, kStartY, 2600);
+  TEST_ASSERT_EQUAL_STRING("loop[4.4 x1] loop[3.4 x1] loop[2.4 x1] loop[1.4 x1] ", m.log.c_str());
+  for (int i = 0; i < 5; i++) tap(ui, kBeatBackX, kStartY);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, m.tv.loopFrom);
+  // Past the track's end there is nothing either (245 s: bar 123 starts at 244 s).
+  m.log.clear();
+  m.tv.position = 243.0f;
+  m.tv.bar = 122;
+  tap(ui, kHereX, kTrackTopY);
+  tap(ui, kBarOnX, kStartY);
+  tap(ui, kBarOnX, kStartY);
+  TEST_ASSERT_EQUAL_STRING("loop[122.1 x1] loop[123.1 x1] ", m.log.c_str());
+  // HERE: the bar the track is in, the length as it is. LOOP switches the loop; PLAY plays.
+  m.log.clear();
+  m.tv.position = 67.0f;
+  m.tv.bar = 34;
+  tap(ui, kHereX, kTrackTopY);
+  tap(ui, 80, kLoopRowY);
+  TEST_ASSERT_FALSE(m.tv.looping);
+  TEST_ASSERT_TRUE(m.tv.loopSet);
+  tap(ui, 80, kLoopRowY);
+  tap(ui, 240, kLoopRowY);
+  TEST_ASSERT_EQUAL_STRING("loop[34.1 x1] loopOff loopOn trackPlay ", m.log.c_str());
+  // BACK returns to the track's screen, where the loop shows; opened again (also by holding
+  // LOOP there), the screen shows the loop as it is.
+  tap(ui, 36, kTrackTopY);
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+  hold(ui, kLoopX, kTransportY, 700);
+  TEST_ASSERT_EQUAL_INT(Ui::kLoopBars, ui.screen());
+  TEST_ASSERT_TRUE(m.tv.looping);  // the hold did not switch it
+  m.log.clear();
+  tap(ui, kBeatOnX, kLenY);
+  TEST_ASSERT_EQUAL_STRING("loop[34.1 x2] ", m.log.c_str());
+  // A loop set by ear with a length that is none of the steps: plus and minus go to the next one.
+  m.tv.loopTo = m.tv.loopFrom + 6.0f;  // 3 bars
+  tap(ui, 36, kTrackTopY);
+  tap(ui, kReadoutX, kReadoutY);
+  m.log.clear();
+  tap(ui, kBeatOnX, kLenY);
+  tap(ui, kBeatBackX, kLenY);
+  tap(ui, kBeatBackX, kLenY);
+  TEST_ASSERT_EQUAL_STRING("loop[34.1 x4] loop[34.1 x2] loop[34.1 x1] ", m.log.c_str());
 }
 
 void test_tuner_opens_and_closes() {
@@ -1699,7 +1833,7 @@ void test_write_pictures() {
     m.tv.bpm = 97.0f;
     m.tv.playing = true;
     m.tv.position = 83.4f;
-    m.tv.looping = true;
+    m.tv.loopSet = m.tv.looping = true;
     m.tv.loopFrom = 59.4f;
     m.tv.loopTo = 99.0f;
     m.tv.tempoPercent = 80;
@@ -1707,6 +1841,11 @@ void test_write_pictures() {
     m.tv.beat = 3;
     g.paint(ui);
     g.save("tracks_playing");
+    tap(ui, 250, 41);  // the bar and beat readout: the loop set in bars
+    g.paint(ui);
+    g.save("loop_bars");
+    tap(ui, 36, kTrackTopY);
+    g.paint(ui);
     tap(ui, 36, kTrackTopY);
     g.paint(ui);
     g.save("home_track");
@@ -1736,6 +1875,7 @@ int main() {
   RUN_TEST(test_dragging_a_value);
   RUN_TEST(test_the_backing_track_screen);
   RUN_TEST(test_the_track_list_folders_and_find);
+  RUN_TEST(test_the_loop_set_in_bars);
   RUN_TEST(test_tuner_opens_and_closes);
   RUN_TEST(test_long_names_fit);
   RUN_TEST(test_blocks_header_matches_blocks_json);

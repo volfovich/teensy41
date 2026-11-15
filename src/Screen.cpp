@@ -299,7 +299,8 @@ struct UnitModel : UiModel {
     v->playing = trackPlaying();
     v->position = trackPosition();
     v->length = trackLength();
-    v->looping = trackLoopNow(&v->loopFrom, &v->loopTo);
+    v->loopSet = trackLoopPoints(&v->loopFrom, &v->loopTo);
+    v->looping = trackPlayerLooping();
     v->markA = trackLoopStartMarked();
     v->tempoPercent = trackTempoPercent();
     v->bpm = trackBpm();
@@ -314,10 +315,19 @@ struct UnitModel : UiModel {
   void trackStop() override { ::trackStop(); }
   void trackSeek(float seconds) override { ::trackSeek(seconds); }
   void trackLoopMark(bool end) override { ::trackLoopMark(end); }
-  void trackLoopOff() override { ::trackLoopOff(); }
+  void trackLoopSwitch() override {
+    if (trackPlayerLooping()) trackLoopOff();
+    else trackLoopOn();
+  }
+  void trackLoopBars(LoopBarsView* v) override {
+    *v = LoopBarsView();
+    v->beatsInBar = trackBeatsInBar();
+    v->set = trackLoopAsBars(&v->bar, &v->beat, &v->bars) && trackLoopPoints(&v->from, &v->to);
+    v->looping = trackPlayerLooping();
+  }
+  bool trackLoopBarsSet(int bar, int beat, int bars) override { return trackLoopFrom(bar, beat, bars); }
   void trackTempoStep(int percent) override { trackTempo(constrain(trackTempoPercent() + percent, 50, 150)); }
   void trackBpmScale(bool twice) override { trackScaleBpm(twice); }
-  void trackBarHere() override { ::trackBarHere(); }
   void trackVolume(SettingView* v) override {
     int lo, hi;
     paramLimits(ui::kTrackVolume, &lo, &hi);
@@ -574,7 +584,7 @@ void serviceScreen() {
 
 // ---- Shell ----
 void screenCommand(const char* arg) {
-  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume", "delete question", "choices", "tracks"};
+  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume", "delete question", "choices", "tracks", "loop by bars"};
   if (!arg || !*arg) {
     Serial.printf("Touch screen: %s, %s (%s), touch %s, showing %s.\n", g_present ? "display found" : "no display found",
                   g_active ? "on" : "off", g_rec.mode == kAuto ? "automatic" : "forced",

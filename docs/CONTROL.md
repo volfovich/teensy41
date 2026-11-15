@@ -47,13 +47,14 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | `track tempo <value> bpm` | The same, given as beats per minute (the track's own tempo must be known) |
 | `track bpm` | The track's own tempo as the scan found it; "unsure" if the beat is not steady. The scan runs once per track, while it is open and not playing |
 | `track bpm half` / `double` / `<value>` | Corrects the tempo: half, double, or a value (the beat nearest to where the track is stays in place) |
-| `track bar` | Bar 1 starts where the track is now. Said between two beats, it also moves the grid by half a beat |
 | `track beats <n>` | Beats in a bar (4 at first) |
 | `track loop bars <a> <b>` | Loops bars a to b |
-| `track snap on` / `off` | Loop points go to the nearest beat, or bar line once bar 1 is set (on at first) |
+| `track loop bar <bar>[.<beat>] [n]` | Loops n bars (4 if not said) from a bar and a beat in it: `track loop bar 33.1 8` plays 33.1 up to 41.1 |
+| `track snap on` / `off` | Loop points go to the nearest beat (on at first) |
 | `track scan` | Finds the tempo and beats again |
-| `track loop a` / `track loop b` | Marks the loop's start / end where the track is now (on the nearest beat or bar line, see `track snap`); the loop holds once both are marked |
-| `track loop <from> <to>` / `track loop off` | Loops a section (times as for `seek`, 0.25 s or longer) / plays on to the end |
+| `track loop a` / `track loop b` | Marks the loop's start / end where the track is now (on the nearest beat, see `track snap`); the loop holds once both are marked |
+| `track loop <from> <to>` | Loops a section (times as for `seek`, 0.25 s or longer) |
+| `track loop off` / `on` / `clear` | Plays on to the end, the loop's points kept / loops them again / off and the points forgotten. The points are saved with the track, on or off |
 | `drum train <step> <every> <target>` | Sets the speed trainer and switches it on (`drum train on` / `off` switches it) |
 | `bass key <note>` | The bass's key as a note name (`E`, `F#`, `Bb`) |
 | `m` | Live level meter on / off |

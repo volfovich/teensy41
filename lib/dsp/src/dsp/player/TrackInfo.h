@@ -1,7 +1,7 @@
 // TrackInfo.h - what is kept about a backing track in a small text file beside it
 // ("song.mp3.trk"): what the scan found (tempo, where the beats are) and what the player
-// was last set to for this track (tempo, loop, where bar 1 is). Also the beat grid's
-// arithmetic.
+// was last set to for this track (tempo, the loop's points and whether it is on). Also
+// the beat grid's arithmetic.
 //
 // The file, one "key value" line each, any order; unknown lines are skipped:
 //
@@ -12,9 +12,9 @@
 //   beat 0.5027        the first beat, seconds
 //   confidence 0.97
 //   beats 4            beats in a bar
-//   bar 2              the beat (counted from the first, 0) that starts bar 1; missing: not set
 //   tempo 0.8000       the tempo the track was last played at (1 = its own)
-//   loop 12.000 20.000 the loop, seconds (missing: none)
+//   loop 12.000 20.000 the loop's points, seconds (missing: none)
+//   looping 0          the loop is switched off, its points are kept (missing: on)
 //   snap 1             loop points go to the nearest beat or bar line
 //
 // Portable; background only.
@@ -31,10 +31,9 @@ struct TrackInfo {
   float firstBeat = 0.0f;   // seconds
   float confidence = 0.0f;
   int beatsPerBar = 4;
-  bool barSet = false;      // the user has said where bar 1 is
-  int barBeat = 0;          // the beat that starts bar 1 (0 = the first beat)
   float tempo = 1.0f;
-  float loopFrom = 0.0f, loopTo = 0.0f;  // seconds; loopTo 0: none
+  float loopFrom = 0.0f, loopTo = 0.0f;  // the loop's points, seconds; loopTo 0: none
+  bool looping = true;      // with points: the loop is on (off: the points are kept for later)
   bool snap = true;
 
   bool hasGrid() const { return bpm > 0.0f; }
@@ -45,15 +44,11 @@ struct TrackInfo {
   long beatAt(double t) const;
   // The beat nearest to t.
   long nearestBeat(double t) const;
-  // The first beat of the bar nearest to t (a bar line).
-  long nearestBarLine(double t) const;
   // The first beat of bar n (1 = bar 1).
-  long barLine(int bar) const { return (long)barBeat + (long)(bar - 1) * beatsPerBar; }
-  // Where beat k is: *bar (1 = bar 1; 0 and below: before it) and *beat (1 .. beatsPerBar).
+  long barLine(int bar) const { return (long)(bar - 1) * beatsPerBar; }
+  // Where beat k is: *bar (1 = the bar that starts with the first beat; 0 and below: before
+  // it) and *beat (1 .. beatsPerBar).
   void barAndBeat(long k, int* bar, int* beat) const;
-  // Says "bar 1 is at t". If t lies nearer to the middle between two beats than to a
-  // beat, the grid is taken to be half a beat out and is moved by that much first.
-  void setBarOneAt(double t);
 };
 
 // Reads the file's text (zero-terminated). False if it is not a track file of this version.

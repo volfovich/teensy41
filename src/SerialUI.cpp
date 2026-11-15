@@ -138,12 +138,14 @@ void printHelp() {
                "  track seek <time>     go to a time: seconds or m:ss (+10 / -10: from where it is)\n"
                "  track tempo <50-150>  the track's tempo in percent of its own, at the same pitch (or: <value> bpm)\n"
                "  track bpm             the track's own tempo as found; half | double | <value> correct it\n"
-               "  track bar             bar 1 starts where the track is now (track beats <n>: beats in a bar)\n"
+               "  track beats <n>       beats in a bar\n"
                "  track loop bars <a> <b>  loop bars a..b\n"
-               "  track snap on|off     loop points go to the nearest beat or bar line\n"
+               "  track loop bar <bar>[.<beat>] [n]  loop n bars (4) from a bar and beat: track loop bar 33.1 8\n"
+               "  track snap on|off     loop points go to the nearest beat\n"
                "  track scan            find the tempo and beats again\n"
                "  track loop a | b      mark the loop's start / end where the track is now\n"
-               "  track loop <from> <to>|off  loop a section (times as for seek)\n"
+               "  track loop <from> <to>  loop a section (times as for seek)\n"
+               "  track loop off|on|clear  the loop off (its points are kept) / on again / off and forgotten\n"
                "  drum loop <a> <b>|off  loop bars a..b of the song\n"
                "  drum train <step> <every> <target>  set the speed trainer and switch it on\n"
                "  m                     toggle the live level meter\n"
@@ -466,8 +468,6 @@ static bool trackCommand(char* arg) {
     else if (!strcmp(rest, "double")) trackScaleBpm(true);
     else if (isdigit((unsigned char)rest[0])) trackSetBpm(strtof(rest, nullptr));
     else Serial.println("track bpm | half | double | <value>");
-  } else if (!strcmp(arg, "bar") && !rest) {
-    trackBarHere();
   } else if (!strcmp(arg, "beats") && rest && isdigit((unsigned char)rest[0])) {
     trackBeatsPerBar(atoi(rest));
   } else if (!strcmp(arg, "snap") && rest && (!strcmp(rest, "on") || !strcmp(rest, "off"))) {
@@ -477,16 +477,26 @@ static bool trackCommand(char* arg) {
   } else if (!strcmp(arg, "loop")) {
     float a, b;
     char* second = rest ? strchr(rest, ' ') : nullptr;
-    if (!rest) Serial.println("track loop a | b | off | <from> <to>");
+    if (!rest) Serial.println("track loop a | b | off | on | clear | <from> <to>");
     else if (!strcmp(rest, "off")) trackLoopOff();
-    else if (!strncmp(rest, "bars ", 5)) {
+    else if (!strcmp(rest, "on")) {
+      if (!trackLoopOn()) Serial.println("The track has no loop points (track loop a, then b).");
+    } else if (!strcmp(rest, "clear")) trackLoopClear();
+    else if (!strncmp(rest, "bar ", 4)) {
+      // track loop bar <bar>[.<beat>] [bars]: from a bar and beat, so many bars (4 if not said).
+      char* q = rest + 4;
+      const int bar = (int)strtol(q, &q, 10);
+      const int beat = *q == '.' ? (int)strtol(q + 1, &q, 10) : 1;
+      const int bars = *q ? (int)strtol(q, &q, 10) : 4;
+      if (!trackLoopFrom(bar, beat, bars)) Serial.println("track loop bar <bar>[.<beat>] [bars]: a place in the open track (it needs a beat grid: track bpm)");
+    } else if (!strncmp(rest, "bars ", 5)) {
       char* q = rest + 5;
       const int first = (int)strtol(q, &q, 10);
       const int last = *q ? (int)strtol(q, &q, 10) : first;
       if (!trackLoopBars(first, last)) Serial.println("track loop bars <first> [last]: bars of the open track (it needs a beat grid: track bpm)");
     } else if (!strcmp(rest, "a")) trackLoopMark(false);
     else if (!strcmp(rest, "b")) trackLoopMark(true);
-    else if (!second || !parseTime(rest, &a) || !parseTime(second + 1, &b)) Serial.println("track loop a | b | off | <from> <to>");
+    else if (!second || !parseTime(rest, &a) || !parseTime(second + 1, &b)) Serial.println("track loop a | b | off | on | clear | <from> <to>");
     else if (!trackLoop(a, b)) Serial.println("No such section: it must lie in the open track and be 0.25 s or longer.");
   } else if (!strcmp(arg, "..") && !rest) {
     trackShellUp();
