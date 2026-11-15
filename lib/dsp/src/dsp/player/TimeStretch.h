@@ -18,7 +18,8 @@
 //   - A drum hit must not be stretched: it would turn into a smear. A window in which
 //     the level rises suddenly in much of the spectrum, and the next four (until the hit
 //     has passed through), are taken from the input as far apart as they are laid down,
-//     with the phases they have ("phase reset"): the hit comes out exactly as it is. The
+//     with the phases they have ("phase reset"; below 150 Hz only if the level rose
+//     there too, so that a bass note under a snare or a cymbal goes on undisturbed): the hit comes out as it is. The
 //     time is made up after the hit, where the windows move up to half as fast again (or
 //     half as slow) until the tempo's pace is caught up.
 //   - Both sides are turned by the same angles, found on a mix of the two: the stereo
@@ -122,6 +123,7 @@ class TimeStretch {
   int lastPeaks_ = 0;
   float lastRising_ = 0.0f;      // how much of the last window's spectrum rose
   int holdLeft_ = 0;             // windows of a hit still to come (this one counted)
+  bool hitInBass_ = false;       // that hit is also a rise below 150 Hz (a kick drum)
   double owed_ = 0.0;            // input frames the windows are ahead of the tempo's pace
   int outLeft_ = 0;              // frames in out not yet pulled
   double outAt_ = 0.0;           // where in the input those frames begin

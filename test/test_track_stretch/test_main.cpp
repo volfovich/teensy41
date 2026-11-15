@@ -198,6 +198,38 @@ static void test_hits_stay_single_and_in_time() {
     }
 }
 
+static void test_a_bass_note_runs_on_under_a_hit_that_is_not_in_the_bass() {
+    // A 60 Hz note with bursts of hiss (noise without its low end) on it, like a bass under
+    // hi-hats and a snare. The hits make the phases start anew, but not the bass's: over
+    // the whole stretch the note is one unbroken tone, so it measures at its full level.
+    const int n = (int)(kFs * 6.0), len = (int)(kFs * 0.03);
+    std::vector<int16_t> in(2 * n);
+    for (int i = 0; i < n; i++) in[2 * i] = in[2 * i + 1] = (int16_t)lrint(0.3 * 32767.0 * sin(kPi2 * 60.0 * i / kFs));
+    uint32_t s = 777;
+    for (double t = 0.25; t + 0.05 < 6.0; t += 0.31) {
+        const int at = (int)(t * kFs);
+        double last = 0;
+        for (int i = 0; i < len; i++) {
+            s = s * 1664525u + 1013904223u;
+            const double white = (double)(s >> 8) / 8388608.0 - 1.0;
+            const double hiss = 0.5 * (white - last);  // the difference of two samples: no low end
+            last = white;
+            const int16_t x = (int16_t)(0.5 * 32767.0 * exp(-(double)i / (kFs * 0.008)) * hiss);
+            in[2 * (at + i)] = (int16_t)(in[2 * (at + i)] + x);
+            in[2 * (at + i) + 1] = in[2 * (at + i)];
+        }
+    }
+    for (float rate : {0.6f, 0.8f, 0.9f}) {
+        const std::vector<int16_t> out = stretch(in, rate);
+        const size_t frames = out.size() / 2;
+        const double amp = toneAmp(out, 0, 9600, frames - 9600, 60.0);
+        char msg[96];
+        snprintf(msg, sizeof(msg), "rate %.2f: the 60 Hz note measures %.3f over the whole stretch (0.3 unbroken)", rate, amp);
+        TEST_MESSAGE(msg);
+        TEST_ASSERT_TRUE_MESSAGE(amp > 0.27, msg);
+    }
+}
+
 static void test_hits_in_quick_succession_do_not_stall_it() {
     // A hit every 70 ms, and one every 25 ms: the stretcher is ahead or behind its pace
     // most of the time. It must go on taking input and give the right length.
@@ -249,6 +281,7 @@ int main() {
     RUN_TEST(test_the_length_changes_and_the_pitch_does_not);
     RUN_TEST(test_both_sides_move_together);
     RUN_TEST(test_hits_stay_single_and_in_time);
+    RUN_TEST(test_a_bass_note_runs_on_under_a_hit_that_is_not_in_the_bass);
     RUN_TEST(test_hits_in_quick_succession_do_not_stall_it);
     RUN_TEST(test_how_the_input_arrives_does_not_matter);
     RUN_TEST(test_reset_starts_a_new_stream_and_the_rate_is_held_in_range);

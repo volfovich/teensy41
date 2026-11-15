@@ -24,6 +24,9 @@ static_assert((1 << kBits) == TimeStretch::kN, "kBits is the window's size");
 // a hit, if that is half as much again as in the window before.
 constexpr float kHitShare = 0.25f;
 constexpr int kFirstHitBin = 9;
+// At a hit the phases below this bin (about 150 Hz) are reset only if the level rose
+// there too (a kick drum): under a snare or a cymbal a bass note goes on undisturbed.
+constexpr int kFirstResetBin = 7;
 // A hit's windows: the one it is found in and as many more as it takes to pass through.
 constexpr int kHitWindows = TimeStretch::kN / TimeStretch::kHop + 1;
 
@@ -103,6 +106,7 @@ DSP_COLD void TimeStretch::reset() {
   lastPeaks_ = 0;
   lastRising_ = 0.0f;
   holdLeft_ = 0;
+  hitInBass_ = false;
   owed_ = 0.0;
   outLeft_ = 0;
   outAt_ = 0.0;
@@ -242,13 +246,18 @@ bool TimeStretch::makeWindow() {
   // the sum plus half the difference (see mixAt()). Its power, and how much of it rose
   // fourfold since the last window.
   int rose = 0;
-  float loudest = 0.0f;
+  float loudest = 0.0f, lowNow = 0.0f, lowWas = 0.0f;
   for (int k = 0; k < kBins; k++) {
     float mr, mi;
     mixAt(k, &mr, &mi);
     power_[k] = mr * mr + mi * mi;
     if (power_[k] > loudest) loudest = power_[k];
-    if (k >= kFirstHitBin && power_[k] > 4.0f * (lastRe_[k] * lastRe_[k] + lastIm_[k] * lastIm_[k]) + 1.0f) rose++;
+    const float was = lastRe_[k] * lastRe_[k] + lastIm_[k] * lastIm_[k];
+    if (k >= kFirstHitBin && power_[k] > 4.0f * was + 1.0f) rose++;
+    if (k >= 1 && k < kFirstResetBin) {
+      lowNow += power_[k];
+      lowWas += was;
+    }
   }
   const float rising = (float)rose / (float)(kBins - kFirstHitBin);
   // A hit: this window and the next ones, until the hit has passed through, are taken
@@ -257,9 +266,16 @@ bool TimeStretch::makeWindow() {
   // too much is owed already (hits in quick succession).
   // (The input's end, cut off under the window, also looks like a rise.)
   if (holdLeft_ == 0 && rising > kHitShare && rising > 1.5f * lastRising_ && owed_ < (double)kN && owed_ > -(double)kN &&
-      start + kN <= (int64_t)fed_)
+      start + kN <= (int64_t)fed_) {
     holdLeft_ = kHitWindows;
-  const bool asItIs = windows_ == 0 || hopIn <= 0 || lastPeaks_ == 0 || holdLeft_ > 0;
+    hitInBass_ = false;
+  }
+  // (Looked at in each of the hit's windows: the hit comes into them bit by bit, and the
+  // bass may only show its rise once more of it is in.)
+  if (holdLeft_ > 0 && lowNow > 2.0f * lowWas + 1.0f) hitInBass_ = true;
+  const bool fresh = windows_ == 0 || hopIn <= 0 || lastPeaks_ == 0;  // nothing to go on from
+  const bool inHit = holdLeft_ > 0;
+  const int resetFrom = hitInBass_ ? 0 : kFirstResetBin;  // in a hit: the bins that keep the phases they have
   lastRising_ = rising;
 
   // The peaks: a bin above its two neighbours on each side, and not more than 80 dB
@@ -278,7 +294,7 @@ bool TimeStretch::makeWindow() {
   // frequency over kHop frames, to where it is in this window.
   for (int n = 0; n < peaks; n++) {
     float tr = 1.0f, ti = 0.0f;
-    if (!asItIs) {
+    if (!fresh && !(inHit && peak_[n] >= resetFrom)) {
       const int k = peak_[n];
       float xr, xi;
       mixAt(k, &xr, &xi);
@@ -326,7 +342,10 @@ bool TimeStretch::makeWindow() {
   // Every bin is turned as its peak is (the nearer of its two), both sides alike: bin k
   // by the turn, its mirror kN - k by the turn's conjugate. Bins 0 and kN / 2 stay.
   for (int n = 0, k = 1; n < peaks; n++) {
-    const int upTo = n + 1 < peaks ? (peak_[n] + peak_[n + 1]) / 2 : kBins - 2;
+    int upTo = n + 1 < peaks ? (peak_[n] + peak_[n + 1]) / 2 : kBins - 2;
+    // In a hit, a bass peak that keeps its phase takes no bins from 150 Hz up with it:
+    // those go with the next peak, as they are.
+    if (inHit && peak_[n] < resetFrom && n + 1 < peaks && upTo >= resetFrom) upTo = resetFrom - 1;
     const float tr = turn_[2 * n], ti = turn_[2 * n + 1];
     for (; k <= upTo; k++) {
       lastOwner_[k] = (uint16_t)n;
