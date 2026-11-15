@@ -51,6 +51,7 @@ Only one program can hold the unit's serial port: quit the app before flashing o
 | `/IR` or the root | Cabinet impulse responses (`.wav`, any common format and rate) |
 | `/PRESETS` | Presets, one text file each (`01 Name.txt`) |
 | `/DRUMS` | General MIDI drum files (`.mid`) as extra drum songs |
+| `/TRACKS` | Backing tracks to play along with: `.wav` or `.mp3`, any common sample rate, in the folder itself or in folders below it |
 
 Without a card the unit still plays: the amp uses a built-in example model and there is no cab.
 

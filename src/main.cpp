@@ -2,7 +2,7 @@
 //
 //   guitar -> PCM1808 ADC (right) -> 30 Hz high-pass -> [NAM A2-Lite amp] -> noise gate
 //          -> IR convolution (cab) -> output gain + preset level
-//          -> mod -> delay -> reverb -> + drums and bass
+//          -> mod -> delay -> reverb -> + drums and bass + backing track
 //          -> master volume -> PCM5102A DAC L/R
 //          (32-bit float throughout, 24-bit converters, 48 kHz; docs/SIGNAL_CHAIN.md)
 //
@@ -21,6 +21,7 @@
 //   IRLibrary   SD card file list and IR loading
 //   AmpLibrary  the NAM amp models in /AMP and loading them
 //   DrumSongs   the drum songs, built-in and from the SD card
+//   TrackLibrary the backing tracks in /TRACKS and playing one
 //   SerialUI    serial commands and level meter
 //   AppLink     the desktop app's binary protocol on the same serial port (docs/APP.md)
 //   Tuner       the tuner (pitch from the input while it is open)
@@ -39,6 +40,7 @@
 #include "Screen.h"
 #include "SerialUI.h"
 #include "Settings.h"
+#include "TrackLibrary.h"
 #include "config.h"
 
 // Debug capture of the raw guitar input (serial command "cap"): 3 s into the PSRAM, then
@@ -72,7 +74,8 @@ void testSignal(float hz, float dbfs) {
 // The overload protection (lib/i2s32, Config::faultAfterOverruns): when the chain cannot keep
 // up for 16 blocks in a row the driver goes silent and stops calling it, which gives loop()
 // the CPU back. Here the load is reduced, then the audio resumes after a second: first the
-// drums and bass stop; if it trips again within 10 s the mod, delay and reverb go off too.
+// drums and bass and the backing track stop; if it trips again within 10 s the mod, delay
+// and reverb go off too.
 static void serviceFault() {
   static uint32_t faultAt = 0, lastFaultAt = 0;
   static bool handling = false;
@@ -85,8 +88,9 @@ static void serviceFault() {
     const bool again = lastFaultAt && now - lastFaultAt < 10000;
     lastFaultAt = now;
     Serial.println("\nAUDIO OVERLOAD: the chain could not keep up; output muted for 1 s.");
-    if (getParam(ui::kDrumsPlay)) {
-      setParam(ui::kDrumsPlay, 0);
+    if (getParam(ui::kDrumsPlay) || trackPlaying()) {
+      if (getParam(ui::kDrumsPlay)) setParam(ui::kDrumsPlay, 0);
+      if (trackPlaying()) trackStop();
     } else if (again) {
       Serial.println("Again: switching the mod, delay and reverb off.");
       setParam(ui::kModOn, 0);
@@ -137,6 +141,7 @@ void setup() {
   // The chain gets its memory and the saved settings, then the audio starts: the passthrough
   // runs from here on, even before an IR or a model is loaded.
   audioBegin();
+  trackBegin();
   g_inputHp.setHighpass(INPUT_HIGHPASS_HZ, kSampleRate);
   i2s32::Config cfg;
   cfg.callback = audioCallback;
@@ -163,5 +168,6 @@ void loop() {
   serviceMidi();
   serviceAppLink();
   serviceScreen();
+  serviceTrack();
   serviceFault();
 }

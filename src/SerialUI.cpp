@@ -17,6 +17,7 @@
 #include "Params.h"
 #include "PresetLibrary.h"
 #include "Screen.h"
+#include "TrackLibrary.h"
 #include "Tuner.h"
 #include "config.h"
 
@@ -129,6 +130,20 @@ void printHelp() {
                "  overload              debug: test the overload protection (mutes for 1 s)\n"
                "  tft                   the touch screen: state and its commands (on, off, cal, debug)\n"
                "  mem                   memory: code and data per region, deepest stack use, heap\n"
+               "  track                 list a folder of the backing tracks (*.wav, *.mp3 below /TRACKS)\n"
+               "  track <n>             row n of that list: go into the folder, or open the track (track ..: up a folder)\n"
+               "  track find <text>     list the tracks with these words in their name or folder, from all folders\n"
+               "  track <name|path>     open the first track found by its name, words of it, or its path (track off: none)\n"
+               "  track play|pause|stop play from where it is / hold / stop and go back to the start\n"
+               "  track seek <time>     go to a time: seconds or m:ss (+10 / -10: from where it is)\n"
+               "  track tempo <50-150>  the track's tempo in percent of its own, at the same pitch (or: <value> bpm)\n"
+               "  track bpm             the track's own tempo as found; half | double | <value> correct it\n"
+               "  track bar             bar 1 starts where the track is now (track beats <n>: beats in a bar)\n"
+               "  track loop bars <a> <b>  loop bars a..b\n"
+               "  track snap on|off     loop points go to the nearest beat or bar line\n"
+               "  track scan            find the tempo and beats again\n"
+               "  track loop a | b      mark the loop's start / end where the track is now\n"
+               "  track loop <from> <to>|off  loop a section (times as for seek)\n"
                "  drum loop <a> <b>|off  loop bars a..b of the song\n"
                "  drum train <step> <every> <target>  set the speed trainer and switch it on\n"
                "  m                     toggle the live level meter\n"
@@ -310,6 +325,7 @@ static void printStatus() {
     printValues({kDelayType, kDelayMix, kDelayTime, kDelayRepeats, kDelayTone, kDelayMod, kDelayDuck, kDelayDrive, kDelayEra});
   Serial.println();
   printDrumStatus();
+  printTrackStatus();
   Serial.printf("Reverb:    %s", effectState(kReverbOn, chain.reverbActive()));
   switch (getParam(kReverbMode)) {
     case dsp::ReverbBank::kSpring: printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone}); break;
@@ -318,10 +334,10 @@ static void printStatus() {
     default: printValues({kReverbMode, kReverbMix, kReverbSize, kReverbTone, kReverbPreDelay, kReverbEra, kReverbMod}); break;
   }
   Serial.println();
-  Serial.printf("CPU:       IR + effects %.1f%% avg / %.1f%% max (amp %.1f%%, mod %.1f%%, delay %.1f%%, reverb %.1f%%, drums %.1f%%, limiter %.1f%%), audio total %.1f%% max\n",
+  Serial.printf("CPU:       IR + effects %.1f%% avg / %.1f%% max (amp %.1f%%, mod %.1f%%, delay %.1f%%, reverb %.1f%%, drums %.1f%%, track %.1f%%, limiter %.1f%%), audio total %.1f%% max\n",
                 chain.cpuPercent(), chain.cpuPercentMax(), chain.ampCpuPercent(),
                 chain.modCpuPercent(), chain.delayCpuPercent(),
-                chain.reverbCpuPercent(), chain.drumCpuPercent(), chain.limiterCpuPercent(),
+                chain.reverbCpuPercent(), chain.drumCpuPercent(), chain.trackCpuPercent(), chain.limiterCpuPercent(),
                 100.0f * i2s32::load(drv.maxCycles));
   Serial.printf("Driver:    overruns %lu, FIFO errors %lu, overload mutes %lu\n", (unsigned long)drv.overruns,
                 (unsigned long)drv.fifoErrors, (unsigned long)drv.faults);
@@ -354,6 +370,7 @@ static void runTuner() {
         Serial.println("  -");
       any = true;
     }
+    serviceTrack();  // a backing track plays on meanwhile
     yield();
   }
   if (!any) Serial.println("  - (no pitch)");
@@ -398,6 +415,95 @@ static void presetCommand(char* arg) {
   }
 }
 
+// A time as typed: seconds ("83.5") or minutes and seconds ("1:23.5"). False if it is neither.
+static bool parseTime(const char* s, float* seconds) {
+  char* end;
+  float v = strtof(s, &end);
+  if (end == s) return false;
+  if (*end == ':') {
+    const char* sec = end + 1;
+    const float t = strtof(sec, &end);
+    if (end == sec) return false;
+    v = v * 60.0f + t;
+  }
+  if (*end && *end != ' ') return false;
+  *seconds = v;
+  return true;
+}
+
+// track [n|..|find <text>|name|off|play|pause|stop|seek <time>|tempo ...|bpm ...|bar|beats <n>|snap on|off|scan|
+// loop a|b|off|bars <a> <b>|<from> <to>]. False for
+// "track vol", which is a setting.
+static bool trackCommand(char* arg) {
+  if (!arg) {
+    printTracks();
+    return true;
+  }
+  char* rest = splitWord(arg);
+  if (!strcmp(arg, "vol")) return false;
+  if (!strcmp(arg, "play") && !rest) {
+    trackPlay();
+  } else if (!strcmp(arg, "pause") && !rest) {
+    trackPause();
+  } else if (!strcmp(arg, "stop") && !rest) {
+    trackStop();
+  } else if (!strcmp(arg, "off") && !rest) {
+    selectTrack(-1);
+  } else if (!strcmp(arg, "seek")) {
+    float t;
+    if (!rest || !parseTime(rest, &t)) Serial.println("track seek <seconds | m:ss | +seconds | -seconds>");
+    else trackSeek(rest[0] == '+' || rest[0] == '-' ? trackPosition() + t : t);
+  } else if (!strcmp(arg, "tempo")) {
+    const char* unit = rest ? strchr(rest, ' ') : nullptr;
+    if (!rest) Serial.printf("Track tempo %d%%\n", trackTempoPercent());
+    else if (!isdigit((unsigned char)rest[0])) Serial.println("track tempo <50-150> (percent of the track's own tempo) | <value> bpm");
+    else if (unit && !strcmp(unit + 1, "bpm")) {
+      if (!trackTempoBpm(strtof(rest, nullptr))) Serial.println("The track's own tempo is not known (track bpm).");
+    } else trackTempo(atoi(rest));
+  } else if (!strcmp(arg, "bpm")) {
+    if (!rest) trackShowBpm();
+    else if (!strcmp(rest, "half")) trackScaleBpm(false);
+    else if (!strcmp(rest, "double")) trackScaleBpm(true);
+    else if (isdigit((unsigned char)rest[0])) trackSetBpm(strtof(rest, nullptr));
+    else Serial.println("track bpm | half | double | <value>");
+  } else if (!strcmp(arg, "bar") && !rest) {
+    trackBarHere();
+  } else if (!strcmp(arg, "beats") && rest && isdigit((unsigned char)rest[0])) {
+    trackBeatsPerBar(atoi(rest));
+  } else if (!strcmp(arg, "snap") && rest && (!strcmp(rest, "on") || !strcmp(rest, "off"))) {
+    trackSnap(!strcmp(rest, "on"));
+  } else if (!strcmp(arg, "scan") && !rest) {
+    trackRescan();
+  } else if (!strcmp(arg, "loop")) {
+    float a, b;
+    char* second = rest ? strchr(rest, ' ') : nullptr;
+    if (!rest) Serial.println("track loop a | b | off | <from> <to>");
+    else if (!strcmp(rest, "off")) trackLoopOff();
+    else if (!strncmp(rest, "bars ", 5)) {
+      char* q = rest + 5;
+      const int first = (int)strtol(q, &q, 10);
+      const int last = *q ? (int)strtol(q, &q, 10) : first;
+      if (!trackLoopBars(first, last)) Serial.println("track loop bars <first> [last]: bars of the open track (it needs a beat grid: track bpm)");
+    } else if (!strcmp(rest, "a")) trackLoopMark(false);
+    else if (!strcmp(rest, "b")) trackLoopMark(true);
+    else if (!second || !parseTime(rest, &a) || !parseTime(second + 1, &b)) Serial.println("track loop a | b | off | <from> <to>");
+    else if (!trackLoop(a, b)) Serial.println("No such section: it must lie in the open track and be 0.25 s or longer.");
+  } else if (!strcmp(arg, "..") && !rest) {
+    trackShellUp();
+  } else if (!strcmp(arg, "find")) {
+    if (!rest) Serial.println("track find <text>: the tracks with these words in their name or their folder's");
+    else trackShellFind(rest);
+  } else if (!rest && isdigit((unsigned char)arg[0]) && strspn(arg, "0123456789") == strlen(arg)) {
+    if (!trackShellRow(atoi(arg))) Serial.println("No such row (type 'track').");
+  } else {
+    if (rest) arg[strlen(arg)] = ' ';  // a name with spaces: whole again
+    const int id = findTrack(arg);
+    if (id < 0) Serial.println("No such track (track find <text> lists what there is).");
+    else selectTrack(id);
+  }
+  return true;
+}
+
 // The commands that aren't one setting: "drum style|kit|song" take names,
 // "drum loop" and "drum train" several numbers, "bass key" a note name.
 // True if the line was one of them.
@@ -406,6 +512,7 @@ static bool specialCommand(const char* cmd, char* arg) {
     presetCommand(arg);
     return true;
   }
+  if (!strcmp(cmd, "track")) return trackCommand(arg);
   if (!strcmp(cmd, "amp") && arg) {
     // amp list | info | <n> | <name>; amp on|off|in|out|cal and
     // the tone controls are settings.

@@ -157,7 +157,7 @@ Names are exact ("03 Lead"). A recall loads the model and the IR before it repli
 
 ### 4.5 Files on the SD card (since A4)
 
-Paths are absolute and must name a file directly inside `/IR`, `/AMP`, `/PRESETS` or `/DRUMS` (no further folders), or a `.wav` file in the root. Names that start with a dot and paths with `..` are refused. Anything else is refused with `BAD_PATH`.
+Paths are absolute and must name a file directly inside `/IR`, `/AMP`, `/PRESETS`, `/DRUMS` or `/TRACKS` (no further folders; `/TRACKS`, the backing tracks, since 15 Nov 2026), or a `.wav` file in the root. Only below `/TRACKS` a file may also be in folders (`/TRACKS/Rock/Song.mp3`, since 15 Nov 2026): an upload makes the folders that are missing, the path may be up to 263 bytes long there (elsewhere the length `HELLO` gives), and `DIR_LIST` lists such a folder. Names and folders that start with a dot, empty folder names and paths with `..` are refused. Anything else is refused with `BAD_PATH`. There is no message to remove a folder.
 
 After an upload or a delete the device rescans the card before it replies; the loaded model and IR keep playing and stay marked. The lists report a modified time of 0 for now, and leave out the built-in model.
 
@@ -183,7 +183,7 @@ A `FILE_PUT_BEGIN` while an upload is open abandons the earlier one. An upload w
 |---|---|---|
 | `45 FILE_DELETE` | `string` path | (empty) |
 | `46 FILE_RENAME` | `string` from · `string` to | (empty) |
-| `47 DIR_LIST` | `string` folder | list of: `string` name · `u32` size · `u32` modified time · `bool` is a folder |
+| `47 DIR_LIST` | `string` folder: `/`, one of the five folders, or a folder below `/TRACKS` | list of: `string` name · `u32` size · `u32` modified time · `bool` is a folder. The reply holds what fits in 16 KB (several hundred entries); a fuller folder is cut short |
 | `48 CARD_INFO` | (empty) | `bool` card present · `u32` total space in KB · `u32` free space in KB (both 0 without a card). The device counts the free space on each request, which takes a moment (0.8 s measured on a 16 GB card, longer on larger ones): allow 6 s. |
 | `49 RESCAN` | (empty) | `u16` IRs found · `u16` models found · `u16` presets found · `u16` drum songs found |
 

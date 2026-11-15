@@ -220,8 +220,16 @@ def main():
                 link.request(0x10, struct.pack("<Hi", i, vals[i]))
         link.poll(0.3)
         vals3, files3 = state()
-        check(vals3[:hello["saved"]] == vals[:hello["saved"]] and files3 == files,
+        # The edited mark may have gone: a preset can be marked edited with every value as
+        # saved (changed and changed back), and the recall above clears that.
+        check(vals3[:hello["saved"]] == vals[:hello["saved"]] and dict(files3, edited=files["edited"]) == files,
               "the sound from before is back (preset %r, edited mark %d)" % (was, files3["edited"]))
+        for i in range(hello["saved"]):
+            if vals3[i] != vals[i]:
+                print("      setting %d: was %d, is %d" % (i, vals[i], vals3[i]))
+        if dict(files3, edited=files["edited"]) != files:
+            print("      was %r, is %r" % (files, files3))
+        files = files3
     else:
         print("SKIP  presets: no SD card")
 
@@ -291,6 +299,36 @@ def main():
                 listed.append("/AMP/" + name)
         listed.sort()
         check(f[1] == 1 and listed == sorted(m[0] for m in models), "DIR_LIST /AMP: the same %d files as MODEL_LIST" % len(listed))
+        # Backing tracks may lie in folders below /TRACKS; the other folders have none.
+        f, _ = link.request(0x47, string("/TRACKS"), wait=5)
+        r = Reader(f[3])
+        folders = []
+        for _ in range(r.u16()):
+            name, _size, _time, is_folder = r.str(), r.u32(), r.u32(), r.u8()
+            if is_folder:
+                folders.append(name)
+        if folders:
+            sub = "/TRACKS/" + sorted(folders)[0]
+            f, _ = put(sub + "/applink test.wav", wav)
+            ok = f[1] == 1
+            f, _ = link.request(0x47, string(sub), wait=5)
+            r = Reader(f[3])
+            names = []
+            for _ in range(r.u16()):
+                names.append(r.str())
+                r.u32(), r.u32(), r.u8()
+            ok = ok and f[1] == 1 and "applink test.wav" in names
+            f, _ = link.request(0x45, string(sub + "/applink test.wav"), wait=8)
+            check(ok and f[1] == 1, "FILE_PUT, DIR_LIST and FILE_DELETE in a folder below /TRACKS (%s)" % sub)
+        else:
+            print("  (no folder below /TRACKS on the card: files in folders not checked)")
+        bad = 0
+        for path in ("/TRACKS/.hidden/x.wav", "/TRACKS//x.wav", "/TRACKS/a/../x.wav", "/IR/sub/x.wav"):
+            f, _ = link.request(0x40, string(path) + struct.pack("<II", 4, 0), wait=5)
+            bad += f[1] == 3 and Reader(f[3]).u16() == 5
+        f, _ = link.request(0x47, string("/IR/sub"), wait=5)
+        bad += f[1] == 3 and Reader(f[3]).u16() == 5
+        check(bad == 5, "hidden, empty and '..' folders below /TRACKS and folders below /IR: error BAD_PATH")
         f, _ = put("/IR/applink test.wav", wav)
         link.seq += 1
         link.s.write(frame(0x43, 0, link.seq, string("/IR/applink test.wav")))

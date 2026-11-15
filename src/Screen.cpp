@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <dsp/player/TrackIndex.h>
 #include <ui/Ui.h>
 
 #include "AmpLibrary.h"
@@ -19,6 +20,7 @@
 #include "Meters.h"
 #include "Params.h"
 #include "PresetLibrary.h"
+#include "TrackLibrary.h"
 #include "Tuner.h"
 
 using namespace ui_tft;
@@ -227,6 +229,108 @@ struct UnitModel : UiModel {
     v.cents = r.note.cents;
     v.hz = r.hz;
     return v;
+  }
+  // The backing track (TrackLibrary.h).
+  // A file's or folder's name as the screen shows it: '_' is a space, a track is without
+  // its extension.
+  static void shownName(const char* name, bool file, char* buf, int n) {
+    strlcpy(buf, name, n);
+    char* dot = strrchr(buf, '.');
+    // Cut only where the whole extension got in (a long name is cut short before it).
+    if (file && dot && dot != buf && strlen(dot) <= 5 && strlen(name) < (size_t)n) *dot = 0;
+    for (char* c = buf; *c; c++)
+      if (*c == '_') *c = ' ';
+  }
+  bool trackAny() override { return trackIndex().files() > 0; }
+  int trackRows() override { return trackBrowser(true).rows(); }
+  void trackRow(int i, TrackRow* r) override {
+    *r = TrackRow();
+    const dsp::TrackIndex& ix = trackIndex();
+    const dsp::TrackBrowser& b = trackBrowser(true);
+    const int id = b.row(i);
+    if (id < 0) return;
+    r->isFolder = ix.isFolder(id);
+    r->open = id == trackOpenId();
+    shownName(ix.name(id), !r->isFolder, r->name, sizeof(r->name));
+    if (b.searching()) {
+      // Where the hit is: the folder it is in (the top one: the tracks' folder itself).
+      const int in = ix.parent(id);
+      shownName(in ? ix.name(in) : "TRACKS", false, r->folder, sizeof(r->folder));
+    }
+  }
+  void trackTitle(char* buf, int n) override {
+    const dsp::TrackIndex& ix = trackIndex();
+    const dsp::TrackBrowser& b = trackBrowser(true);
+    char name[32];
+    if (b.searching()) {
+      snprintf(buf, n, "\"%s\": %d%s found", b.text(), b.rows(), b.more() ? "+" : "");
+    } else {
+      shownName(b.folder() ? ix.name(b.folder()) : "BACKING TRACKS", false, name, sizeof(name));
+      if (trackReadingCard()) snprintf(buf, n, "%s (reading %d)", name, ix.files());
+      else snprintf(buf, n, "%s", name);
+    }
+  }
+  int trackEnter(int i) override {
+    dsp::TrackBrowser& b = trackBrowser(true);
+    if (b.row(i) < 0) return 0;
+    const int id = b.enter(i);
+    if (id < 0) return 1;
+    // The track that is open: just back to it.
+    return id == trackOpenId() || selectTrack(id) ? 2 : 0;
+  }
+  int trackUp() override {
+    dsp::TrackBrowser& b = trackBrowser(true);
+    const int from = b.searching() ? -1 : b.folder();
+    if (!b.up()) return -1;
+    const int row = b.rowOf(from);
+    return row > 0 ? row : 0;
+  }
+  void trackFind(const char* text) override { trackBrowser(true).find(text); }
+  int trackListHome() override {
+    const int id = trackOpenId();
+    const int row = id >= 0 ? trackBrowser(true).show(id) : 0;
+    return row > 0 ? row : 0;
+  }
+  void track(TrackView* v) override {
+    *v = TrackView();
+    v->open = trackOpen();
+    if (!v->open) return;
+    shownName(trackOpenName(), true, v->name, sizeof(v->name));
+    v->playing = trackPlaying();
+    v->position = trackPosition();
+    v->length = trackLength();
+    v->looping = trackLoopNow(&v->loopFrom, &v->loopTo);
+    v->markA = trackLoopStartMarked();
+    v->tempoPercent = trackTempoPercent();
+    v->bpm = trackBpm();
+    v->sure = v->bpm <= 0.0f || trackBpmSure();
+    v->scanPercent = trackScanPercent();
+    if (v->bpm > 0.0f) trackBarBeat(&v->bar, &v->beat);
+  }
+  void trackPlay(bool on) override {
+    if (on) ::trackPlay();
+    else trackPause();
+  }
+  void trackStop() override { ::trackStop(); }
+  void trackSeek(float seconds) override { ::trackSeek(seconds); }
+  void trackLoopMark(bool end) override { ::trackLoopMark(end); }
+  void trackLoopOff() override { ::trackLoopOff(); }
+  void trackTempoStep(int percent) override { trackTempo(constrain(trackTempoPercent() + percent, 50, 150)); }
+  void trackBpmScale(bool twice) override { trackScaleBpm(twice); }
+  void trackBarHere() override { ::trackBarHere(); }
+  void trackVolume(SettingView* v) override {
+    int lo, hi;
+    paramLimits(ui::kTrackVolume, &lo, &hi);
+    *v = SettingView();
+    snprintf(v->label, sizeof(v->label), "Volume");
+    paramText(ui::kTrackVolume, v->text, sizeof(v->text));
+    v->fraction = (float)(getParam(ui::kTrackVolume) - lo) / (float)(hi - lo);
+    v->bar = true;
+  }
+  void trackVolumeStep(int steps) override {
+    int lo, hi;
+    paramLimits(ui::kTrackVolume, &lo, &hi);
+    setParamQuiet(ui::kTrackVolume, constrain(getParam(ui::kTrackVolume) + steps, lo, hi));
   }
 };
 static UnitModel g_model;
@@ -470,7 +574,7 @@ void serviceScreen() {
 
 // ---- Shell ----
 void screenCommand(const char* arg) {
-  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume", "delete question", "choices"};
+  static const char* const kScreens[] = {"home", "presets", "tuner", "question", "block settings", "files", "trainer", "save", "name", "master volume", "delete question", "choices", "tracks"};
   if (!arg || !*arg) {
     Serial.printf("Touch screen: %s, %s (%s), touch %s, showing %s.\n", g_present ? "display found" : "no display found",
                   g_active ? "on" : "off", g_rec.mode == kAuto ? "automatic" : "forced",

@@ -98,10 +98,15 @@ static const ParamDef kParams[kValueCount] = {
     // The delay's type: the digital rack delay, a tape echo or an analog (bucket-brigade) pedal.
     // Added after the others, so it sits at the end of the saved block.
     {"dtype",        "Delay type",         "Type",           0,    2,   0, 1, U::kNone,    kDelayTypes, kPreset},
+    // The backing track (the files in /TRACKS): its level into the output, beside the drums.
+    // 0 dB plays the file as it is; the minimum is silence. One setting for all presets.
+    {"track vol",    "Track volume",       "Volume",      -120,   12, -12, 1, U::kHalfDb,  nullptr, 0},
     // Not saved.
     {"drum",         "Drums",              "Play",           0,    1,   0, 1, U::kOnOff,   nullptr, 0},
     {nullptr,        "Loop from",          "Loop from",      0,  512,   0, 1, U::kNone,    nullptr, 0},
     {nullptr,        "Loop to",            "Loop to",        1,  512,   1, 1, U::kNone,    nullptr, 0},
+    // No key: the shell's "track play", "track pause" and "track stop" do this.
+    {nullptr,        "Track",              "Play",           0,    1,   0, 1, U::kOnOff,   nullptr, 0},
 };
 
 const ParamDef& paramDef(int id) { return kParams[id < 0 || id >= kValueCount ? 0 : id]; }

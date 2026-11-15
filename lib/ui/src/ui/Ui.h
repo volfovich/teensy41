@@ -1,6 +1,7 @@
 // Ui.h - the touch screen's screens: home (meters, preset, chain, drums), preset list, a block's
 // settings, the list of models or IRs, the speed trainer (with what the drums play), saving (over, or as a new preset with a
-// typed name), renaming and deleting the recalled preset, the master volume, tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
+// typed name), renaming and deleting the recalled preset, the master volume, the backing track (file, play, where it
+// is, loop, tempo, its own tempo and bar 1, volume), tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
 // (src/Screen.cpp) and the host tests use the same code.
 //
@@ -43,6 +44,30 @@ struct SettingView {
   bool bar = false;      // a number with a range worth showing (not a toggle or a choice)
   int choices = 0;       // a value chosen by name: how many there are (0: not one)
   int choice = 0;        // and which it is now, 0-based
+};
+
+// The backing track as its screen shows it.
+struct TrackView {
+  bool open = false;        // a track is open
+  char name[40] = "";       // without folder and extension
+  bool playing = false;
+  float position = 0.0f, length = 0.0f;  // seconds
+  bool looping = false;
+  float loopFrom = 0.0f, loopTo = 0.0f;  // seconds
+  bool markA = false;       // the loop's start is marked and waits for its end
+  int tempoPercent = 100;   // of the track's own tempo
+  float bpm = 0.0f;         // the track's own tempo; 0: not known
+  bool sure = true;         // false: the scan found no steady beat to rely on
+  int scanPercent = 100;    // under 100: the scan for the tempo is still on its way
+  int bar = 0, beat = 0;    // where the track is (with a tempo known)
+};
+
+// A row of the backing tracks' list: a folder, or a track.
+struct TrackRow {
+  char name[48] = "";    // a track's without its extension
+  char folder[32] = "";  // a search's hit: the folder it is in ("" in a folder's own list)
+  bool isFolder = false;
+  bool open = false;     // the track that is open
 };
 
 // What the screen needs from the unit. Preset indices are places in the list, 0-based.
@@ -97,11 +122,39 @@ struct UiModel {
   virtual int cpuPercent() = 0;
   virtual void tunerOpen(bool on) = 0;
   virtual TunerView tuner() = 0;
+  // The backing tracks (the files in /TRACKS and the folders below it). Their list shows
+  // one folder at a time, its folders first, or the hits of a search over all folders.
+  virtual bool trackAny() = 0;                   // there are tracks on the card
+  virtual int trackRows() = 0;
+  virtual void trackRow(int i, TrackRow* r) = 0;
+  virtual void trackTitle(char* buf, int n) = 0; // the folder shown, or what was searched for
+  // A tap on row i: 1 = a folder, now shown; 2 = a track, now open; 0 = neither.
+  virtual int trackEnter(int i) = 0;
+  // A step back: from the hits to the folder, from a folder to the one above. Returns
+  // the row to show there; -1 at the top (nothing to go back to).
+  virtual int trackUp() = 0;
+  virtual void trackFind(const char* text) = 0;  // the hits are the rows now
+  // The list is opened: shows the open track's folder and returns the track's row (with
+  // none open: stays where it was, row 0).
+  virtual int trackListHome() = 0;
+  // The open track and what is done to it.
+  virtual void track(TrackView* v) = 0;
+  virtual void trackPlay(bool on) = 0;           // play, or pause (it keeps its place)
+  virtual void trackStop() = 0;                  // and back to the start
+  virtual void trackSeek(float seconds) = 0;
+  virtual void trackLoopMark(bool end) = 0;      // the loop's start or end where the track is now
+  virtual void trackLoopOff() = 0;
+  virtual void trackTempoStep(int percent) = 0;  // slower (< 0) or faster, at the same pitch
+  virtual void trackBpmScale(bool twice) = 0;    // the track's own tempo is half / twice what was found
+  virtual void trackBarHere() = 0;               // bar 1 starts where the track is now
+  virtual void trackVolume(SettingView* v) = 0;  // its level, as a setting
+  virtual void trackVolumeStep(int steps) = 0;
 };
 
 class Ui {
  public:
-  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer, kSaveMenu, kName, kMaster, kDeleteAsk, kChoices };
+  enum Screen { kHome, kPresets, kTuner, kConfirm, kBlockEdit, kFiles, kTrainer, kSaveMenu, kName, kMaster, kDeleteAsk, kChoices,
+                kTracks };
   static const int kNameMax = 24;      // a preset name's longest
   static const int kRowsPerPage = 5;   // the preset list
   static const int kSettingsPerPage = 4;
@@ -127,7 +180,9 @@ class Ui {
                 kEditUp, kEditDown, kFilePrev, kFileNext, kOpenFiles, kFileRow, kFilesBack, kFilesUp, kFilesDown, kOpenTrainer,
                 kTrainerOn, kPlay, kOpenSave, kSaveOver, kSaveNew, kKey, kCaps, kSpace, kDelete, kNameOk, kHome_,
                 kOpenMaster, kVolDown, kVolUp, kDrag, kDragVol, kRename, kAskDelete,
-                kDeleteYes, kTrainerPage, kOpenChoices, kChoiceRow, kChoicesBack, kChoicesUp, kChoicesDown };
+                kDeleteYes, kTrainerPage, kOpenChoices, kChoiceRow, kChoicesBack, kChoicesUp, kChoicesDown,
+                kOpenTracks, kOpenTrackList, kTrackFind, kNameCancel, kTrackPlay, kTrackStop, kTrackA, kTrackB, kTrackLoopOff, kTrackSlower,
+                kTrackFaster, kTrackHalf, kTrackDouble, kTrackBar, kTrackVolDown, kTrackVolUp, kDragSeek };
   enum Mode { kMeasure, kPaint, kHit };
   struct Pass {
     Mode mode;
@@ -148,7 +203,9 @@ class Ui {
   bool part(Pass& p, Rect r, uint32_t sig);
   void target(Pass& p, Rect r, Action a, int arg = 0);
   bool pressed(Action a, int arg = 0) const { return held_ && inside_ && heldAction_ == a && heldArg_ == arg; }
-  void button(Pass& p, Rect r, const char* label, Action a, int arg = 0, uint16_t colour = 0, bool enabled = true);
+  // small: the label in the small font (the home screen's bottom line, where five share the width).
+  void button(Pass& p, Rect r, const char* label, Action a, int arg = 0, uint16_t colour = 0, bool enabled = true,
+              bool small = false);
   void arrowButton(Pass& p, Rect r, int dir, Action a);
   void meter(Pass& p, int x, int y, int labelW, const char* label, float db);
 
@@ -160,12 +217,17 @@ class Ui {
   void layoutConfirm(Pass& p);
   void layoutBlock(Pass& p);
   void layoutFiles(Pass& p);
+  void layoutTrackList(Pass& p);
   void layoutTrainer(Pass& p);
   void layoutSaveMenu(Pass& p);
   void layoutName(Pass& p);
   void layoutMaster(Pass& p);
   void layoutDelete(Pass& p);
   void layoutChoices(Pass& p);
+  void layoutTracks(Pass& p);
+  // A value between minus and plus (the tracks screen's tempo and volume).
+  void valueRow(Pass& p, int y, int h, const char* label, const char* text, float fraction, uint16_t colour, Action minus,
+                Action plus);
   // One setting with minus and plus in row `row` of the settings area.
   void settingRow(Pass& p, int row, int block, int i, const SettingView& v);
   // The place of a setting in a block by its name in blocks.json; -1 if it has none.
@@ -220,10 +282,17 @@ class Ui {
   int choiceSetting_ = 0, choicePage_ = 0;
   Screen choiceBack_ = kBlockEdit;
   int trainerPage_ = 0;  // 0: the trainer's settings, 1: what the drums play
+  // The backing track: the file list shows tracks (not a block's files); a finger on the
+  // progress bar seeks, at most a few times a second.
+  bool trackList_ = false;
+  uint32_t nowMs_ = 0, seekMs_ = 0;
+  float seekTo_ = -1.0f;  // where the finger has got to and the track has not yet (a part of its length)
   // The new preset's name as it is typed.
   char name_[kNameMax + 1] = "";
   bool upper_ = true, autoUpper_ = true, saveFailed_ = false;
-  bool renaming_ = false;  // the name is the recalled preset's new one, not a new preset's
+  // What is typed: a new preset's name, the recalled preset's new one, or words to find tracks by.
+  enum NamePurpose { kNameSave, kNameRename, kNameFind };
+  NamePurpose purpose_ = kNameSave;
   // The question.
   bool askKeep_ = false;
   int askTarget_ = -1;

@@ -9,6 +9,7 @@
 #include <dsp/drums/DrumMachine.h>
 #include "DrumSongs.h"
 #include "Settings.h"
+#include "TrackLibrary.h"
 #include "config.h"
 
 using namespace ui;
@@ -24,6 +25,7 @@ int getParam(int id) {
     case kDrumsPlay: return chain.drums().playing();
     case kDrumLoopFrom: return drumLoopFirst();
     case kDrumLoopTo: return drumLoopFirst() ? drumLoopLast() : songBars();
+    case kTrackPlay: return trackPlaying();
     default: return 0;
   }
 }
@@ -48,6 +50,7 @@ void paramText(int id, char* buf, int n) { paramTextOf(id, getParam(id), buf, n)
 void paramTextOf(int id, int v, char* buf, int n) {
   switch (id) {
     case kMaster:
+    case kTrackVolume:
       if (v <= paramDef(id).min) {
         snprintf(buf, n, "silent");
         return;
@@ -163,6 +166,12 @@ static void applyParam(int id, int v) {
       else setDrumLoop(v, max(v, drumLoopFirst() ? drumLoopLast() : songBars()));
       break;
     case kDrumLoopTo: setDrumLoop(drumLoopFirst() ? drumLoopFirst() : 1, v); break;
+    // The backing track's level; its minimum is silence.
+    case kTrackVolume: chain.track().setGain(v <= paramDef(kTrackVolume).min ? 0.0f : powf(10.0f, v * 0.5f / 20.0f)); break;
+    case kTrackPlay:
+      if (v) trackPlay();
+      else trackPause();
+      break;
     default: break;  // kDrumSong: selected in setParam
   }
 }
@@ -203,6 +212,7 @@ void setParam(int id, int v) {
   switch (id) {
     case kDrumSong:
     case kDrumLoopFrom:
+    case kTrackPlay:
     case kDrumLoopTo: break;  // their own messages
     case kDrumsPlay: printDrums(v); break;
     default: {

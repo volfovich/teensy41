@@ -9,9 +9,9 @@
   "maxModels": 64,
   "maxIrs": 128,
   "maxPath": 95,
-  "savedSettings": 62,
-  "settings": 65,
-  "schemaHash": 2606692928,
+  "savedSettings": 63,
+  "settings": 67,
+  "schemaHash": 1760769989,
   "port": "preview"
  },
  "settings": [
@@ -884,6 +884,19 @@
   },
   {
    "id": 62,
+   "key": "track vol",
+   "name": "Track volume",
+   "label": "Volume",
+   "min": -120,
+   "max": 12,
+   "default": -12,
+   "step": 1,
+   "unit": 4,
+   "inPreset": false,
+   "choices": []
+  },
+  {
+   "id": 63,
    "key": "drum",
    "name": "Drums",
    "label": "Play",
@@ -896,7 +909,7 @@
    "choices": []
   },
   {
-   "id": 63,
+   "id": 64,
    "key": "",
    "name": "Loop from",
    "label": "Loop from",
@@ -909,7 +922,7 @@
    "choices": []
   },
   {
-   "id": 64,
+   "id": 65,
    "key": "",
    "name": "Loop to",
    "label": "Loop to",
@@ -918,6 +931,19 @@
    "default": 1,
    "step": 1,
    "unit": 0,
+   "inPreset": false,
+   "choices": []
+  },
+  {
+   "id": 66,
+   "key": "",
+   "name": "Track",
+   "label": "Play",
+   "min": 0,
+   "max": 1,
+   "default": 0,
+   "step": 1,
+   "unit": 1,
    "inPreset": false,
    "choices": []
   }
@@ -985,15 +1011,17 @@
   100,
   1,
   0,
+  -12,
   0,
   0,
-  1
+  1,
+  0
  ],
  "files": {
-  "model": "/AMP/03 - RECTO ACTIVE RAW.nam",
+  "model": "/AMP/01 - CHUG NORRIS RAW.nam",
   "ir": "/OH 412 RECT.wav",
   "preset": "01 Recto  91",
-  "edited": false,
+  "edited": true,
   "card": true
  }
 }

@@ -37,6 +37,23 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | `tuner` | The tuner for 5 s (the guitar is muted meanwhile) |
 | `midi` | Prints the USB MIDI map |
 | `drum loop <a> <b>` / `drum loop off` | Loops bars a to b of the song |
+| `track` | Lists one folder of the backing tracks (`*.wav`, `*.mp3` in `/TRACKS` and the folders below it), its rows numbered: folders first (shown with `/`), then tracks; `>` marks the open one. It starts at `/TRACKS` |
+| `track <n>` / `track ..` | Row n of the list last shown: a folder is gone into and listed, a track is opened / up one folder |
+| `track find <text>` | Lists the tracks from all folders that have every word of the text in their name or in the name of a folder they are in (case does not count, `_` is a space; at most 256), numbered for `track <n>`; `track ..` returns to the folder |
+| `track <name or path>` / `track off` | Opens the first track found by its path below `/TRACKS` (`Rock/Song.mp3`), its exact file name, or words as for `find` / closes the open one |
+| `track play` / `track pause` / `track stop` | Plays from where it is / holds its place / stops and goes back to the start (to the loop's start while one is set) |
+| `track seek <time>` | Goes to a time: seconds (`83.5`) or minutes and seconds (`1:23.5`); `+10` or `-10` moves from where it is |
+| `track tempo <50-150>` | The track's tempo in percent of its own, at the same pitch; alone it shows the tempo. Each track keeps its own |
+| `track tempo <value> bpm` | The same, given as beats per minute (the track's own tempo must be known) |
+| `track bpm` | The track's own tempo as the scan found it; "unsure" if the beat is not steady. The scan runs once per track, while it is open and not playing |
+| `track bpm half` / `double` / `<value>` | Corrects the tempo: half, double, or a value (the beat nearest to where the track is stays in place) |
+| `track bar` | Bar 1 starts where the track is now. Said between two beats, it also moves the grid by half a beat |
+| `track beats <n>` | Beats in a bar (4 at first) |
+| `track loop bars <a> <b>` | Loops bars a to b |
+| `track snap on` / `off` | Loop points go to the nearest beat, or bar line once bar 1 is set (on at first) |
+| `track scan` | Finds the tempo and beats again |
+| `track loop a` / `track loop b` | Marks the loop's start / end where the track is now (on the nearest beat or bar line, see `track snap`); the loop holds once both are marked |
+| `track loop <from> <to>` / `track loop off` | Loops a section (times as for `seek`, 0.25 s or longer) / plays on to the end |
 | `drum train <step> <every> <target>` | Sets the speed trainer and switches it on (`drum train on` / `off` switches it) |
 | `bass key <note>` | The bass's key as a note name (`E`, `F#`, `Bb`) |
 | `m` | Live level meter on / off |
@@ -63,7 +80,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 
 ## Settings table
 
-65 values in the firmware's order (the number is the setting's id in the link protocol). The first 62 are saved in the unit; "In presets" marks the 40 a preset stores. New settings are added after the last saved one, so ids of saved settings never change; the three unsaved ones at the end move up. Defaults are what a blank unit starts with.
+67 values in the firmware's order (the number is the setting's id in the link protocol). The first 63 are saved in the unit; "In presets" marks the 40 a preset stores. New settings are added after the last saved one, so ids of saved settings never change; the four unsaved ones at the end move up. Defaults are what a blank unit starts with.
 
 | # | Key | Name | Range | Default | In presets |
 | --- | --- | --- | --- | --- | --- |
@@ -129,9 +146,11 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | 59 | `lim rel` | Limiter release | 10 ms to 1000 ms | 100 ms | no |
 | 60 | `lim look` | Limiter lookahead | on, off | off | no |
 | 61 | `dtype` | Delay type | digital, tape, analog | digital | yes |
-| 62 | `drum` | Drums | on, off | off | no |
-| 66 | – | Loop from | off, or a bar of the song | off | no |
-| 67 | – | Loop to | a bar of the song | the last bar | no |
+| 62 | `track vol` | Track volume | silent, -59.5 dB to +6.0 dB | -6.0 dB | no |
+| 63 | `drum` | Drums | on, off | off | no |
+| 64 | – | Loop from | off, or a bar of the song | off | no |
+| 65 | – | Loop to | a bar of the song | the last bar | no |
+| 66 | – | Track | on (plays), off (paused) | off | no |
 
 Notes:
 - `g` and `pvol` are one gain after the cab; `master` is the last gain before the DAC, and the limiter (`lim`) comes after it ([SIGNAL_CHAIN.md](SIGNAL_CHAIN.md)).

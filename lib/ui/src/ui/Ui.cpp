@@ -12,6 +12,13 @@ namespace {
 const uint16_t kBg = rgb(14, 16, 20), kPanel = rgb(30, 34, 42), kPanelHi = rgb(58, 66, 80);
 const uint16_t kText = rgb(236, 238, 242), kDim = rgb(138, 146, 158), kOff = rgb(44, 49, 59);
 const uint16_t kAmber = rgb(255, 194, 71), kAccent = rgb(91, 140, 255), kDark = rgb(12, 13, 16);
+const uint16_t kTrack = rgb(72, 201, 176);  // the backing track's colour
+
+// "3:07" from seconds.
+void clockText(float seconds, char* buf, int n) {
+  const unsigned s = seconds <= 0.0f ? 0u : (seconds > 59999.0f ? 59999u : (unsigned)seconds);
+  snprintf(buf, n, "%u:%02u", s / 60u, s % 60u);
+}
 
 struct Sig {
   uint32_t h = 2166136261u;
@@ -77,11 +84,11 @@ void Ui::target(Pass& p, Rect r, Action a, int arg) {
   }
 }
 
-void Ui::button(Pass& p, Rect r, const char* label, Action a, int arg, uint16_t colour, bool enabled) {
+void Ui::button(Pass& p, Rect r, const char* label, Action a, int arg, uint16_t colour, bool enabled, bool small) {
   const bool down = enabled && pressed(a, arg);
   if (part(p, r, Sig().s(label).i(down).i(colour).i(enabled).h)) {
     p.canvas->roundRect(r, 6, down ? kPanelHi : (colour && enabled ? colour : kPanel));
-    p.canvas->textIn(r.inset(4), kFontMedium, label, !enabled ? kOff : (colour && !down ? kDark : kText));
+    p.canvas->textIn(r.inset(4), small ? kFontSmall : kFontMedium, label, !enabled ? kOff : (colour && !down ? kDark : kText));
   }
   if (enabled) target(p, r, a, arg);
 }
@@ -123,6 +130,7 @@ void Ui::layout(Pass& p) {
     case kMaster: layoutMaster(p); break;
     case kDeleteAsk: layoutDelete(p); break;
     case kChoices: layoutChoices(p); break;
+    case kTracks: layoutTracks(p); break;
   }
 }
 
@@ -199,14 +207,22 @@ void Ui::layoutHome(Pass& p) {
 
   layoutHomeDrums(p);
 
-  // Bottom line: the tuner and saving, then the end of the signal's way: the limiter (a
-  // block like the tiles above: a tap switches it, holding opens its settings; a red bar
-  // grows while it turns the level down) and the master volume with its value.
-  button(p, R(4, 204, 74, 36), "TUNER", kOpenTuner);
-  button(p, R(82, 204, 66, 36), "SAVE", kOpenSave, 0, edited ? kAmber : 0);  // lit with something to save
+  // Bottom line: the tuner, saving and the backing track (lit while one plays), then the end
+  // of the signal's way: the limiter (a block like the tiles above: a tap switches it,
+  // holding opens its settings; a red bar grows while it turns the level down) and the
+  // master volume with its value.
+  // (Five share the line since the backing track came: their names are in the small font,
+  // like the chain's tiles.)
+  button(p, R(4, 204, 58, 36), "TUNER", kOpenTuner, 0, 0, true, true);
+  button(p, R(66, 204, 54, 36), "SAVE", kOpenSave, 0, edited ? kAmber : 0, true, true);  // lit with something to save
+  {
+    TrackView t;
+    m_.track(&t);
+    button(p, R(124, 204, 62, 36), "TRACK", kOpenTracks, 0, t.playing ? kTrack : 0, true, true);
+  }
   {
     const int i = kLimiterBlock;
-    const Rect r = R(152, 204, 68, 36);
+    const Rect r = R(190, 204, 54, 36);
     const bool on = m_.blockOn(i), down = pressed(kBlock, i);
     int seg = on ? (int)(limDb_ / 2.0f + 0.5f) : 0;  // 2 dB a step, six steps
     if (seg > 6) seg = 6;
@@ -214,21 +230,21 @@ void Ui::layoutHome(Pass& p) {
       const uint16_t c = kBlocks[i].colour;
       p.canvas->roundRect(r, 6, down ? kPanelHi : (on ? c : kPanel));
       if (!on) p.canvas->roundRect(R(r.x + 8, r.y + 4, r.w - 16, 3), 1, mix(kPanel, c, 3));
-      p.canvas->textIn(r.inset(4), kFontMedium, kBlocks[i].tile, on && !down ? kDark : kDim);
+      p.canvas->textIn(r.inset(4), kFontSmall, kBlocks[i].tile, on && !down ? kDark : kDim);
       if (seg) p.canvas->fill(R(r.x + 7, r.y + r.h - 7, (r.w - 14) * seg / 6, 3), kMeterHot);
     }
     target(p, r, kBlock, i);
   }
   {
-    const Rect r = R(224, 204, 92, 36);
+    const Rect r = R(248, 204, 68, 36);
     SettingView v;
     m_.master(&v);
     if (char* unit = strstr(v.text, " dB")) *unit = 0;
     const bool down = pressed(kOpenMaster);
     if (part(p, r, Sig().s(v.text).i(down).h)) {
       p.canvas->roundRect(r, 6, down ? kPanelHi : kPanel);
-      p.canvas->textIn(R(r.x + 8, r.y, 40, r.h), kFontMedium, "VOL", kText, kLeft);
-      p.canvas->textIn(R(r.x + 50, r.y, r.w - 58, r.h), kFontSmall, v.text, kDim, kRight);
+      p.canvas->textIn(R(r.x + 6, r.y, 26, r.h), kFontSmall, "VOL", kText, kLeft);
+      p.canvas->textIn(R(r.x + 32, r.y, r.w - 38, r.h), kFontSmall, v.text, kDim, kRight);
     }
     target(p, r, kOpenMaster);
   }
@@ -344,6 +360,7 @@ inline Rect keyRect(int row, int col) { return R(4 + col * 313 / 10, 36 + row * 
 
 // The new preset's name, or the recalled preset's new one: typed on a keyboard, upper case for the first letter and lower
 // after it unless the Aa key says otherwise. Empty is allowed (the unit names it "Preset NN").
+// The same keyboard takes the words to find backing tracks by (lower case: the case does not count).
 void Ui::layoutName(Pass& p) {
   const Rect field = R(4, 2, 312, 30);
   if (part(p, field, Sig().s(name_).i(saveFailed_).h)) {
@@ -351,8 +368,11 @@ void Ui::layoutName(Pass& p) {
     char buf[kNameMax + 2];
     snprintf(buf, sizeof(buf), "%s_", name_);
     if (saveFailed_)
-      p.canvas->textIn(field.inset(8), kFontSmall, renaming_ ? "Could not rename (no name, or the name is taken)" : "Could not save (card missing or 99 presets)", kAmber, kLeft);
-    else if (!name_[0]) p.canvas->textIn(field.inset(8), kFontSmall, renaming_ ? "The preset's new name" : "Name of the new preset (or none)", kDim, kLeft);
+      p.canvas->textIn(field.inset(8), kFontSmall, purpose_ == kNameRename ? "Could not rename (no name, or the name is taken)" : "Could not save (card missing or 99 presets)", kAmber, kLeft);
+    else if (!name_[0])
+      p.canvas->textIn(field.inset(8), kFontSmall,
+                       purpose_ == kNameFind ? "Words of the track's or its folder's name" : (purpose_ == kNameRename ? "The preset's new name" : "Name of the new preset (or none)"),
+                       kDim, kLeft);
     else p.canvas->textIn(field.inset(8), kFontMedium, buf, kText, kLeft);
   }
   for (int row = 0; row < 4; row++)
@@ -365,8 +385,9 @@ void Ui::layoutName(Pass& p) {
   button(p, keyRect(3, 7), upper_ ? "a" : "A", kCaps);  // what a tap changes to
   button(p, keyRect(3, 8), "_", kSpace);
   button(p, keyRect(3, 9), "<", kDelete);
-  button(p, R(4, 206, 154, 34), "CANCEL", kHome_);
-  button(p, R(162, 206, 154, 34), renaming_ ? "RENAME" : "SAVE", kNameOk, 0, kMeterOk);
+  button(p, R(4, 206, 154, 34), "CANCEL", kNameCancel);
+  button(p, R(162, 206, 154, 34), purpose_ == kNameFind ? "FIND" : (purpose_ == kNameRename ? "RENAME" : "SAVE"), kNameOk, 0,
+         purpose_ == kNameFind ? kTrack : kMeterOk, purpose_ != kNameFind || name_[0]);
 }
 
 // The master volume: the unit's last gain, the same for all presets.
@@ -389,10 +410,66 @@ void Ui::layoutMaster(Pass& p) {
   if (part(p, R(20, 192, 280, 22), 2)) p.canvas->textIn(R(20, 192, 280, 22), kFontSmall, "One level for all presets, after everything else", kDim);
 }
 
+// The backing tracks' list: a folder's rows (its folders first; a tap goes in) or a
+// search's hits (with the folder each is in); a tap on a track opens it. BACK goes a
+// step back: from the hits to the folder, from a folder to the one above, from the top to
+// the track's screen. FIND opens the keyboard.
+void Ui::layoutTrackList(Pass& p) {
+  const int count = m_.trackRows();
+  const int pages = count ? (count + kRowsPerPage - 1) / kRowsPerPage : 1;
+  if (filePage_ >= pages) filePage_ = pages - 1;
+  char buf[64];
+  m_.trackTitle(buf, sizeof(buf));
+  if (part(p, R(8, 0, 236, 24), Sig().s(buf).h)) p.canvas->textIn(R(8, 0, 236, 24), kFontSmall, buf, kDim, kLeft);
+  snprintf(buf, sizeof(buf), "%d / %d", filePage_ + 1, pages);
+  if (part(p, R(248, 0, 64, 24), Sig().s(buf).h)) p.canvas->textIn(R(248, 0, 64, 24), kFontSmall, buf, kDim, kRight);
+  for (int row = 0; row < kRowsPerPage; row++) {
+    const int idx = filePage_ * kRowsPerPage + row;
+    const Rect r = R(4, 24 + row * 36, 312, 34);
+    if (idx >= count) {
+      // Nothing to show at all: the first row says so.
+      if (part(p, r, count == 0 && row == 0) && count == 0 && row == 0) p.canvas->textIn(r, kFontMedium, "Nothing here", kDim);
+      continue;
+    }
+    TrackRow t;
+    m_.trackRow(idx, &t);
+    const bool down = pressed(kFileRow, idx);
+    if (part(p, r, Sig().i(idx).s(t.name).s(t.folder).i(t.isFolder).i(t.open).i(down).h)) {
+      p.canvas->roundRect(r, 6, down ? kPanelHi : (t.open ? kAccent : kPanel));
+      const uint16_t ink = t.open ? kDark : kText, faint = t.open ? kDark : kDim;
+      if (t.isFolder) {
+        // A folder: its mark in front, an arrow behind.
+        p.canvas->roundRect(R(r.x + 10, r.y + 9, 9, 6), 2, kAmber);
+        p.canvas->roundRect(R(r.x + 10, r.y + 12, 20, 14), 3, kAmber);
+        const Rect in = R(r.x + 38, r.y, r.w - 66, r.h);
+        p.canvas->textIn(in, Canvas::textWidth(kFontMedium, t.name) <= in.w ? kFontMedium : kFontSmall, t.name, ink, kLeft);
+        triangle(*p.canvas, R(r.x + r.w - 24, r.y, 16, r.h), 1, 6, faint);
+      } else if (t.folder[0]) {
+        // A search's hit: its name, and under it where it is.
+        p.canvas->textIn(R(r.x + 10, r.y + 1, r.w - 20, 16), kFontSmall, t.name, ink, kLeft);
+        p.canvas->textIn(R(r.x + 10, r.y + 17, r.w - 20, 16), kFontSmall, t.folder, faint, kLeft);
+      } else {
+        const Rect in = R(r.x + 10, r.y, r.w - 20, r.h);
+        p.canvas->textIn(in, Canvas::textWidth(kFontMedium, t.name) <= in.w ? kFontMedium : kFontSmall, t.name, ink, kLeft);
+      }
+    }
+    target(p, r, kFileRow, idx);
+  }
+  button(p, R(4, 206, 75, 34), "BACK", kFilesBack);
+  arrowButton(p, R(83, 206, 75, 34), 2, kFilesUp);
+  arrowButton(p, R(162, 206, 75, 34), 3, kFilesDown);
+  button(p, R(241, 206, 75, 34), "FIND", kTrackFind, 0, kTrack, m_.trackAny());
+}
+
 // The list of models or IRs: a tap loads one at once (the one that plays is lit).
 void Ui::layoutFiles(Pass& p) {
+  if (trackList_) {
+    layoutTrackList(p);
+    return;
+  }
   const FileKind kind = kBlocks[editBlock_].file;
-  const int count = m_.fileCount(kind), pages = count ? (count + kRowsPerPage - 1) / kRowsPerPage : 1;
+  const int count = m_.fileCount(kind);
+  const int pages = count ? (count + kRowsPerPage - 1) / kRowsPerPage : 1;
   if (filePage_ >= pages) filePage_ = pages - 1;
   char buf[32];
   const char* title = kind == kFileModel ? "AMP MODELS" : "CAB IRS";
@@ -421,6 +498,106 @@ void Ui::layoutFiles(Pass& p) {
   button(p, R(4, 206, 100, 34), "BACK", kFilesBack);
   arrowButton(p, R(108, 206, 102, 34), 2, kFilesUp);
   arrowButton(p, R(214, 206, 102, 34), 3, kFilesDown);
+}
+
+// A value between minus and plus, as a setting's row is, for values that are not a block's
+// settings.
+void Ui::valueRow(Pass& p, int y, int h, const char* label, const char* text, float fraction, uint16_t colour, Action minus,
+                  Action plus) {
+  const Rect mid = R(56, y, 208, h);
+  button(p, R(4, y, 48, h), "-", minus);
+  if (part(p, mid, Sig().s(label).s(text).i((int)(fraction * 192.0f)).h)) {
+    p.canvas->roundRect(mid, 6, kPanel);
+    const int textW = Canvas::textWidth(kFontMedium, text);
+    const Rect line = R(mid.x + 8, mid.y, mid.w - 16, h - 6);
+    p.canvas->textIn(R(line.x, line.y, line.w - textW - 8, line.h), kFontSmall, label, kDim, kLeft);
+    p.canvas->textIn(line, kFontMedium, text, kText, kRight);
+    const float f = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
+    p.canvas->fill(R(mid.x + 8, mid.y + h - 8, 192, 3), kOff);
+    p.canvas->fill(R(mid.x + 8, mid.y + h - 8, (int)(f * 192.0f + 0.5f), 3), colour);
+  }
+  button(p, R(268, y, 48, h), "+", plus);
+}
+
+// The backing track, top to bottom: its name (a tap opens the list of tracks); where it is,
+// as time and as bar and beat, over a bar that shows the loop and takes a finger (a tap
+// goes there, a slide moves from where it is); play or pause, stop, the loop's two marks
+// and its end; the tempo; the track's own tempo as found, with half, double and "bar 1 is
+// here"; and its volume.
+void Ui::layoutTracks(Pass& p) {
+  TrackView t;
+  m_.track(&t);
+  char buf[48], a[16], b[16];
+  button(p, R(4, 2, 64, 28), "BACK", kHome_);
+  {
+    const Rect r = R(72, 2, 244, 28);
+    const char* name = t.open ? t.name : (m_.trackAny() ? "Choose a track" : "No tracks on the card");
+    const bool down = pressed(kOpenTrackList);
+    if (part(p, r, Sig().s(name).i(down).i(t.open).h)) {
+      p.canvas->roundRect(r, 6, down ? kPanelHi : kPanel);
+      const Rect in = R(r.x + 10, r.y, r.w - 20, r.h);
+      p.canvas->textIn(in, Canvas::textWidth(kFontMedium, name) <= in.w ? kFontMedium : kFontSmall, name, t.open ? kText : kDim, kLeft);
+    }
+    target(p, r, kOpenTrackList);
+  }
+
+  // Where it is.
+  clockText(t.position, a, sizeof(a));
+  clockText(t.length, b, sizeof(b));
+  snprintf(buf, sizeof(buf), "%s / %s", a, b);
+  if (part(p, R(8, 32, 120, 22), Sig().s(buf).i(t.open).h)) p.canvas->textIn(R(8, 32, 120, 22), kFontSmall, t.open ? buf : "", kText, kLeft);
+  if (!t.open) buf[0] = 0;
+  else if (t.bpm > 0.0f && t.bar >= 1) snprintf(buf, sizeof(buf), "bar %d  beat %d", t.bar, t.beat);
+  else if (t.bpm > 0.0f) snprintf(buf, sizeof(buf), "before bar 1");
+  else buf[0] = 0;
+  if (part(p, R(132, 32, 180, 22), Sig().s(buf).h)) p.canvas->textIn(R(132, 32, 180, 22), kFontSmall, buf, kDim, kRight);
+  {
+    // 300 pixels for the whole track; the loop lighter; what is played in the track's colour.
+    const Rect r = R(8, 54, 304, 22);
+    const float len = t.length > 0.0f ? t.length : 1.0f;
+    const float at = seekTo_ >= 0.0f ? seekTo_ : t.position / len;  // the finger's place while it slides
+    const int x = (int)(300.0f * (at < 0.0f ? 0.0f : (at > 1.0f ? 1.0f : at)) + 0.5f);
+    const int la = t.looping ? (int)(300.0f * t.loopFrom / len + 0.5f) : 0, lb = t.looping ? (int)(300.0f * t.loopTo / len + 0.5f) : 0;
+    const bool down = pressed(kDragSeek);
+    if (part(p, r, Sig().i(x).i(la).i(lb).i(t.looping).i(t.open).i(down).h)) {
+      Canvas& c = *p.canvas;
+      c.roundRect(R(r.x, r.y + 6, r.w, 10), 4, down ? kPanelHi : kOff);
+      if (t.looping && lb > la) c.fill(R(r.x + 2 + la, r.y + 6, lb - la, 10), mix(kOff, kTrack, 2));
+      if (t.open) {
+        c.fill(R(r.x + 2, r.y + 9, x, 4), kTrack);
+        c.roundRect(R(r.x + x, r.y + 1, 4, 20), 2, kText);
+      }
+    }
+    if (t.open) target(p, R(4, 50, 312, 28), kDragSeek);
+  }
+
+  // Play or pause, stop, and the loop.
+  button(p, R(4, 80, 84, 40), t.playing ? "PAUSE" : "PLAY", kTrackPlay, 0, t.playing ? kTrack : 0, t.open);
+  button(p, R(92, 80, 62, 40), "STOP", kTrackStop, 0, 0, t.open);
+  button(p, R(162, 80, 38, 40), "A", kTrackA, 0, t.looping || t.markA ? kTrack : 0, t.open);
+  button(p, R(204, 80, 38, 40), "B", kTrackB, 0, t.looping ? kTrack : 0, t.open);
+  button(p, R(246, 80, 70, 40), "LOOP", kTrackLoopOff, 0, t.looping ? kTrack : 0, t.looping);
+
+  // The tempo, in percent of the track's own, with what that is in BPM once it is known.
+  if (t.bpm > 0.0f) snprintf(buf, sizeof(buf), "%d%%  %.0f BPM", t.tempoPercent, (double)(t.bpm * (float)t.tempoPercent / 100.0f));
+  else snprintf(buf, sizeof(buf), "%d%%", t.tempoPercent);
+  valueRow(p, 124, 40, "Tempo", buf, (float)(t.tempoPercent - 50) / 100.0f, kTrack, kTrackSlower, kTrackFaster);
+
+  // The track's own tempo.
+  if (!t.open) buf[0] = 0;
+  else if (t.scanPercent < 100) snprintf(buf, sizeof(buf), "finding %d%%", t.scanPercent);
+  else if (t.bpm > 0.0f) snprintf(buf, sizeof(buf), "%.1f BPM%s", (double)t.bpm, t.sure ? "" : " ?");
+  else snprintf(buf, sizeof(buf), "no beat");
+  if (part(p, R(4, 168, 120, 34), Sig().s(buf).h))
+    p.canvas->textIn(R(8, 168, 116, 34), Canvas::textWidth(kFontMedium, buf) <= 116 ? kFontMedium : kFontSmall, buf, t.sure ? kText : kAmber, kLeft);
+  const bool grid = t.open && t.bpm > 0.0f;
+  button(p, R(128, 168, 44, 34), "/2", kTrackHalf, 0, 0, grid);
+  button(p, R(176, 168, 44, 34), "x2", kTrackDouble, 0, 0, grid);
+  button(p, R(224, 168, 92, 34), "BAR 1", kTrackBar, 0, 0, grid);
+
+  SettingView v;
+  m_.trackVolume(&v);
+  valueRow(p, 206, 34, "Volume", v.text, v.fraction, kTrack, kTrackVolDown, kTrackVolUp);
 }
 
 // The named choices of one setting of the edited block: a tap chooses at once (the one
@@ -772,7 +949,8 @@ void Ui::fire(Action a, int arg) {
     case kSaveNew:
       name_[0] = 0;
       upper_ = autoUpper_ = true;
-      saveFailed_ = renaming_ = false;
+      saveFailed_ = false;
+      purpose_ = kNameSave;
       go(kName);
       break;
     case kRename: {
@@ -784,7 +962,7 @@ void Ui::fire(Action a, int arg) {
       const size_t n = strlen(name_);
       upper_ = autoUpper_ = n == 0 || name_[n - 1] == ' ';
       saveFailed_ = false;
-      renaming_ = true;
+      purpose_ = kNameRename;
       go(kName);
       break;
     }
@@ -839,24 +1017,40 @@ void Ui::fire(Action a, int arg) {
       if (n > 0 && n < (size_t)kNameMax && name_[n - 1] != ' ') {
         name_[n] = ' ';
         name_[n + 1] = 0;
-        upper_ = autoUpper_ = true;  // a new word
+        if (purpose_ != kNameFind) upper_ = autoUpper_ = true;  // a new word
       }
       break;
     }
     case kDelete: {
       const size_t n = strlen(name_);
       if (n > 0) name_[n - 1] = 0;
-      if (n <= 1 || name_[n - 2] == ' ') upper_ = autoUpper_ = true;  // at a word's start again
+      if (purpose_ != kNameFind && (n <= 1 || name_[n - 2] == ' ')) upper_ = autoUpper_ = true;  // at a word's start again
       saveFailed_ = false;
       break;
     }
     case kNameOk: {
       size_t n = strlen(name_);
       while (n > 0 && name_[n - 1] == ' ') name_[--n] = 0;
-      if (renaming_ ? m_.rename(name_) : m_.saveAs(name_)) go(kHome);
-      else saveFailed_ = true;
+      if (purpose_ == kNameFind) {
+        if (!name_[0]) break;  // nothing to look for
+        m_.trackFind(name_);
+        filePage_ = 0;
+        go(kFiles);
+      } else if (purpose_ == kNameRename ? m_.rename(name_) : m_.saveAs(name_)) {
+        go(kHome);
+      } else {
+        saveFailed_ = true;
+      }
       break;
     }
+    case kNameCancel: go(purpose_ == kNameFind ? kFiles : kHome); break;
+    case kTrackFind:
+      name_[0] = 0;
+      upper_ = autoUpper_ = false;
+      saveFailed_ = false;
+      purpose_ = kNameFind;
+      go(kName);
+      break;
     case kHome_: go(kHome); break;
     case kOpenMaster: go(kMaster); break;
     case kVolDown: m_.masterStep(repeats_ > 10 ? -5 : -1); break;
@@ -894,20 +1088,69 @@ void Ui::fire(Action a, int arg) {
     case kFileNext: fileStep(1); break;
     case kOpenFiles: {
       const int cur = m_.fileCurrent(kBlocks[editBlock_].file);
+      trackList_ = false;
       filePage_ = cur > 0 ? cur / kRowsPerPage : 0;
       go(kFiles);
       break;
     }
     case kFileRow:
-      if (arg != m_.fileCurrent(kBlocks[editBlock_].file)) m_.fileLoad(kBlocks[editBlock_].file, arg);
+      if (trackList_) {
+        // A folder is gone into; a track is opened and its screen comes back.
+        const int what = m_.trackEnter(arg);
+        if (what == 1) filePage_ = 0;
+        else if (what == 2) go(kTracks);
+      } else if (arg != m_.fileCurrent(kBlocks[editBlock_].file)) {
+        m_.fileLoad(kBlocks[editBlock_].file, arg);
+      }
       break;
-    case kFilesBack: go(kBlockEdit); break;
+    case kFilesBack:
+      if (trackList_) {
+        const int row = m_.trackUp();
+        if (row < 0) go(kTracks);
+        else filePage_ = row / kRowsPerPage;
+      } else {
+        go(kBlockEdit);
+      }
+      break;
     case kFilesUp:
       if (filePage_ > 0) filePage_--;
       break;
     case kFilesDown:
-      if ((filePage_ + 1) * kRowsPerPage < m_.fileCount(kBlocks[editBlock_].file)) filePage_++;
+      if ((filePage_ + 1) * kRowsPerPage < (trackList_ ? m_.trackRows() : m_.fileCount(kBlocks[editBlock_].file))) filePage_++;
       break;
+    case kOpenTracks: go(kTracks); break;
+    case kOpenTrackList: {
+      const int row = m_.trackListHome();
+      trackList_ = true;
+      filePage_ = row > 0 ? row / kRowsPerPage : 0;
+      go(kFiles);
+      break;
+    }
+    case kTrackPlay: {
+      TrackView t;
+      m_.track(&t);
+      m_.trackPlay(!t.playing);
+      break;
+    }
+    case kTrackStop: m_.trackStop(); break;
+    case kTrackA: m_.trackLoopMark(false); break;
+    case kTrackB: m_.trackLoopMark(true); break;
+    case kTrackLoopOff: m_.trackLoopOff(); break;
+    case kTrackSlower: m_.trackTempoStep(repeats_ > 10 ? -5 : -1); break;
+    case kTrackFaster: m_.trackTempoStep(repeats_ > 10 ? 5 : 1); break;
+    case kTrackHalf: m_.trackBpmScale(false); break;
+    case kTrackDouble: m_.trackBpmScale(true); break;
+    case kTrackBar: m_.trackBarHere(); break;
+    case kTrackVolDown: m_.trackVolumeStep(repeats_ > 10 ? -5 : -1); break;
+    case kTrackVolUp: m_.trackVolumeStep(repeats_ > 10 ? 5 : 1); break;
+    case kDragSeek: {
+      // A tap on the bar: there.
+      TrackView t;
+      m_.track(&t);
+      const float f = (float)(pressX_ - 10) / 300.0f;
+      m_.trackSeek(t.length * (f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f)));
+      break;
+    }
     case kDrag:
     case kDragVol:  // a tap on a value changes nothing
     case kNone: break;
@@ -917,13 +1160,27 @@ void Ui::fire(Action a, int arg) {
 void Ui::dragTo(int x) {
   float f = dragFrom_ + (float)(x - dragX0_) / (float)dragWidth_;
   f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
-  if (heldAction_ == kDragVol) m_.masterSet(f);
-  else m_.settingSet(editBlock_, heldArg_, f);
+  if (heldAction_ == kDragSeek) {
+    // The bar follows the finger; the track follows a few times a second (each seek makes
+    // the player read the file anew) and once more when the finger lifts.
+    seekTo_ = f;
+    if (nowMs_ - seekMs_ >= 200) {
+      seekMs_ = nowMs_;
+      TrackView t;
+      m_.track(&t);
+      m_.trackSeek(f * t.length);
+    }
+  } else if (heldAction_ == kDragVol) {
+    m_.masterSet(f);
+  } else {
+    m_.settingSet(editBlock_, heldArg_, f);
+  }
 }
 
 // ---- Touch ----
 
 void Ui::touch(bool down, int x, int y, uint32_t ms) {
+  nowMs_ = ms;
   if (down) {
     lastDownMs_ = ms;
     if (!held_) {
@@ -949,12 +1206,18 @@ void Ui::touch(bool down, int x, int y, uint32_t ms) {
         else m_.setting(editBlock_, heldArg_, &v);
         dragFrom_ = v.fraction;
         dragWidth_ = heldAction_ == kDragVol ? 280 : 192;  // the bars' widths
+      } else if (heldAction_ == kDragSeek) {
+        TrackView t;
+        m_.track(&t);
+        dragFrom_ = t.length > 0.0f ? t.position / t.length : 0.0f;
+        dragWidth_ = 300;
       }
     } else if (dragging_) {
       if (dragPending_) dragTo(dragPendingX_);
       dragPendingX_ = x;
       dragPending_ = true;
-    } else if ((heldAction_ == kDrag || heldAction_ == kDragVol) && inside_ && (x - pressX_ >= kDragStart || pressX_ - x >= kDragStart)) {
+    } else if ((heldAction_ == kDrag || heldAction_ == kDragVol || heldAction_ == kDragSeek) && inside_ &&
+               (x - pressX_ >= kDragStart || pressX_ - x >= kDragStart)) {
       // The value follows from here, so it does not jump by the pixels that began the drag;
       // the finger may then wander off the row.
       dragging_ = true;
@@ -971,13 +1234,21 @@ void Ui::touch(bool down, int x, int y, uint32_t ms) {
   if (!held_ || ms - lastDownMs_ < 40) return;
   held_ = false;
   if (inside_ && !repeated_ && !dragging_) fire(heldAction_, heldArg_);
+  if (dragging_ && heldAction_ == kDragSeek && seekTo_ >= 0.0f) {
+    // The slide's end: the track goes where the bar was left.
+    TrackView t;
+    m_.track(&t);
+    m_.trackSeek(seekTo_ * t.length);
+  }
+  seekTo_ = -1.0f;
   dragging_ = false;
   heldAction_ = kNone;
 }
 
 void Ui::tick(uint32_t ms) {
   // Holding previous / next or a page button repeats: after 0.6 s, then every 0.3 s.
-  if (held_ && inside_ && (heldAction_ == kPrev || heldAction_ == kNext || heldAction_ == kPageUp || heldAction_ == kPageDown) &&
+  if (held_ && inside_ && (heldAction_ == kPrev || heldAction_ == kNext || heldAction_ == kPageUp || heldAction_ == kPageDown ||
+                             heldAction_ == kFilesUp || heldAction_ == kFilesDown) &&
       screen_ != kConfirm && ms - pressMs_ >= 600 && ms - repeatMs_ >= 300) {
     repeatMs_ = ms;
     repeated_ = true;
@@ -985,7 +1256,9 @@ void Ui::tick(uint32_t ms) {
   }
   // Holding minus or plus: after 0.4 s ten single steps a second, after the tenth five at a time.
   const bool stepper = ((heldAction_ == kMinus || heldAction_ == kPlus) && (screen_ == kBlockEdit || screen_ == kTrainer)) ||
-                       ((heldAction_ == kVolDown || heldAction_ == kVolUp || heldAction_ == kDelete) && (screen_ == kMaster || screen_ == kName));
+                       ((heldAction_ == kVolDown || heldAction_ == kVolUp || heldAction_ == kDelete) && (screen_ == kMaster || screen_ == kName)) ||
+                       ((heldAction_ == kTrackSlower || heldAction_ == kTrackFaster || heldAction_ == kTrackVolDown || heldAction_ == kTrackVolUp) &&
+                        screen_ == kTracks);
   if (held_ && inside_ && stepper && ms - pressMs_ >= 400 && ms - repeatMs_ >= 100) {
     repeatMs_ = ms;
     repeated_ = true;

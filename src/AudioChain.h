@@ -17,6 +17,9 @@
 //   dL, dR -> reverb: hall, gated, plate or spring (stereo, dry/wet) -> out L / R
 //   + drum machine and bass (stereo, added to the outputs, never through
 //     the effects)
+//   + backing track (stereo, added beside the drums; see dsp/player/TrackOut.h. Its file is
+//     read and decoded in the background, src/TrackLibrary.h; here a block is only copied
+//     from its queue)
 //   -> master volume (the last gain) -> limiter (optional, see dsp/fx/Limiter.h)
 //   -> clip to full scale -> out L / R
 //
@@ -45,6 +48,7 @@
 #include <dsp/fx/DelayBank.h>
 #include <dsp/fx/ReverbBank.h>
 #include <dsp/nam/AmpStage.h>
+#include <dsp/player/TrackOut.h>
 
 #include "config.h"
 
@@ -68,7 +72,8 @@ class AudioChain {
         reverb_(kSampleRate),
         mod_(kSampleRate),
         limiter_(kSampleRate),
-        drums_(kSampleRate) {
+        drums_(kSampleRate),
+        track_(kSampleRate) {
     tunerLp_.setLowpass(4000.0f, kSampleRate);
   }
 
@@ -90,12 +95,14 @@ class AudioChain {
   // The lowest gain the limiter applied since the last call (1 = it did nothing).
   float takeLimiterGain() { return limiter_.takeMinGain(); }
   dsp::DrumMachine& drums() { return drums_; }
+  // The backing track's output (its queue is handed over by TrackLibrary).
+  dsp::TrackOut& track() { return track_; }
 
   // The output gain plus the preset's level: applied after the cab, before the mod,
-  // delay and reverb (as in teensy-ir-loader; the drums and the bass are not affected).
+  // delay and reverb (as in teensy-ir-loader; the drums, the bass and the backing track are not affected).
   void setOutputGainDb(float db) { gainTarget_ = powf(10.0f, db / 20.0f); }
   // The master volume: the last gain, on everything that goes to the DAC (the guitar with its
-  // effects, the drums and the bass). 0 dB leaves the samples exactly as they are; -200 or
+  // effects, the drums, the bass and the backing track). 0 dB leaves the samples exactly as they are; -200 or
   // less is silence.
   void setMasterDb(float db) { masterTarget_ = db <= -200.0f ? 0.0f : powf(10.0f, db / 20.0f); }
   void setBypass(bool on) { wetTarget_ = on ? 0.0f : 1.0f; }
@@ -148,6 +155,7 @@ class AudioChain {
   float modCpuPercent() const { return cyclesToPercent(modCyclesAvg_); }
   float limiterCpuPercent() const { return cyclesToPercent(limCyclesAvg_); }
   float drumCpuPercent() const { return cyclesToPercent(drumCyclesAvg_); }
+  float trackCpuPercent() const { return cyclesToPercent(trackCyclesAvg_); }
   void resetCpuMax() { cyclesMax_ = 0; }
 
   // One block: kBlock samples of guitar in, kBlock samples out for each side
@@ -249,16 +257,33 @@ class AudioChain {
     const bool drums = drums_.process(drumL, drumR, B);
     const float* addL = drums ? drumL : nullptr;
     const float* addR = drums ? drumR : nullptr;
-    drumCyclesAvg_ = drumCyclesAvg_ + ((float)(ARM_DWT_CYCCNT - t3) - drumCyclesAvg_) * 0.01f;
+    const uint32_t t4 = ARM_DWT_CYCCNT;
+    drumCyclesAvg_ = drumCyclesAvg_ + ((float)(t4 - t3) - drumCyclesAvg_) * 0.01f;
+
+    // The backing track (stereo), added beside the drums (nothing while none plays).
+    float trkL[B], trkR[B];
+    const bool tracked = track_.process(trkL, trkR, B);
+    if (tracked) {
+      if (drums) {
+        for (int i = 0; i < B; i++) {
+          drumL[i] += trkL[i];
+          drumR[i] += trkR[i];
+        }
+      } else {
+        addL = trkL;
+        addR = trkR;
+      }
+    }
+    trackCyclesAvg_ = trackCyclesAvg_ + ((float)(ARM_DWT_CYCCNT - t4) - trackCyclesAvg_) * 0.01f;
 
     float opk = 0.0f;  // this block's
     uint32_t clips = 0;
     const float m0 = masterCur_, m1 = ramp(m0, masterTarget_);  // 20 ms between silent and full
     masterCur_ = m1;
-    const bool mono = !modded && !delayed && !reverbed && !drums;
+    const bool mono = !modded && !delayed && !reverbed && !drums && !tracked;
     if (!limiter_.on() && !limiter_.busy()) {
       if (mono) {
-        // Effects and drums idle: the dry signal goes to both outputs.
+        // Effects, drums and track idle: the dry signal goes to both outputs.
         toOutput(y, nullptr, m0, m1, outL, opk, clips);
         memcpy(outR, outL, sizeof(float) * B);
       } else {
@@ -358,7 +383,8 @@ class AudioChain {
   dsp::Modulation mod_;
   dsp::Limiter limiter_;
   dsp::DrumMachine drums_;
-  volatile float drumCyclesAvg_ = 0.0f, modCyclesAvg_ = 0.0f, limCyclesAvg_ = 0.0f;
+  dsp::TrackOut track_;
+  volatile float drumCyclesAvg_ = 0.0f, modCyclesAvg_ = 0.0f, limCyclesAvg_ = 0.0f, trackCyclesAvg_ = 0.0f;
   volatile bool tunerOn_ = false;
   float* tunerRing_ = nullptr;
   volatile float tunerTestStep_ = 0.0f;  // cycles per sample; 0 = the input

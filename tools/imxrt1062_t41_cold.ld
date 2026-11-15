@@ -68,6 +68,10 @@ SECTIONS
 		*libm.a:*libm_a-s_floor.o(.text*)
 		*libm.a:*libm_a-e_sqrt.o(.text*)
 		*libm.a:*libm_a-w_sqrt.o(.text*)
+		/* Double-precision arc tangent: only the backing track's beat finder uses it. */
+		*libm.a:*libm_a-s_atan.o(.text*)
+		*libm.a:*libm_a-e_atan2.o(.text*)
+		*libm.a:*libm_a-w_atan2.o(.text*)
 		/* The Teensy core's start-up and background routines: clock, PWM and USB set-up, the
 		   EEPROM's byte access, the calendar, the fault handler. None runs in the audio
 		   interrupt. Left in RAM1: the USB interrupt and its read and write paths, and
@@ -80,6 +84,7 @@ SECTIONS
 		*(.text._ZN10DMAChannel5beginEb .text._ZN8SPIClass5beginEv)
 		*(.text.setup .text._ZN5i2s325beginERKNS_6ConfigE)
 		*libc.a:*libc_a-strtol.o(.text*)
+		*libc.a:*libc_a-strtoul.o(.text*)
 		*libSdFat.a:*(.text*)
 		*libSD.a:*(.text*)
 		*libEEPROM.a:*(.text*)
@@ -95,6 +100,9 @@ SECTIONS
 		*libdsp.a:IRLoader.cpp.o(.text*)
 		*libdsp.a:MidiDrums.cpp.o(.text*)
 		*libdsp.a:NamFile.cpp.o(.text*)
+		/* The backing track's MP3 decoder (minimp3 is compiled into this file): loop() only. */
+		/* The backing tracks' list (folders, search): loop() only. */
+		*libdsp.a:TrackIndex.cpp.o(.text*)
 		*src/SerialUI.cpp.o(.text._Z[0-9]* .text._ZL*)
 		*src/Settings.cpp.o(.text._Z[0-9]* .text._ZL*)
 		*src/IRLibrary.cpp.o(.text._Z[0-9]* .text._ZL*)
@@ -103,6 +111,7 @@ SECTIONS
 		*src/AmpLibrary.cpp.o(.text._Z[0-9]* .text._ZL*)
 		*src/PresetLibrary.cpp.o(.text._Z[0-9]* .text._ZL*)
 		*src/Tuner.cpp.o(.text._Z[0-9]* .text._ZL*)
+		*src/TrackLibrary.cpp.o(.text._Z[0-9]* .text._ZL* .text.startup*)
 		*src/MidiControl.cpp.o(.text*)
 		*src/AppLink.cpp.o(.text*)
 		/* The SD library's File classes: inline methods that the files above share with
@@ -135,6 +144,14 @@ SECTIONS
 		*libdsp.a:IRLoader.cpp.o(.rodata*)
 		*libdsp.a:MidiDrums.cpp.o(.rodata*)
 		*libdsp.a:NamFile.cpp.o(.rodata*)
+		*libdsp.a:WavStream.cpp.o(.rodata*)
+		*libdsp.a:Mp3Stream.cpp.o(.rodata*)
+		*libdsp.a:ResampledSource.cpp.o(.rodata*)
+		*libdsp.a:TimeStretch.cpp.o(.rodata*)
+		*libdsp.a:BeatScan.cpp.o(.rodata*)
+		*libdsp.a:TrackInfo.cpp.o(.rodata*)
+		*libdsp.a:TrackIndex.cpp.o(.rodata*)
+		*libdsp.a:TrackPlayer.cpp.o(.rodata*)
 		*src/SerialUI.cpp.o(.rodata*)
 		*src/Settings.cpp.o(.rodata*)
 		*src/IRLibrary.cpp.o(.rodata*)
@@ -143,6 +160,7 @@ SECTIONS
 		*src/AmpLibrary.cpp.o(.rodata*)
 		*src/PresetLibrary.cpp.o(.rodata*)
 		*src/Tuner.cpp.o(.rodata*)
+		*src/TrackLibrary.cpp.o(.rodata*)
 		*src/MidiControl.cpp.o(.rodata*)
 		*src/AppLink.cpp.o(.rodata*)
 		. = ALIGN(4);

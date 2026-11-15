@@ -11,6 +11,7 @@
 #include "PresetLibrary.h"
 #include "SdSource.h"
 #include "Settings.h"
+#include "TrackLibrary.h"
 #include "config.h"
 
 // Load buffers live in the PSRAM (EXTMEM): only loop() touches them, while a file
@@ -78,10 +79,12 @@ static void scanDir(const char* dir) {
 void scanCard() {
   g_numFiles = 0;
   g_current = -1;
+  trackCardGoing();  // a backing track's open file does not survive the mount
   g_sdOk = SD.begin(SDCARD_CS_PIN);
   if (!g_sdOk) {
     Serial.println("SD card not found - no IRs (the cab is a passthrough). Type 'r' to retry.");
     scanAmps();  // still lists the built-in model
+    scanTracks();
     return;
   }
   const char* dirs[] = IR_SCAN_DIRS;
@@ -91,6 +94,7 @@ void scanCard() {
   scanDrumSongs();
   scanAmps();
   scanPresets();
+  scanTracks();
 }
 
 void rescanCard() {

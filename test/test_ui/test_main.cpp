@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include <dsp/player/TrackIndex.h>
 #include <ui/Ui.h>
 
 using namespace ui_tft;
@@ -227,6 +228,138 @@ struct FakeModel : UiModel {
     tunerIsOpen = o;
   }
   TunerView tuner() override { return view; }
+
+  // The backing tracks: a small card in the real list (dsp/player/TrackIndex.h). Top:
+  // the folders Blues (3 tracks) and Rock (the folder Live with 1 track, and 12 tracks),
+  // then 7 tracks.
+  std::vector<dsp::TrackIndex::Entry> trackEntries = std::vector<dsp::TrackIndex::Entry>(128);
+  std::vector<char> trackPool = std::vector<char>(4096);
+  uint16_t trackHits[dsp::TrackBrowser::kMaxHits];
+  dsp::TrackIndex index{{trackEntries.data(), 128, trackPool.data(), 4096}};
+  dsp::TrackBrowser browser{index, trackHits};
+  bool tracksBuilt = buildTracks();
+  bool buildTracks() {
+    index.begin();
+    for (const char* n : {"Blues in A.mp3", "Rock", "Funk_jam_97.mp3", "Slow ballad in E minor with a very long name.wav", "Rock 120.mp3",
+                          "Blues", "Shuffle.mp3", "Metal 180.mp3", "Reggae.mp3"})
+      index.add(n, !strchr(n, '.'));
+    index.endFolder();  // Blues is next
+    for (const char* n : {"Slow blues in A.mp3", "Shuffle in E.mp3", "Minor blues 60.wav"}) index.add(n, false);
+    index.endFolder();  // Rock
+    index.add("Live", true);
+    for (int i = 12; i >= 1; i--) {
+      char n[32];
+      snprintf(n, sizeof(n), "Rock song %02d.mp3", i);
+      index.add(n, false);
+    }
+    index.endFolder();  // Rock/Live
+    index.add("Arena rock in D.mp3", false);
+    index.endFolder();
+    return index.done();
+  }
+  static std::string shown(const char* name, bool file) {
+    std::string n = name;
+    if (file) n = n.substr(0, n.rfind('.'));
+    for (char& c : n)
+      if (c == '_') c = ' ';
+    return n;
+  }
+  TrackView tv;
+  int trackOpenId = -1, trackVolHalfDb = -12;
+  bool reading = false;  // the card is still being read
+  bool trackAny() override { return index.files() > 0; }
+  int trackRows() override { return browser.rows(); }
+  void trackRow(int i, TrackRow* r) override {
+    *r = TrackRow();
+    const int id = browser.row(i);
+    if (id < 0) return;
+    r->isFolder = index.isFolder(id);
+    r->open = id == trackOpenId;
+    snprintf(r->name, sizeof(r->name), "%s", shown(index.name(id), !r->isFolder).c_str());
+    if (browser.searching()) snprintf(r->folder, sizeof(r->folder), "%s", index.parent(id) ? index.name(index.parent(id)) : "TRACKS");
+  }
+  void trackTitle(char* buf, int n) override {
+    if (browser.searching()) snprintf(buf, n, "\"%s\": %d found", browser.text(), browser.rows());
+    else snprintf(buf, n, "%s%s", browser.folder() ? index.name(browser.folder()) : "BACKING TRACKS", reading ? " (reading 1234)" : "");
+  }
+  int trackEnter(int i) override {
+    if (browser.row(i) < 0) return 0;
+    const int id = browser.enter(i);
+    if (id < 0) return 1;
+    if (id == trackOpenId) return 2;
+    log += "track[" + shown(index.name(id), true) + "] ";
+    trackOpenId = id;
+    tv = TrackView();
+    tv.open = true;
+    snprintf(tv.name, sizeof(tv.name), "%s", shown(index.name(id), true).c_str());
+    tv.length = 245.0f;
+    tv.scanPercent = 40;
+    return 2;
+  }
+  int trackUp() override {
+    const int from = browser.searching() ? -1 : browser.folder();
+    if (!browser.up()) return -1;
+    const int row = browser.rowOf(from);
+    return row > 0 ? row : 0;
+  }
+  void trackFind(const char* text) override {
+    log += std::string("find[") + text + "] ";
+    browser.find(text);
+  }
+  int trackListHome() override {
+    const int row = trackOpenId >= 0 ? browser.show(trackOpenId) : 0;
+    return row > 0 ? row : 0;
+  }
+  void track(TrackView* v) override { *v = tv; }
+  void trackPlay(bool o) override {
+    log += o ? "trackPlay " : "trackPause ";
+    tv.playing = o;
+  }
+  void trackStop() override {
+    log += "trackStop ";
+    tv.playing = false;
+    tv.position = tv.looping ? tv.loopFrom : 0.0f;
+  }
+  std::vector<float> seeks;
+  void trackSeek(float seconds) override {
+    seeks.push_back(seconds);
+    tv.position = seconds;
+  }
+  void trackLoopMark(bool end) override {
+    log += end ? "markB " : "markA ";
+    if (!end) {
+      tv.loopFrom = tv.position;
+      tv.markA = !tv.looping;
+    } else if (tv.markA || tv.looping) {
+      tv.loopTo = tv.position;
+      tv.looping = tv.loopTo > tv.loopFrom;
+      tv.markA = false;
+    }
+  }
+  void trackLoopOff() override {
+    log += "loopOff ";
+    tv.looping = tv.markA = false;
+  }
+  void trackTempoStep(int percent) override {
+    tv.tempoPercent += percent;
+    tv.tempoPercent = tv.tempoPercent < 50 ? 50 : (tv.tempoPercent > 150 ? 150 : tv.tempoPercent);
+  }
+  void trackBpmScale(bool twice) override {
+    log += twice ? "double " : "half ";
+    tv.bpm = twice ? tv.bpm * 2 : tv.bpm / 2;
+  }
+  void trackBarHere() override { log += "bar1 "; }
+  void trackVolume(SettingView* v) override {
+    *v = SettingView();
+    snprintf(v->label, sizeof(v->label), "Volume");
+    snprintf(v->text, sizeof(v->text), "%.1f dB", trackVolHalfDb / 2.0);
+    v->fraction = (trackVolHalfDb + 120) / 132.0f;
+    v->bar = true;
+  }
+  void trackVolumeStep(int steps) override {
+    trackVolHalfDb += steps;
+    trackVolHalfDb = trackVolHalfDb < -120 ? -120 : (trackVolHalfDb > 12 ? 12 : trackVolHalfDb);
+  }
 };
 
 // A stand-in for the display: collects strips into a frame and notes what was sent.
@@ -278,10 +411,10 @@ const int kPrevX = 22, kNextX = 298, kArrowY = 44, kNameX = 160, kNameY = 44;  /
 // The blocks on the home screen: the chain's six tiles in one lane, then the limiter in
 // the bottom line (6), the drums' play button (7) and their tempo, which opens the trainer (8).
 const int kPlaysX = 246, kDrumsY = 170;  // what the drums play: opens the trainer's second page
-int tileX(int i) { return i < 6 ? 4 + i * 52 + 24 : (i == 6 ? 186 : (i == 7 ? 34 : 120)); }
+int tileX(int i) { return i < 6 ? 4 + i * 52 + 24 : (i == 6 ? 217 : (i == 7 ? 34 : 120)); }
 int tileY(int i) { return i < 6 ? 112 : (i == 6 ? 222 : kDrumsY); }
 int rowY(int row) { return 24 + row * 36 + 17; }
-const int kTunerX = 40, kSaveBtnX = 115, kVolX = 270;  // the home screen's bottom line (with the limiter between)
+const int kTunerX = 33, kSaveBtnX = 93, kTrackX = 155, kVolX = 282;  // the home screen's bottom line (with the limiter between)
 const int kBarY = 222, kBackX = 40, kUpX = 120, kDownX = 200, kOkX = 278;
 const int kDlgY = 166, kSaveX = 58, kDiscardX = 160, kCancelX = 262;
 
@@ -726,7 +859,7 @@ void test_home_drums_and_limiter() {
   m.limDb = 6;
   ui.tick(g_ms += 60);
   g.paint(ui);
-  TEST_ASSERT_EQUAL_INT(68 * 36, g.pixels);
+  TEST_ASSERT_EQUAL_INT(54 * 36, g.pixels);
   m.limDb = 0.4f;  // too little to show: the bar falls back by itself
   for (int i = 0; i < 20; i++) ui.tick(g_ms += 60);
   g.paint(ui);
@@ -820,7 +953,7 @@ void test_random_use_keeps_the_glass_true() {
       check(step, "the unit changed");
     }
   }
-  for (int s = Ui::kHome; s <= Ui::kChoices; s++) {
+  for (int s = Ui::kHome; s <= Ui::kTracks; s++) {
     char msg[64];
     snprintf(msg, sizeof(msg), "screen %d was never looked at", s);
     TEST_ASSERT_TRUE_MESSAGE(seen[s] > 0, msg);
@@ -1164,6 +1297,196 @@ void test_speed_trainer_is_one_tap_from_home() {
   TEST_ASSERT_EQUAL_INT(53, m.val[kDrums][bpm]);
 }
 
+// The tracks screen's places (see Ui.cpp's layoutTracks).
+const int kTrackNameX = 190, kTrackTopY = 16, kSeekY = 64, kTransportY = 100, kTempoY = 144, kBpmY = 185, kTrackVolY = 222;
+const int kTrackPlayX = 46, kTrackStopX = 123, kMarkAX = 181, kMarkBX = 223, kLoopX = 281;
+
+void test_the_backing_track_screen() {
+  FakeModel m;
+  Ui ui(m);
+  Glass g;
+  g.paint(ui);
+  // One tap from home; without a track only the name's button and BACK do anything.
+  tap(ui, kTrackX, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+  tap(ui, kTrackPlayX, kTransportY);
+  tap(ui, kMarkAX, kTransportY);
+  tap(ui, 160, kSeekY);
+  tap(ui, 150, kBpmY);
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  TEST_ASSERT_TRUE(m.seeks.empty());
+  // The name opens the list of tracks; a tap opens one and comes back.
+  tap(ui, kTrackNameX, kTrackTopY);
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  tap(ui, kDownX, kBarY);  // the list's page down: the second page
+  tap(ui, 160, rowY(1));   // its second row (two folders, then the tracks by name)
+  TEST_ASSERT_EQUAL_STRING("track[Rock 120] ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+  // BACK from the list leaves the track as it is.
+  tap(ui, kTrackNameX, kTrackTopY);
+  tap(ui, kBackX, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("track[Rock 120] ", m.log.c_str());
+  // Play and pause are one button; stop is its own.
+  m.log.clear();
+  tap(ui, kTrackPlayX, kTransportY);
+  tap(ui, kTrackPlayX, kTransportY);
+  tap(ui, kTrackPlayX, kTransportY);
+  tap(ui, kTrackStopX, kTransportY);
+  TEST_ASSERT_EQUAL_STRING("trackPlay trackPause trackPlay trackStop ", m.log.c_str());
+  // A tap on the bar goes there: 300 px for 245 s, from x 10.
+  tap(ui, 160, kSeekY);
+  TEST_ASSERT_EQUAL_INT(1, (int)m.seeks.size());
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 122.5f, m.seeks[0]);
+  // A slide moves from where the track is by the finger's way (the first 10 px begin it),
+  // a few times a second, and ends where the finger left: 100 px = 81.7 s further.
+  m.seeks.clear();
+  drag(ui, 60, kSeekY, 170, kSeekY);
+  TEST_ASSERT_TRUE(m.seeks.size() >= 2 && m.seeks.size() <= 5);
+  TEST_ASSERT_FLOAT_WITHIN(2.0f, 122.5f + 81.7f, m.seeks.back());
+  // The loop: A, then B further on; LOOP ends it.
+  m.log.clear();
+  m.tv.position = 30.0f;
+  tap(ui, kMarkAX, kTransportY);
+  tap(ui, kLoopX, kTransportY);  // no loop yet: the button does nothing
+  m.tv.position = 45.0f;
+  tap(ui, kMarkBX, kTransportY);
+  TEST_ASSERT_TRUE(m.tv.looping);
+  tap(ui, kLoopX, kTransportY);
+  TEST_ASSERT_EQUAL_STRING("markA markB loopOff ", m.log.c_str());
+  // The tempo: a step a tap, faster while held.
+  tap(ui, kMinusX, kTempoY);
+  TEST_ASSERT_EQUAL_INT(99, m.tv.tempoPercent);
+  hold(ui, kMinusX, kTempoY, 2500);
+  TEST_ASSERT_TRUE(m.tv.tempoPercent < 70 && m.tv.tempoPercent >= 50);
+  hold(ui, kPlusX, kTempoY, 6000);
+  TEST_ASSERT_EQUAL_INT(150, m.tv.tempoPercent);
+  // The track's own tempo: nothing to correct until it is known.
+  m.log.clear();
+  tap(ui, 150, kBpmY);
+  tap(ui, 270, kBpmY);
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  m.tv.scanPercent = 100;
+  m.tv.bpm = 97.0f;
+  tap(ui, 150, kBpmY);
+  tap(ui, 198, kBpmY);
+  tap(ui, 270, kBpmY);
+  TEST_ASSERT_EQUAL_STRING("half double bar1 ", m.log.c_str());
+  // Its volume.
+  tap(ui, kPlusX, kTrackVolY);
+  tap(ui, kPlusX, kTrackVolY);
+  tap(ui, kMinusX, kTrackVolY);
+  TEST_ASSERT_EQUAL_INT(-11, m.trackVolHalfDb);
+  // Only what changed is repainted: the time and the bar as the track moves on.
+  g.paint(ui);
+  m.tv.position += 1.0f;
+  g.paint(ui);
+  TEST_ASSERT_TRUE(g.pixels > 0 && g.pixels <= 120 * 22 + 304 * 22);
+  // Home shows the track playing.
+  tap(ui, 36, kTrackTopY);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  g.paint(ui);
+  m.tv.playing = true;
+  g.paint(ui);
+  TEST_ASSERT_EQUAL_INT(62 * 36, g.pixels);
+}
+
+// The backing tracks' list: folders, paging, the search.
+void test_the_track_list_folders_and_find() {
+  FakeModel m;
+  Ui ui(m);
+  Glass g;
+  TEST_ASSERT_TRUE(m.tracksBuilt);
+  tap(ui, kTrackX, kBarY);
+  tap(ui, kTrackNameX, kTrackTopY);
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  // The top: the two folders first. Into Rock: its folder Live, then 12 tracks, three pages.
+  tap(ui, 160, rowY(1));
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("Rock", m.index.name(m.browser.folder()));
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  // Holding the page button goes on paging (after 0.6 s, every 0.3 s) and stops at the end.
+  hold(ui, kDownX, kBarY, 1300);
+  tap(ui, 160, rowY(2));  // the last page's third row: rows 10, 11, 12
+  TEST_ASSERT_EQUAL_STRING("track[Rock song 12] ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+  // The list opens again where the open track is: Rock, its last page.
+  tap(ui, kTrackNameX, kTrackTopY);
+  TEST_ASSERT_EQUAL_STRING("Rock", m.index.name(m.browser.folder()));
+  tap(ui, 160, rowY(1));
+  TEST_ASSERT_EQUAL_STRING("track[Rock song 12] track[Rock song 11] ", m.log.c_str());
+  // A tap on the open track opens nothing: just back.
+  tap(ui, kTrackNameX, kTrackTopY);
+  tap(ui, 160, rowY(1));
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("track[Rock song 12] track[Rock song 11] ", m.log.c_str());
+  // Holding page up comes back to the first page; into Live and its one track.
+  tap(ui, kTrackNameX, kTrackTopY);
+  hold(ui, kUpX, kBarY, 1300);
+  tap(ui, 160, rowY(0));
+  TEST_ASSERT_EQUAL_STRING("Live", m.index.name(m.browser.folder()));
+  tap(ui, 160, rowY(3));  // an empty row
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  // BACK goes up a folder at a time (to the page the folder is on), and from the top to the track's screen.
+  tap(ui, kBackX, kBarY);
+  TEST_ASSERT_EQUAL_STRING("Rock", m.index.name(m.browser.folder()));
+  tap(ui, kBackX, kBarY);
+  TEST_ASSERT_EQUAL_INT(0, m.browser.folder());
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  tap(ui, kBackX, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+
+  // FIND: the keyboard, in lower case; nothing typed finds nothing; CANCEL comes back to the list.
+  m.log.clear();
+  tap(ui, kTrackNameX, kTrackTopY);
+  tap(ui, kOkX, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kName, ui.screen());
+  tap(ui, 239, kBarY);  // FIND with nothing typed
+  TEST_ASSERT_EQUAL_INT(Ui::kName, ui.screen());
+  tap(ui, 80, kBarY);
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  TEST_ASSERT_EQUAL_STRING("", m.log.c_str());
+  tap(ui, kOkX, kBarY);
+  type(ui, "blues in");
+  tap(ui, 239, kBarY);
+  TEST_ASSERT_EQUAL_STRING("find[blues in] ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  // The hits, from all folders: "Blues in A" at the top, then the three in Blues (the
+  // folder's name counts: "Minor blues 60", "Shuffle in E", "Slow blues in A"). A tap opens one.
+  TEST_ASSERT_EQUAL_INT(4, m.browser.rows());
+  g.paint(ui);
+  tap(ui, 160, rowY(3));
+  TEST_ASSERT_EQUAL_STRING("find[blues in] track[Slow blues in A] ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kTracks, ui.screen());
+  // The list then shows where that track is.
+  tap(ui, kTrackNameX, kTrackTopY);
+  TEST_ASSERT_FALSE(m.browser.searching());
+  TEST_ASSERT_EQUAL_STRING("Blues", m.index.name(m.browser.folder()));
+  // Nothing found: said so, nothing to tap, BACK returns to the folder.
+  tap(ui, kOkX, kBarY);
+  type(ui, "zz");
+  tap(ui, 239, kBarY);
+  TEST_ASSERT_EQUAL_INT(0, m.browser.rows());
+  g.paint(ui);
+  tap(ui, 160, rowY(0));
+  TEST_ASSERT_EQUAL_INT(Ui::kFiles, ui.screen());
+  tap(ui, kBackX, kBarY);
+  TEST_ASSERT_FALSE(m.browser.searching());
+  TEST_ASSERT_EQUAL_STRING("Blues", m.index.name(m.browser.folder()));
+  // The keyboard still saves presets as before after it was used to find.
+  tap(ui, kBackX, kBarY);
+  tap(ui, kBackX, kBarY);
+  tap(ui, 36, kTrackTopY);
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+  m.log.clear();
+  tap(ui, kSaveBtnX, kBarY);
+  tap(ui, kMenuX, kNewY);
+  type(ui, "ab");
+  tap(ui, 239, kBarY);
+  TEST_ASSERT_EQUAL_STRING("saveAs[Ab] ", m.log.c_str());
+  TEST_ASSERT_EQUAL_INT(Ui::kHome, ui.screen());
+}
+
 void test_tuner_opens_and_closes() {
   FakeModel m;
   Ui ui(m);
@@ -1348,6 +1671,46 @@ void test_write_pictures() {
     g.paint(ui);
     g.save("delete");
   }
+  {
+    FakeModel m;
+    Ui ui(m);
+    Glass g;
+    tap(ui, kTrackX, kBarY);
+    g.paint(ui);
+    g.save("tracks_none");
+    tap(ui, kTrackNameX, kTrackTopY);
+    g.paint(ui);
+    g.save("tracks_list");
+    tap(ui, 160, rowY(1));  // into Rock
+    g.paint(ui);
+    g.save("tracks_folder");
+    tap(ui, kOkX, kBarY);   // FIND
+    type(ui, "blues");
+    g.paint(ui);
+    g.save("tracks_find");
+    tap(ui, 239, kBarY);
+    g.paint(ui);
+    g.save("tracks_results");
+    tap(ui, 160, rowY(2));
+    m.tv.position = 12.0f;
+    g.paint(ui);
+    g.save("tracks_scanning");
+    m.tv.scanPercent = 100;
+    m.tv.bpm = 97.0f;
+    m.tv.playing = true;
+    m.tv.position = 83.4f;
+    m.tv.looping = true;
+    m.tv.loopFrom = 59.4f;
+    m.tv.loopTo = 99.0f;
+    m.tv.tempoPercent = 80;
+    m.tv.bar = 34;
+    m.tv.beat = 3;
+    g.paint(ui);
+    g.save("tracks_playing");
+    tap(ui, 36, kTrackTopY);
+    g.paint(ui);
+    g.save("home_track");
+  }
 }
 
 }  // namespace
@@ -1371,6 +1734,8 @@ int main() {
   RUN_TEST(test_choices_have_a_list);
   RUN_TEST(test_master_volume);
   RUN_TEST(test_dragging_a_value);
+  RUN_TEST(test_the_backing_track_screen);
+  RUN_TEST(test_the_track_list_folders_and_find);
   RUN_TEST(test_tuner_opens_and_closes);
   RUN_TEST(test_long_names_fit);
   RUN_TEST(test_blocks_header_matches_blocks_json);

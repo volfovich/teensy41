@@ -154,16 +154,31 @@ The ported doubler (`dbl`: a second "take" 1 to 35 ms later, panned opposite) st
 
 **The effects of one block share its memory**, so only one of them holds sound at a time. A change between hall and gated is Reverb80's own (as ported). Any other change of `rmode`, and every change of `dtype`, does the same thing: the tail fades out over 20 ms, the memory is cleared in silence (up to 12 ms), and the other effect starts; with the block off and rung out the change is immediate. The settings go to every effect that has them, so they are in place after a change. With `hall`, `gated` and `digital` the samples are exactly those of the ported effects (host test `test_fx_banks`).
 
-An effect that is off and has rung out is idle: it costs no CPU and passes its input through bit for bit. With mod, delay, reverb and drums all idle, the mono signal goes to both outputs.
+An effect that is off and has rung out is idle: it costs no CPU and passes its input through bit for bit. With mod, delay, reverb, drums and the backing track all idle, the mono signal goes to both outputs.
 
 ### Drums and bass (`drum`, not in presets)
 `dsp/drums/`. Sampled kit, styles, songs (built in and MIDI files from `/DRUMS`), a plucked bass, count-in, speed trainer. Added to the outputs after the reverb.
 
+### Backing track (`track`, not in presets)
+`dsp/player/`, `src/TrackLibrary.*`. New in this project (15 Nov 2026). An audio file from `/TRACKS` on the card, added to the outputs beside the drums: after the output gain and the effects, before the master volume. It never passes the amp, the cab or the effects.
+
+- **Files:** WAV (PCM 8 to 32 bits or float, mono or stereo) and MP3 (layer 3, any bitrate, constant or variable; decoder: minimp3). A file that is not at 48 kHz is resampled while it plays (8 kHz to 96 kHz; from 44.1 kHz the response is flat to about 17 kHz and closed at 22 kHz).
+- **Where the work is done:** the file is read, decoded and resampled in `loop()`, ahead of time, into a queue of 2.7 s (16-bit stereo, in the PSRAM). The audio interrupt only takes one block from the queue, converts it to float and applies `track vol`. `loop()` may be away for a second (a model being read) without a gap; a block the queue cannot fill is silence and is counted (`gaps` in the shell's `s`).
+- **Level:** `track vol` (global, −59.5 dB to +6 dB, default −6 dB; the lowest step is silence). At 0 dB the file's samples go to the sum as they are. Track, guitar and drums together can go over full scale: the output clips there as always, or the limiter holds it.
+- **16 bits:** a file with more bits is cut to 16 in the queue.
+- **Start, pause and stop** fade over 10 ms. A seek or a change of the loop on a playing track is heard after 50 ms, crossfaded over 5 ms. A loop's jump back is crossfaded over 5 ms with what follows the loop's end in the file.
+- **With no track playing** the interrupt does not touch the queue and the chain runs as it did before the player existed.
+- **Tempo** (`track tempo`, 50 % to 150 % of the track's own, at the same pitch): `dsp/player/TimeStretch.h`, in `loop()` between the file and the queue. The method is a phase vocoder with locked phases (third version, 15 Nov 2026; the two before it cut and joined pieces of the track, and the author heard the joins): the track is taken in overlapping 43 ms windows, each is turned into its spectrum and laid down again 10.7 ms after the last, while the windows are taken closer together or further apart in the track; each tone's phase is turned so that it goes on smoothly, and the bins around a tone are turned with it. Drum hits are not stretched: the windows of a hit are laid down as far apart as they were taken, with the phases they have, and the time is made up in the quarter second after. A tempo set while the track plays is heard 0.35 s after the value stops changing. At exactly 100 % the stretcher is not in the path and the file's samples go to the queue as they are. What it does to the sound (host tests): tones keep pitch and level and have no clicks; hits stay single and at their level, and come a little early against the steady sounds around them: 21 ms at 50 %, 10 ms at 70 %, 5 ms at 85 %, within 5 ms from 95 % up. A new track starts at 100 %.
+- **An MP3's time line** starts with the encoder's start-up delay (about 25 ms of near silence), so an MP3 runs that much behind the WAV it was made from.
+- **What it costs** (15 Nov 2026, typical preset): in the interrupt 0.8 % while a track plays. In `loop()`, as a share of the time (the interrupt takes 57 % of it meanwhile): 12 % for an MP3 at 48 kHz, 16 to 19 % for a WAV at 44.1 kHz (the resampler), 22 to 25 % for an MP3 at 44.1 kHz; a WAV at 48 kHz is only copied. With the tempo changed, an MP3 at 44.1 kHz takes 25 % at 50 %, 32 % at 80 % and 46 % at 150 % (faster means more of the file to decode per second); the queue stays full. Opening an MP3 reads through the whole file once for its length and seek table: 0.35 s for 4 minutes (2.7 MB).
+- **Tempo and beats** (`track bpm`): each track is scanned once (`dsp/player/BeatScan.h`), while it is open and not playing: about 7 s for each minute of MP3, less for a WAV; playing a track holds the scan, pausing or stopping lets it go on. It looks for sudden rises in level in three bands and fits one steady tempo and the place of the beats to them. That fits music played to a click; a track whose tempo wanders gets a grid that fits only in places, marked "unsure" (confidence under 0.5). Half or double the real tempo is a possible answer and can be corrected (`track bpm half`, `double`, or a value). Which beat starts a bar is not found: `track bar` says it. Host tests on made-up bands from 76 to 174 BPM: the tempo within 0.005 BPM, the grid within 5 ms of the beats, also at the end of 4 minutes. Loop points go to the nearest beat, or bar line once bar 1 is set (`track snap off` stops that); `track loop bars 3 4` loops whole bars. Nothing of this touches the sound: it only says where the loop points and the tempo setting land.
+- **Kept beside each track** (`song.mp3.trk`, a small text file, `dsp/player/TrackInfo.h`): what the scan found, and the tempo, loop, bar 1 and beats per bar the track was left with. Written two seconds after a change.
+
 ### Master volume (`master`, global)
-The last gain, on everything: guitar, effects, drums and bass. From silent (its lowest step) to 0 dB; at 0 dB the samples are unchanged. Not in presets. Added on 13 Nov 2026 at the author's request; it is the app's slider beside the meters.
+The last gain, on everything: guitar, effects, drums, bass and the backing track. From silent (its lowest step) to 0 dB; at 0 dB the samples are unchanged. Not in presets. Added on 13 Nov 2026 at the author's request; it is the app's slider beside the meters.
 
 ### Limiter (`lim`, global)
-`dsp/fx/Limiter.h`. New in this project (13 Nov 2026). The last stage, after the master volume, on guitar, effects, drums and bass together: a brickwall peak limiter, so that nothing goes to the DAC above its ceiling. Not in presets; off by default.
+`dsp/fx/Limiter.h`. New in this project (13 Nov 2026). The last stage, after the master volume, on guitar, effects, drums, bass and backing track together: a brickwall peak limiter, so that nothing goes to the DAC above its ceiling. Not in presets; off by default.
 
 | Setting | Does |
 | --- | --- |
@@ -195,6 +210,7 @@ Samples beyond full scale are clipped and counted (the app's CLIP label, `s` in 
 | Output gain | `g` | global | after the cab |
 | Preset level | `pvol` | preset | after the cab, same gain as `g` |
 | Drum, bass volume | `drum vol`, `bass vol` | global | inside the drum machine |
+| Backing track volume | `track vol` | global | on the track, before it joins the output |
 | Master volume | `master` | global | the last gain |
 | Limiter | `lim ceil` | global | after the master: only ever turns down, and only above its ceiling |
 

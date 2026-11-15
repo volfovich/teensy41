@@ -363,18 +363,32 @@ static void onIrData(const applink::FrameHeader& h) {
 
 // ---- Files on the SD card (PROTOCOL.md 4.5)
 
-static const char* const kFolders[] = {"/IR/", "/AMP/", "/PRESETS/", "/DRUMS/"};
+static const char* const kFolders[] = {"/IR/", "/AMP/", "/PRESETS/", "/DRUMS/", "/TRACKS/"};
+
+// A path's longest in the file messages. (The folders but /TRACKS take IR_PATH_MAX at most:
+// that is what the unit's lists hold.)
+static constexpr int kFilePathMax = 264;
+
+// At or below /TRACKS, where the backing tracks may lie in folders: no part of the path
+// is empty or hidden.
+static bool inTracks(const char* p) {
+  if (strncasecmp(p, "/TRACKS", 7) || (p[7] && p[7] != '/')) return false;
+  for (const char* c = p + 7; *c; c++)
+    if (c[0] == '/' && (c[1] == '/' || c[1] == '.' || !c[1])) return false;
+  return true;
+}
 
 // A file the app may write or delete: directly inside one of the folders, or a .wav in the
-// root. No hidden names, no "..", no further folders.
+// root; a backing track may also be in a folder below /TRACKS. No hidden names, no "..".
 static bool allowedPath(const char* p) {
   const size_t len = strlen(p);
-  if (p[0] != '/' || len >= IR_PATH_MAX) return false;
+  if (p[0] != '/' || len >= (size_t)(inTracks(p) ? kFilePathMax : IR_PATH_MAX)) return false;
   for (const char* c = p; *c; c++)
     if ((uint8_t)*c < 0x20 || *c == '\\' || *c == ':') return false;
   const char* name = strrchr(p, '/') + 1;
   if (!name[0] || name[0] == '.' || strstr(p, "..")) return false;
   if (name == p + 1) return len > 5 && !strcasecmp(p + len - 4, ".wav");  // in the root
+  if (inTracks(p)) return len > 8;
   for (const char* f : kFolders)
     if (!strncasecmp(p, f, strlen(f)) && name == p + strlen(f)) return true;
   return false;
@@ -383,7 +397,7 @@ static bool allowedPath(const char* p) {
 static constexpr uint16_t kPutChunk = 8192;
 static constexpr uint32_t kPutTimeoutMs = 10000;
 static File g_put;
-static char g_putPath[IR_PATH_MAX], g_putTmp[IR_PATH_MAX];
+static char g_putPath[kFilePathMax], g_putTmp[kFilePathMax + 12];
 static uint32_t g_putSize = 0, g_putCrcWanted = 0, g_putGot = 0, g_putCrc = 0, g_putLastMs = 0;
 
 static void abandonPut() {
@@ -395,21 +409,22 @@ static void abandonPut() {
 static bool isIn(const char* path, const char* folder) { return !strncasecmp(path, folder, strlen(folder)); }
 
 static void onPutBegin(const applink::FrameHeader& h, Reader& r) {
-  char path[IR_PATH_MAX];
+  char path[kFilePathMax];
   r.str(path, sizeof(path));
   const uint32_t size = r.u32(), crc = r.u32();
   if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FILE_PUT_BEGIN");
   if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
-  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Files can only go to /AMP, /IR, /PRESETS or /DRUMS");
+  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Files can only go to /AMP, /IR, /PRESETS, /DRUMS or /TRACKS");
   abandonPut();
   const bool exists = SD.exists(path);
   if (!exists && isIn(path, "/AMP/") && ampCount() >= AMP_MAX_FILES && ampPath(0)[0] == '/')
     return replyError(h, Err::kFull, "The unit's model list is full");
-  if (!exists && !isIn(path, "/AMP/") && !isIn(path, "/PRESETS/") && !isIn(path, "/DRUMS/") && irCount() >= IR_MAX_FILES)
+  if (!exists && !isIn(path, "/AMP/") && !isIn(path, "/PRESETS/") && !isIn(path, "/DRUMS/") && !isIn(path, "/TRACKS/") &&
+      irCount() >= IR_MAX_FILES)
     return replyError(h, Err::kFull, "The unit's IR list is full");
   // The temporary file: a dot-name beside the target, which the scans skip.
   const int dirLen = (int)(strrchr(path, '/') - path) + 1;
-  char dir[IR_PATH_MAX];
+  char dir[kFilePathMax];
   snprintf(dir, sizeof(dir), "%.*s", dirLen > 1 ? dirLen - 1 : 1, path);
   if (dirLen > 1 && !SD.exists(dir) && !SD.mkdir(dir)) return replyError(h, Err::kIo, "Cannot create the folder");
   snprintf(g_putTmp, sizeof(g_putTmp), "%.*s.upload.tmp", dirLen, path);
@@ -464,11 +479,11 @@ static void onPutEnd(const applink::FrameHeader& h) {
 }
 
 static void onFileDelete(const applink::FrameHeader& h, Reader& r) {
-  char path[IR_PATH_MAX];
+  char path[kFilePathMax];
   r.str(path, sizeof(path));
   if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FILE_DELETE");
   if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
-  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Only files in /AMP, /IR, /PRESETS or /DRUMS can be deleted");
+  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Only files in /AMP, /IR, /PRESETS, /DRUMS or /TRACKS can be deleted");
   if (!SD.exists(path)) return replyError(h, Err::kNotFound, "No such file");
   if (!SD.remove(path)) return replyError(h, Err::kIo, "The file could not be deleted");
   if (isIn(path, "/AMP/")) ampForgetCache(path);
@@ -489,17 +504,17 @@ static void onCardInfo(const applink::FrameHeader& h) {
   reply(h, w);
 }
 
-// DIR_LIST: the files of one of the folders the app may see (no hidden names, no subfolders'
-// contents).
+// DIR_LIST: the files of one of the folders the app may see, or of a folder below /TRACKS
+// (no hidden names, no subfolders' contents).
 static void onDirList(const applink::FrameHeader& h, Reader& r) {
-  char folder[IR_PATH_MAX];
+  char folder[kFilePathMax];
   r.str(folder, sizeof(folder));
   if (!r.done()) return replyError(h, Err::kBadPayload, "Bad DIR_LIST");
   if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
-  bool allowed = !strcmp(folder, "/");
+  bool allowed = !strcmp(folder, "/") || (inTracks(folder) && !strstr(folder, ".."));
   for (const char* f : kFolders)
     if (!strncasecmp(folder, f, strlen(f) - 1) && strlen(folder) == strlen(f) - 1) allowed = true;
-  if (!allowed) return replyError(h, Err::kBadPath, "Only /, /AMP, /IR, /PRESETS and /DRUMS can be listed");
+  if (!allowed) return replyError(h, Err::kBadPath, "Only /, /AMP, /IR, /PRESETS, /DRUMS, /TRACKS and the folders below /TRACKS can be listed");
   File d = SD.open(folder);
   Writer w(g_txPayload, kTxPayload);
   if (!d || !d.isDirectory()) {  // a folder that does not exist yet: empty
@@ -538,11 +553,11 @@ static uint32_t g_getSize = 0, g_getSent = 0;
 static uint16_t g_getSequence = 0;
 
 static void onFileGet(const applink::FrameHeader& h, Reader& r) {
-  char path[IR_PATH_MAX];
+  char path[kFilePathMax];
   r.str(path, sizeof(path));
   if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FILE_GET");
   if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
-  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Only files in /AMP, /IR, /PRESETS or /DRUMS can be read");
+  if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Only files in /AMP, /IR, /PRESETS, /DRUMS or /TRACKS can be read");
   if (g_get) g_get.close();
   g_get = SD.open(path, FILE_READ);
   if (!g_get || g_get.isDirectory()) {

@@ -54,10 +54,12 @@ enum Param : uint8_t {
   kLimRelease,  // ms
   kLimLook,     // the 1 ms lookahead (adds that much latency)
   kDelayType,   // 0 digital, 1 tape, 2 analog (dsp::DelayBank::Type). Here, not with the delay's others: ids are positions.
+  kTrackVolume, // the backing track's level, half-dB steps; the minimum is silence. Not in presets.
   kParamCount,
   // Not saved.
   kDrumsPlay = kParamCount,
   kDrumLoopFrom, kDrumLoopTo,  // bars of the song; from 0 = no loop
+  kTrackPlay,                  // the backing track: 1 plays, 0 pauses (it keeps its place)
   kValueCount,
 };
 
