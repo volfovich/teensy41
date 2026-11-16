@@ -1,7 +1,7 @@
 // Ui.h - the touch screen's screens: home (meters, preset, chain, drums), preset list, a block's
 // settings, the list of models or IRs, the speed trainer (with what the drums play), saving (over, or as a new preset with a
 // typed name), renaming and deleting the recalled preset, the master volume, the backing track (file, play, where it
-// is, loop, tempo, its own tempo and bar 1, volume), tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
+// is, loop, tempo, its own tempo, volume; the loop set in bars), tuner and the save / discard question. Portable: it sees the unit only through UiModel, takes touch
 // points, and paints changed parts of the screen into strips (Canvas.h), so the firmware
 // (src/Screen.cpp) and the host tests use the same code.
 //

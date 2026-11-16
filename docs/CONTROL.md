@@ -58,7 +58,7 @@ amp on            dtime 380         amp in +3.5        gate type hard        mas
 | `drum train <step> <every> <target>` | Sets the speed trainer and switches it on (`drum train on` / `off` switches it) |
 | `bass key <note>` | The bass's key as a note name (`E`, `F#`, `Bb`) |
 | `m` | Live level meter on / off |
-| `s` | Status: CPU per stage, driver overruns and FIFO errors, levels |
+| `s` | Status: CPU per stage, driver overruns and FIFO errors, levels. Its `Track:` line: the backing track's state, name, place and length, the loop's points ("(off)" behind them while the loop is switched off), the tempo if not 100 %, the track's own BPM with bar and beat (or the scan's progress), seconds queued, `gaps` (blocks the queue could not fill) and the share of `loop()`'s time that reading takes |
 | `r` | Rescans the SD card |
 
 ### Test and debug aids

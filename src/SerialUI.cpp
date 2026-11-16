@@ -433,8 +433,8 @@ static bool parseTime(const char* s, float* seconds) {
   return true;
 }
 
-// track [n|..|find <text>|name|off|play|pause|stop|seek <time>|tempo ...|bpm ...|bar|beats <n>|snap on|off|scan|
-// loop a|b|off|bars <a> <b>|<from> <to>]. False for
+// track [n|..|find <text>|name|off|play|pause|stop|seek <time>|tempo ...|bpm ...|beats <n>|snap on|off|scan|
+// loop a|b|off|on|clear|bars <a> <b>|bar <bar>[.<beat>] [n]|<from> <to>]. False for
 // "track vol", which is a setting.
 static bool trackCommand(char* arg) {
   if (!arg) {

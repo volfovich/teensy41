@@ -107,7 +107,7 @@ The Teensy 4.1 has several kinds of memory with very different speeds. RAM1 is t
 
 | Region | Used (14 Nov 2026) | Holds |
 | --- | --- | --- |
-| RAM1 code (ITCM) | 72.7 KB of a 96 KB step (25.6 KB left before the stack loses another 32 KB; 15 Nov 2026) | The audio path (39 KB), the USB interrupt, the maths and memory routines it uses, and the backing track's MP3 decoder (10.5 KB) and tempo change (4 KB), there for speed |
+| RAM1 code (ITCM) | 72.9 KB of a 96 KB step (25.4 KB left before the stack loses another 32 KB; 16 Nov 2026) | The audio path (39 KB), the USB interrupt, the maths and memory routines it uses, and the backing track's MP3 decoder (10.5 KB) and tempo change (4 KB), there for speed |
 | RAM1 data (DTCM) | 378 KB, 47.6 KB left for the stack (15 Nov 2026; deepest use 23.9 KB, measured that day with an MP3 playing: the decoder takes about 17 KB of stack for each frame) | One delay line (144 KB), the chain with the convolver's spectra (118 KB), amp history (90 KB) |
 | RAM2 (OCRAM, `DMAMEM`) | 506 KB, 18 KB heap (5 KB of it ever taken; 15 Nov 2026) | Reverb (148 KB), the other delay line (144 KB), drum songs and bass (54 KB), the backing track's tempo change (65 KB), MP3 decoder and resampler (29 KB), tuner and mod lines, the model being swapped in, the screen's strip (10 KB), USB and I2S buffers |
 | PSRAM (`EXTMEM`, 8 MB) | 1.91 MB (15 Nov 2026) | The raw capture buffer (575 KB), the backing track's queue (512 KB), the list of backing tracks (545 KB: 448 KB of names, 96 KB of entries, two browsers' search hits), the MP3 seek table and file buffer (48 KB), the beat scan's onsets (32 KB), IR resampler table, IR load buffers, the five file lists, app link buffers |
