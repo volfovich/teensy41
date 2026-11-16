@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use namforge_core::{CardSpace, DeviceHandle, DeviceInfo, Event, FileEntry, Files, IrInfo, ModelInfo, Preset, Setting};
+use namforge_core::{CardSpace, DeviceHandle, DeviceInfo, Event, FileEntry, Files, IrInfo, ModelInfo, Preset, Setting, TrackRow, TrackState};
 use tauri_plugin_dialog::DialogExt;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
@@ -25,6 +25,18 @@ struct Snapshot {
     model_info: Option<ModelInfo>,
     ir_info: Option<IrInfo>,
     card: Option<CardSpace>,
+    /// The backing-track player's state; `None`: the firmware has no player (or nothing is
+    /// known yet), and the window hides everything about tracks.
+    track: Option<TrackState>,
+    /// The folder below `/TRACKS` that the Tracks tab shows.
+    track_list: TrackList,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrackList {
+    folder: String,
+    rows: Vec<TrackRow>,
 }
 
 impl Snapshot {
@@ -38,6 +50,9 @@ impl Snapshot {
                 self.connected = true;
                 self.detail.clear();
                 self.info = Some(info.clone());
+                // Another unit, or other firmware: what it has of tracks is told anew.
+                self.track = None;
+                self.track_list = TrackList::default();
             }
             Event::Schema { settings } => self.settings = settings.clone(),
             Event::State { values, files } => {
@@ -56,6 +71,9 @@ impl Snapshot {
             Event::ModelInfo { info } => self.model_info = info.clone(),
             Event::IrInfo { info } => self.ir_info = info.clone(),
             Event::Card { space } => self.card = *space,
+            Event::Track { state } => self.track = state.clone(),
+            Event::TrackList { folder, rows } => self.track_list = TrackList { folder: folder.clone(), rows: rows.clone() },
+            Event::TrackFound { .. } => {}
             Event::Meters { .. } | Event::Tuner { .. } | Event::Job { .. } | Event::PresetsChanged | Event::Refused { .. } | Event::Transfer { .. } => {}
             Event::Disconnected { reason } => {
                 self.connected = false;
@@ -179,6 +197,66 @@ async fn pick_files(handle: tauri::AppHandle) -> Vec<String> {
         .collect()
 }
 
+/// Asks for the rows of a folder below `/TRACKS` ("" is `/TRACKS` itself). They arrive as a
+/// `trackList` event, and again whenever the unit has read its list anew.
+#[tauri::command]
+fn track_list(app: State<'_, App>, folder: String) {
+    app.device.track_list(&folder);
+}
+
+/// Finds tracks in all folders by words; the hits arrive as a `trackFound` event. "" ends the search.
+#[tauri::command]
+fn track_find(app: State<'_, App>, text: String) {
+    app.device.track_find(&text);
+}
+
+/// Opens a track by its path below `/TRACKS` ("Rock/Song.mp3"); "" closes the open one. The
+/// state arrives as a `track` event.
+#[tauri::command]
+fn track_open(app: State<'_, App>, path: String) {
+    app.device.track_open(&path);
+}
+
+/// One of the player's commands by its number (PROTOCOL.md 4.8), with up to three values.
+/// The state after it arrives as a `track` event, a refusal as `refused`.
+#[tauri::command]
+fn track_command(app: State<'_, App>, command: u8, a: Option<f32>, b: Option<f32>, c: Option<f32>) {
+    app.device.track_command(command, a.unwrap_or(0.0), b.unwrap_or(0.0), c.unwrap_or(0.0));
+}
+
+/// A change to the tracks on the card: "rename" (`path` to `to`), "new-folder",
+/// "delete-folder" (with everything in it) or "delete" (one track). Paths are below `/TRACKS`.
+#[tauri::command]
+fn track_file(app: State<'_, App>, action: String, path: String, to: Option<String>) -> Result<(), String> {
+    match action.as_str() {
+        "rename" => app.device.track_rename(&path, &to.unwrap_or_default()),
+        "new-folder" => app.device.track_folder_new(&path),
+        "delete-folder" => app.device.track_folder_delete(&path),
+        "delete" => app.device.track_delete(&path),
+        other => return Err(format!("unknown track file action {other}")),
+    }
+    Ok(())
+}
+
+/// Sends .wav and .mp3 files from the Mac into a folder below `/TRACKS`, one after the
+/// other. Progress arrives as `transfer` events, with the file's number in the batch.
+#[tauri::command]
+fn send_tracks(app: State<'_, App>, paths: Vec<String>, folder: String) {
+    app.device.send_tracks(paths.into_iter().map(Into::into).collect(), &folder);
+}
+
+/// Opens the file dialog for backing tracks and returns what the user picked.
+#[tauri::command]
+async fn pick_tracks(handle: tauri::AppHandle) -> Vec<String> {
+    let picked = handle.dialog().file().set_title("Send backing tracks to the unit").add_filter("Backing tracks", &["wav", "mp3"]).blocking_pick_files();
+    picked
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|file| file.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -196,7 +274,10 @@ pub fn run() {
                             eprintln!("event: state ({} values, preset {:?})", values.len(), files.preset)
                         }
                         Event::Schema { settings } => eprintln!("event: schema ({} settings)", settings.len()),
-                        Event::Meters { .. } | Event::Tuner { .. } => {}
+                        // The player's state comes four times a second while a track plays.
+                        Event::Meters { .. } | Event::Tuner { .. } | Event::Track { state: Some(_) } => {}
+                        Event::TrackList { folder, rows } => eprintln!("event: track list /TRACKS/{folder} ({} rows)", rows.len()),
+                        Event::TrackFound { text, hits, .. } => eprintln!("event: tracks found for {text:?} ({})", hits.len()),
                         Event::Models { files } => eprintln!("event: models ({})", files.len()),
                         Event::Irs { files } => eprintln!("event: irs ({})", files.len()),
                         other => eprintln!("event: {other:?}"),
@@ -215,7 +296,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files, tuner, ui_log, backup, pick_backup, restore])
+        .invoke_handler(tauri::generate_handler![snapshot, set_param, preset, card_file, send_files, pick_files, tuner, ui_log, backup, pick_backup, restore, track_list, track_find, track_open, track_command, track_file, send_tracks, pick_tracks])
         .run(tauri::generate_context!())
         .expect("error while running NAM Forge");
 }

@@ -14,4 +14,4 @@ pub mod session;
 pub mod types;
 
 pub use device::{spawn, DeviceHandle};
-pub use types::{CardSpace, DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};
+pub use types::{CardSpace, DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting, TrackRow, TrackState};

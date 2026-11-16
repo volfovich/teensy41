@@ -3,7 +3,7 @@
 //
 // In a plain browser (npm run dev, without Tauri) there is no device: the window then shows a
 // saved copy of the unit's state with moving meters, for working on the UI.
-import type { DeviceEvent, Job, Meters, Snapshot, Transfer, TunerReading } from "./types";
+import type { DeviceEvent, Job, Meters, Snapshot, TrackState, Transfer, TunerReading } from "./types";
 
 const empty: Snapshot = {
   connected: false,
@@ -18,6 +18,8 @@ const empty: Snapshot = {
   modelInfo: null,
   irInfo: null,
   card: null,
+  track: null,
+  trackList: { folder: "", rows: [] },
 };
 
 const noMeters: Meters = {
@@ -34,7 +36,16 @@ export const preview = $state({ on: false });
 /** The last thing the unit refused ("No such preset"), for the screen to show briefly. */
 export const notice = $state({ text: "", at: 0 });
 /** The file being sent to the unit, or the last one sent (`at`: when it last changed). */
-export const transfer = $state<Transfer & { at: number }>({ name: "", sent: 0, total: 0, done: true, error: "", at: 0 });
+export const transfer = $state<Transfer & { at: number }>({ name: "", sent: 0, total: 0, done: true, error: "", index: 1, count: 1, allSent: 0, allTotal: 0, at: 0 });
+/** The tracks found for the Tracks tab's search (`text`: what was searched for). */
+export const trackFound = $state<{ text: string; hits: string[]; more: boolean }>({ text: "", hits: [], more: false });
+/**
+ * The backing track's place as the unit last reported it, and when (`performance.now()`):
+ * between reports the window moves the place on by itself (`trackPlace` in track.svelte.ts).
+ */
+export const trackSync = $state({ place: 0, at: 0 });
+/** Where files dropped on the window go while the Tracks tab is open (it sets this); null: to the amps and IRs. */
+export const dropTo: { tracks: ((paths: string[]) => void) | null } = { tracks: null };
 /** The tuner's last reading. Whether it is open is in `meters.tunerOpen`. */
 export const tuner = $state<TunerReading>({ valid: false, hz: 0, note: 0, octave: 0, cents: 0 });
 /** The backup or restore under way, or the last one (`title` empty: none yet). */
@@ -44,12 +55,12 @@ export const restoreOffer = $state<{ folder: string; files: string[] }>({ folder
 /** True while files are dragged over the window. */
 export const dropping = $state({ on: false });
 
-function say(text: string) {
+export function say(text: string) {
   notice.text = text;
   notice.at = performance.now();
 }
 
-const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 // A control that is being moved shows the user's value, not the device's slightly older
 // answers: for this long after the last local change, reports for that setting are ignored.
@@ -58,7 +69,37 @@ const HOLD_MS = 400;
 const touched = new Map<number, number>();
 const held = (id: number) => performance.now() - (touched.get(id) ?? -1e9) < HOLD_MS;
 
-function apply(e: DeviceEvent) {
+// The same for the backing track's place and tempo while its bar or the tempo slider is dragged.
+let placeHeldAt = -1e9;
+let tempoHeldAt = -1e9;
+
+/** Shows a place the user just asked for, until the unit's reports have caught up. */
+export function holdPlace(seconds: number) {
+  placeHeldAt = trackSync.at = performance.now();
+  trackSync.place = seconds;
+}
+
+/** The same for the tempo (percent). The place is taken first: from here on it moves at the new tempo. */
+export function holdTempo(percent: number, placeNow: number) {
+  if (!device.track) return;
+  tempoHeldAt = trackSync.at = performance.now();
+  trackSync.place = placeNow;
+  device.track.tempo = percent;
+}
+
+function applyTrack(state: TrackState | null) {
+  const now = performance.now();
+  if (state && device.track && now - tempoHeldAt < HOLD_MS) state.tempo = device.track.tempo;
+  const other = state?.path !== device.track?.path;
+  device.track = state;
+  if (state && (other || now - placeHeldAt >= HOLD_MS)) {
+    trackSync.place = state.place;
+    trackSync.at = now;
+  }
+}
+
+/** Takes one event from the device side (or, in the preview, from the made-up unit). */
+export function apply(e: DeviceEvent) {
   switch (e.kind) {
     case "searching":
       device.connected = false;
@@ -68,6 +109,9 @@ function apply(e: DeviceEvent) {
       device.connected = true;
       device.detail = "";
       device.info = e.info;
+      // Told anew after every connect: other firmware may have no player.
+      device.track = null;
+      device.trackList = { folder: "", rows: [] };
       break;
     case "schema":
       device.settings = e.settings;
@@ -110,8 +154,17 @@ function apply(e: DeviceEvent) {
       device.card = e.space;
       break;
     case "transfer":
-      Object.assign(transfer, { name: e.name, sent: e.sent, total: e.total, done: e.done, error: e.error, at: performance.now() });
+      Object.assign(transfer, { name: e.name, sent: e.sent, total: e.total, done: e.done, error: e.error, index: e.index, count: e.count, allSent: e.allSent, allTotal: e.allTotal, at: performance.now() });
       if (e.error) say(`${e.name}: ${e.error}`);
+      break;
+    case "track":
+      applyTrack(e.state);
+      break;
+    case "trackList":
+      device.trackList = { folder: e.folder, rows: e.rows };
+      break;
+    case "trackFound":
+      Object.assign(trackFound, { text: e.text, hits: e.hits, more: e.more });
       break;
     case "presetsChanged":
       break;
@@ -143,11 +196,13 @@ export async function connectDevice(): Promise<() => void> {
   window.addEventListener("unhandledrejection", (e) => uiLog(`unhandled rejection: ${e.reason}`));
   const unlisten = await listen<DeviceEvent>("device", (msg) => apply(msg.payload));
   Object.assign(device, await invoke<Snapshot>("snapshot"));
-  // Files dropped on the window from Finder go to the unit.
+  if (device.track) Object.assign(trackSync, { place: device.track.place, at: performance.now() });
+  // Files dropped on the window from Finder go to the unit: to the folder of backing tracks
+  // that the Tracks tab shows while it is open, else to the amp models and IRs.
   const { getCurrentWebview } = await import("@tauri-apps/api/webview");
   const undrop = await getCurrentWebview().onDragDropEvent((e) => {
     dropping.on = e.payload.type === "enter" || e.payload.type === "over";
-    if (e.payload.type === "drop" && e.payload.paths.length) offerFiles(e.payload.paths);
+    if (e.payload.type === "drop" && e.payload.paths.length) (dropTo.tracks ?? offerFiles)(e.payload.paths);
   });
   return () => {
     unlisten();
@@ -336,6 +391,7 @@ async function startPreview(): Promise<() => void> {
   device.card = { totalKb: 31154688, freeKb: 31020032 };
   device.presets = [device.files.preset || "01 Recto", "02 Crunch", "03 Vintage clean", "04 A name of twenty-four ch"].map((name) => ({ name, number: Number(name.slice(0, 2)) }));
   preview.on = true;
+  const stopTracks = (await import("./track.svelte")).startTrackDemo();
   const t0 = performance.now();
   const timer = setInterval(() => {
     const t = (performance.now() - t0) / 1000;
@@ -356,5 +412,8 @@ async function startPreview(): Promise<() => void> {
       ampRunning: !!find("amp"), delayRinging: !!find("dl"), reverbRinging: !!find("rv"), drumsPlaying: !!find("drum"),
     });
   }, 33);
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    stopTracks();
+  };
 }

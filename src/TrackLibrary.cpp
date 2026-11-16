@@ -304,8 +304,11 @@ void trackCardGoing() {
   g_file.close();
 }
 
+static uint32_t g_listNumber = 0;
+
 void scanTracks() {
   // The list starts anew and is read from serviceTrack(); the numbers it gave are void.
+  g_listNumber++;
   if (g_dirOpen) g_dir.close();
   g_dirOpen = false;
   g_index.begin();
@@ -727,6 +730,35 @@ void trackLoopClear() {
   g_info.loopFrom = g_info.loopTo = 0.0f;
   loopChanged();
   Serial.println("Track loop off, its points forgotten");
+}
+
+// ---- For the desktop app's link ----
+
+const char* trackOpenPath() { return g_open ? g_path + sizeof(kRoot) : ""; }
+int trackState() { return g_open ? (int)g_player.state() : 0; }
+float trackFirstBeat() { return g_info.firstBeat; }
+bool trackSnapOn() { return g_info.snap; }
+float trackLoopStartMark() { return g_markA >= 0 ? toSeconds((uint32_t)g_markA) : 0.0f; }
+uint32_t trackGaps() { return chain.track().underruns(); }
+int trackFileKind() { return !g_open ? 0 : g_isMp3 ? 2 : 1; }
+uint32_t trackFileRate() { return g_open ? fileReader().sampleRate() : 0; }
+int trackFileChannels() { return !g_open ? 0 : g_isMp3 ? g_mp3.channels() : (int)g_wav.info().channels; }
+int trackFileKbps() { return g_open && g_isMp3 ? g_mp3.bitrateKbps() : 0; }
+uint32_t trackListNumber() { return g_listNumber; }
+
+void trackLetGo(const char* below) {
+  if (!g_open) return;
+  const char* open = trackOpenPath();
+  const size_t n = strlen(below);
+  // The file itself, or a folder on the way to it.
+  if (strncasecmp(open, below, n) || (open[n] && open[n] != '/')) return;
+  g_infoDirty = false;  // nothing is written beside a file that is going
+  selectTrack(-1);
+}
+
+void trackFilesChanged() {
+  if (g_infoDirty) saveInfo();
+  scanTracks();
 }
 
 // The shell's place in the list: the rows numbered, folders with a slash, > at the open

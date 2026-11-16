@@ -2,7 +2,7 @@
 
 Version 2 (14 Nov 2026: the doubler left `METERS`; version 1 had its CPU value after the amp's and its peak after the cab's) · The single reference for both sides: the firmware (`lib/applink`, `src/AppLink.cpp`) and the app (`app/crates/namforge-link`).
 
-The plan this belongs to is [`docs/design/APP_PLAN.md`](../docs/design/APP_PLAN.md); the app as built is in [`docs/APP.md`](../docs/APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO`, `IR_INFO`, `IR_DATA`, `FILE_GET`, `DIR_LIST` and `CARD_INFO` too. Not implemented yet, on either side: `FILE_RENAME`, the `LOG` event, and the `BUSY` error (the numbers are reserved). Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
+The plan this belongs to is [`docs/design/APP_PLAN.md`](../docs/design/APP_PLAN.md); the app as built is in [`docs/APP.md`](../docs/APP.md). Sections 1 to 3 are implemented and tested on the firmware side (app milestone A0); the session and settings messages (A1), `SUBSCRIBE` / `METERS` (A2), presets (A3), the tuner (A5), and from A4 the lists and loading of models and IRs, `FILE_PUT_*`, `FILE_DELETE` and `RESCAN` are implemented on both sides. `MODEL_INFO`, `IR_INFO`, `IR_DATA`, `FILE_GET`, `DIR_LIST` and `CARD_INFO` too. The backing track's messages (§4.8), `FILE_RENAME`, `FOLDER_NEW` and `FOLDER_DELETE` came on 16 Nov 2026, without a new protocol version (§7). Not implemented yet, on either side: the `LOG` event and the `BUSY` error (the numbers are reserved). Section 4 defines the messages; each group's payloads are final only once its milestone is built, and the "Since" column says which milestone that is.
 
 ---
 
@@ -59,7 +59,7 @@ The device's receive buffer holds a payload of at least 16384 bytes. The app nev
 
 - Every request gets exactly one reply, with the same type and sequence and the Reply flag. The exception is `FILE_GET`, which is answered by a series of `FILE_DATA` replies (§4.5).
 - The app sends one request at a time and waits for its reply. Events may arrive in between.
-- Default timeout 1 s. Loads from the SD card (`MODEL_LOAD`, `IR_LOAD`, `PRESET_RECALL`, `RESCAN`) take longer: the app waits 6 s for them, and 15 s for `FILE_PUT_END`.
+- Default timeout 1 s. Loads from the SD card (`MODEL_LOAD`, `IR_LOAD`, `PRESET_RECALL`, `RESCAN`) take longer: the app waits 6 s for them, and 15 s for `FILE_PUT_END`. Also 6 s for `TRACK_OPEN` (an MP3 is read through once when it is opened: up to a second or two for a long one) and `FILE_RENAME`, 15 s for `FOLDER_DELETE`.
 - Sequence numbers start at 1 and wrap from 65535 to 1.
 
 ### 2.5 Shared examples
@@ -157,9 +157,9 @@ Names are exact ("03 Lead"). A recall loads the model and the IR before it repli
 
 ### 4.5 Files on the SD card (since A4)
 
-Paths are absolute and must name a file directly inside `/IR`, `/AMP`, `/PRESETS`, `/DRUMS` or `/TRACKS` (no further folders; `/TRACKS`, the backing tracks, since 15 Nov 2026), or a `.wav` file in the root. Only below `/TRACKS` a file may also be in folders (`/TRACKS/Rock/Song.mp3`, since 15 Nov 2026): an upload makes the folders that are missing, the path may be up to 263 bytes long there (elsewhere the length `HELLO` gives), and `DIR_LIST` lists such a folder. Names and folders that start with a dot, empty folder names and paths with `..` are refused. Anything else is refused with `BAD_PATH`. There is no message to remove a folder.
+Paths are absolute and must name a file directly inside `/IR`, `/AMP`, `/PRESETS`, `/DRUMS` or `/TRACKS` (no further folders; `/TRACKS`, the backing tracks, since 15 Nov 2026), or a `.wav` file in the root. Only below `/TRACKS` a file may also be in folders (`/TRACKS/Rock/Song.mp3`, since 15 Nov 2026): an upload makes the folders that are missing, the path may be up to 263 bytes long there (elsewhere the length `HELLO` gives), and `DIR_LIST` lists such a folder. Names and folders that start with a dot, empty folder names and paths with `..` are refused. Anything else is refused with `BAD_PATH`. Folders below `/TRACKS` are made, renamed and removed with `FILE_RENAME`, `FOLDER_NEW` and `FOLDER_DELETE`.
 
-After an upload or a delete the device rescans the card before it replies; the loaded model and IR keep playing and stay marked. The lists report a modified time of 0 for now, and leave out the built-in model.
+After an upload or a delete the device rescans the card before it replies; the loaded model and IR keep playing and stay marked. After a change below `/TRACKS` only the list of backing tracks is read again (in the background: `TRACK_CHANGED`'s list number says when, §4.8). The lists report a modified time of 0 for now, and leave out the built-in model.
 
 **Upload.** One upload at a time.
 
@@ -181,11 +181,13 @@ A `FILE_PUT_BEGIN` while an upload is open abandons the earlier one. An upload w
 
 | Type | Request | Reply |
 |---|---|---|
-| `45 FILE_DELETE` | `string` path | (empty) |
-| `46 FILE_RENAME` | `string` from · `string` to | (empty) |
+| `45 FILE_DELETE` | `string` path | (empty). A backing track's `.trk` file goes with it; if the track is open it is closed first. |
+| `46 FILE_RENAME` | `string` from · `string` to | (empty). Below `/TRACKS` only (since 16 Nov 2026): a track or a folder gets a new name or place; folders missing on the way to `to` are made; a track's `.trk` file moves with it. If the open track is the one moved, or lies in the folder moved, it is closed first. Errors: `BAD_PATH` (either path not below `/TRACKS`, or a folder moved into itself), `NOT_FOUND` (no `from`), `BAD_PAYLOAD` (`to` exists), `IO`. |
 | `47 DIR_LIST` | `string` folder: `/`, one of the five folders, or a folder below `/TRACKS` | list of: `string` name · `u32` size · `u32` modified time · `bool` is a folder. The reply holds what fits in 16 KB (several hundred entries); a fuller folder is cut short |
 | `48 CARD_INFO` | (empty) | `bool` card present · `u32` total space in KB · `u32` free space in KB (both 0 without a card). The device counts the free space on each request, which takes a moment (0.8 s measured on a 16 GB card, longer on larger ones): allow 6 s. |
 | `49 RESCAN` | (empty) | `u16` IRs found · `u16` models found · `u16` presets found · `u16` drum songs found |
+| `4A FOLDER_NEW` | `string` folder below `/TRACKS` (`/TRACKS/Rock/Live`) | (empty). Folders missing on the way are made; a folder that is there already is no error. `BAD_PATH` elsewhere. Since 16 Nov 2026. |
+| `4B FOLDER_DELETE` | `string` folder below `/TRACKS` (not `/TRACKS` itself) | `u16` files removed. The folder goes with everything in it: tracks, their `.trk` files, folders. If the open track lies in it, it is closed first. Allow 15 s: the device answers when it is done, and a playing track may get a gap while a large folder goes. Errors: `BAD_PATH`, `NOT_FOUND`, `IO` (something could not be removed; what could, is gone). Since 16 Nov 2026. |
 
 ### 4.6 Live data (meters since A2, tuner since A5)
 
@@ -207,6 +209,72 @@ A `FILE_PUT_BEGIN` while an upload is open abandons the earlier one. An upload w
 **`53 TUNER`** (event, when the reading changes, at most 10 per second while open): `bool` a pitch was found · `f32` frequency in Hz · `u8` note (0 = C … 11 = B) · `i16` octave · `f32` cents off, −50 to +50.
 
 ### 4.7 Other (since A1)
+
+(`60 LOG`, below.)
+
+### 4.8 Backing track (since 16 Nov 2026)
+
+The backing-track player (`docs/SIGNAL_CHAIN.md`, "Backing track"). The track's volume and its play / pause switch are settings (`track vol`, and the unsaved setting "Track"): `SET_PARAM` and `PARAM_CHANGED` carry them. Everything else is here. A track's **path** in these messages is the one below `/TRACKS`, without a leading slash (`Rock/Song.mp3`); "" is `/TRACKS` itself, or no track. The file messages (§4.5) take the whole path (`/TRACKS/Rock/Song.mp3`).
+
+The lists come from the device's own list of the whole tree, which it reads from the card in the background after power-on and after every change below `/TRACKS`. Until it is complete (`TRACK_STATE`'s "being read"), folders not read yet are empty and a search finds only what has been read.
+
+| Type | Request | Reply |
+|---|---|---|
+| `70 TRACK_LIST` | `string` folder path · `u16` first row wanted | `u16` rows in the folder · `u16` first row sent · list of: `string` name · `bool` is a folder · `u16` rows inside it (0 for a track). Folders first, then tracks, each by name, as the unit shows them. The reply holds what fits in 16 KB; the app asks again from the next row until it has them all. `NOT_FOUND`: no such folder (or the list has not got to it yet). |
+| `71 TRACK_FIND` | `string` text · `u16` first hit wanted | `u16` hits (256 at most) · `bool` there were more than that · `u16` first hit sent · list of `string` path. The tracks from all folders with every word of the text in their name or in the name of a folder they are in; the case does not count and `_` is a space. Cut and continued like `TRACK_LIST`. |
+| `72 TRACK_OPEN` | `string` path ("" closes the open track) | the state (below). What played stops. Allow 6 s. `NOT_FOUND` (not in the list), `IO` (the file could not be opened: not a WAV or MP3 the unit plays). |
+| `73 TRACK_COMMAND` | `u8` command · `f32` a · `f32` b · `f32` c (what a command does not use is 0) | the state after it. `NOT_FOUND`: no track is open. `BAD_PAYLOAD`: an unknown command, or values the unit refuses (the message says why). |
+| `74 TRACK_STATE` | (empty) | the state |
+
+**`75 TRACK_CHANGED`** (event): the state, sent when anything in it but the place and the gaps changes (within 0.1 s), and four times a second while the place moves.
+
+Commands of `TRACK_COMMAND`:
+
+| # | Command | a, b, c |
+| --- | --- | --- |
+| 1 | Play from where it is | |
+| 2 | Pause (keeps its place) | |
+| 3 | Stop: back to the start, or to the loop's start while a loop is on | |
+| 4 | Go to a time | a: seconds |
+| 5 | Tempo, at the same pitch | a: percent of the track's own, 50 to 150 |
+| 6 | The track's own tempo set by hand (the beat nearest to where the track is stays in place) | a: BPM, 30 to 300 |
+| 7 | The track's own tempo halved | |
+| 8 | The track's own tempo doubled | |
+| 9 | Beats in a bar | a: 1 to 16 |
+| 10 | Loop points go to the nearest beat | a: 1 on, 0 off |
+| 11 | Find the tempo and beats again | |
+| 12 | Mark the loop's start where the track is now | |
+| 13 | Mark the loop's end where the track is now | |
+| 14 | Loop a section | a: from, b: to, seconds (0.25 s or longer, inside the track) |
+| 15 | Loop off; its points are kept | |
+| 16 | Loop on again with the points it had | |
+| 17 | Loop off and its points forgotten | |
+| 18 | Loop in bars (the tempo must be known) | a: bar, b: beat in it (both from 1), c: bars |
+
+The state (the reply of `72` to `74` and the event `75`; later firmware may append fields):
+
+| Field | |
+| --- | --- |
+| `string` path | The open track, "" if none |
+| `u8` playing | 0 no track, 1 stopped, 2 playing, 3 paused |
+| `f32` place | Seconds from the start, in the track's own time (not stretched by the tempo) |
+| `f32` length | Seconds |
+| `u16` tempo | Percent of the track's own |
+| `f32` own tempo | BPM as the scan found it or as set by hand; 0: not known (not scanned yet, or no beat found) |
+| `bool` sure | The scan's confidence is 0.5 or more |
+| `i16` scan | Percent of the scan for tempo and beats done; 100: done; −1: no track. The scan runs while the track is open and not playing |
+| `f32` first beat | Seconds; with the own tempo it gives every beat: first beat + k × 60 ÷ own tempo |
+| `u8` beats in a bar | |
+| `bool` snap | Loop points go to the nearest beat |
+| `u8` loop | 0 none, 1 points set and the loop off, 2 looping, 3 the start is marked and waits for its end |
+| `f32` loop from · `f32` loop to | Seconds (0 with loop 0; with loop 3 only "from" counts) |
+| `u32` gaps | Blocks the queue could not fill, since start |
+| `u8` file kind | 0 none, 1 WAV, 2 MP3 |
+| `u32` file sample rate · `u8` channels · `u16` kbit/s (0 for a WAV) | |
+| `u16` tracks | Tracks in the device's list |
+| `bool` being read | The list is not complete yet |
+| `u32` list number | Goes up each time the device starts reading its list anew (the card was changed or mounted): the app then asks for its lists again, and once more when "being read" ends |
+
 
 **`60 LOG`** (event, **not implemented**): `u8` level (0 info, 1 warning, 2 error) · `string` text. What the firmware would have printed: load results, errors, overload messages.
 
@@ -244,6 +312,6 @@ The `unit` byte of `GET_SCHEMA`, as in the firmware's settings table (`lib/param
 
 ## 7. Changing the protocol
 
-- Adding a message type, an error code, or fields at the end of a reply that says it may grow does **not** change the protocol version.
+- Adding a message type, an error code, or fields at the end of a reply that says it may grow does **not** change the protocol version. An app must ignore an event whose type it does not know; firmware answers an unknown request with `UNKNOWN_MESSAGE`, by which an app tells an older firmware.
 - Anything else does: changing a field, removing a message, changing the frame.
 - Update this document, `lib/applink/src/applink/Messages.h`, and `app/crates/namforge-link/src/lib.rs` together, and add an example to `make_test_frames.py` for each new message layout.

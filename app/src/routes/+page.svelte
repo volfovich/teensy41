@@ -11,6 +11,10 @@
   import { answerRestore, backupCard, cancelOffer, cardFile, chooseBackup, job, restoreOffer, connectDevice, device, dropping, meters, notice, offered, pickFiles, presetAction, preview, sendFiles, setParam, setTuner, transfer } from "$lib/device.svelte";
   import Tuner from "$lib/Tuner.svelte";
   import IrGraph from "$lib/IrGraph.svelte";
+  import TracksTab from "$lib/TracksTab.svelte";
+  import TrackLane from "$lib/TrackLane.svelte";
+  import TrackPanel from "$lib/TrackPanel.svelte";
+  import { playPause } from "$lib/track.svelte";
   import { baseName, formatValue } from "$lib/format";
   import type { Setting } from "$lib/types";
 
@@ -25,7 +29,7 @@
     return () => stop();
   });
 
-  const blocks = $derived(buildBlocks(device.settings));
+  const blocks = $derived(buildBlocks(device.settings, !!device.track));
   const lane = $derived(blocks.lane);
   const all = $derived([...blocks.chain, blocks.lane, ...(blocks.other ? [blocks.other] : [])]);
   // The address can name the block and the library tab to open ("#reverb", "#amp/models", and in the preview "#amp//tuner", "#amp///recall", "#amp///files"):
@@ -33,6 +37,9 @@
   const [hashBlock, hashTab, hashTuner, hashAsk] = (typeof location !== "undefined" ? location.hash.slice(1) : "").split("/");
   let selectedId = $state(hashBlock || "amp");
   const selected = $derived(all.find((b) => b.def.id === selectedId) ?? all[0]);
+  // The backing track is opened like a block ("#track"); it is there only with firmware that has the player.
+  const trackSelected = $derived(selectedId === "track" && !!device.track);
+  const shownId = $derived(trackSelected ? "track" : selected?.def.id);
 
   const value = (id: number, fallback: number) => device.values[id] ?? fallback;
   const isOn = (b: Block) => blockOn(b, device.values);
@@ -134,12 +141,14 @@
   const clipping = $derived(now - clipAt < 2000);
 
   // ---- The library on the unit's card: presets, amp models, IRs
-  let tab = $state<"presets" | "models" | "irs" | "card">(hashTab === "models" || hashTab === "irs" || hashTab === "card" ? hashTab : "presets");
+  let tabWanted = $state<"presets" | "models" | "irs" | "tracks" | "card">(hashTab === "models" || hashTab === "irs" || hashTab === "tracks" || hashTab === "card" ? hashTab : "presets");
+  // The Tracks tab is there only with firmware that has the backing-track player.
+  const tab = $derived(tabWanted === "tracks" && !device.track ? "presets" : tabWanted);
   const cardList = $derived(tab === "models" ? device.models : device.irs);
   const loadedPath = $derived(tab === "models" ? device.files.model : device.files.ir);
   let deleting = $state("");
   const kb = (bytes: number) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
-  const sending = $derived(!transfer.done);
+  const sending = $derived(!(transfer.done && transfer.index >= transfer.count));
   const sentShown = $derived(transfer.done && !transfer.error && transfer.name && now - transfer.at < 4000);
 
   // ---- Presets
@@ -216,12 +225,14 @@
     } else if (meters.tunerOpen) {
       return; // the tuner has the keyboard
     } else if (e.key === " ") {
-      if (selected) toggle(selected);
+      if (trackSelected) playPause();
+      else if (selected) toggle(selected);
     } else if (e.key >= "1" && e.key <= "9" && !e.metaKey && !e.ctrlKey) {
-      // The numbers open the chain's blocks in order, the next one the drums.
-      const b = [...blocks.chain, blocks.lane][Number(e.key) - 1];
-      if (!b) return;
-      selectedId = b.def.id;
+      // The numbers open the chain's blocks in order, the next one the drums, the one after the backing track.
+      const ids = [...blocks.chain.map((b) => b.def.id), blocks.lane.def.id, ...(device.track ? ["track"] : [])];
+      const id = ids[Number(e.key) - 1];
+      if (!id) return;
+      selectedId = id;
     } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") stepPreset(-1);
     else if (e.key === "ArrowRight" || e.key === "ArrowDown") stepPreset(1);
     else return;
@@ -379,14 +390,17 @@
   <aside aria-label="Library" class:dropping={dropping.on} style:--w="{libWidth}px">
     <div class="brand">VOLFOVICH <b>NAM FORGE</b></div>
     <div class="tabs" role="tablist">
-      <button role="tab" aria-selected={tab === "presets"} onclick={() => (tab = "presets")}>Presets</button>
-      <button role="tab" aria-selected={tab === "models"} onclick={() => (tab = "models")}>Amps</button>
-      <button role="tab" aria-selected={tab === "irs"} onclick={() => (tab = "irs")}>IRs</button>
-      <button role="tab" aria-selected={tab === "card"} onclick={() => (tab = "card")}>Card</button>
+      <button role="tab" aria-selected={tab === "presets"} onclick={() => (tabWanted = "presets")}>Presets</button>
+      <button role="tab" aria-selected={tab === "models"} onclick={() => (tabWanted = "models")}>Amps</button>
+      <button role="tab" aria-selected={tab === "irs"} onclick={() => (tabWanted = "irs")}>IRs</button>
+      {#if device.track}<button role="tab" aria-selected={tab === "tracks"} onclick={() => (tabWanted = "tracks")}>Tracks</button>{/if}
+      <button role="tab" aria-selected={tab === "card"} onclick={() => (tabWanted = "card")}>Card</button>
     </div>
-    {#if tab === "card"}
+    {#if tab === "tracks"}
+      <TracksTab />
+    {:else if tab === "card"}
       <div class="card">
-        <p class="none">{device.files.card ? `On the card: ${device.models.length} amp models, ${device.irs.length} IRs, ${device.presets.length} presets.` : "No SD card in the unit."}</p>
+        <p class="none">{device.files.card ? `On the card: ${device.models.length} amp models, ${device.irs.length} IRs, ${device.presets.length} presets${device.track ? `, ${device.track.tracks} backing tracks` : ""}.` : "No SD card in the unit."}</p>
         {#if device.files.card && device.card}
           <div class="space" title="Free space on the unit's SD card">
             <div class="progress"><div style:width="{device.card.totalKb ? (100 * (device.card.totalKb - device.card.freeKb)) / device.card.totalKb : 0}%"></div></div>
@@ -509,8 +523,8 @@
     <div class="jack">IN</div>
     {#each blocks.chain as b (b.def.id)}
       <div class="wire" class:live={meters.inputPeak > 0.003}></div>
-      <div class="tile" class:off={!isOn(b)} class:selected={selected.def.id === b.def.id} class:ringing={!isOn(b) && blockActive(b, meters)} style:--c={b.def.colour}>
-        <button class="body" title={b.def.file ? summary(b) : undefined} onclick={() => (selectedId = b.def.id)} aria-pressed={selected.def.id === b.def.id}>
+      <div class="tile" class:off={!isOn(b)} class:selected={shownId === b.def.id} class:ringing={!isOn(b) && blockActive(b, meters)} style:--c={b.def.colour}>
+        <button class="body" title={b.def.file ? summary(b) : undefined} onclick={() => (selectedId = b.def.id)} aria-pressed={shownId === b.def.id}>
           <span class="short">{b.def.short}</span>
           <span class="summary" class:two={!!b.def.file}>{summary(b)}</span>
           {#if b.def.id === "gate" && isOn(b)}
@@ -529,7 +543,7 @@
     <div class="jack">OUT</div>
   </section>
 
-  <section class="lane" class:selected={selected.def.id === lane.def.id} class:playing={isOn(lane)} style:--c={lane.def.colour}>
+  <section class="lane" class:selected={shownId === lane.def.id} class:playing={isOn(lane)} style:--c={lane.def.colour}>
     <button class="play" aria-label={isOn(lane) ? "Stop the drums" : "Start the drums"} onclick={() => toggle(lane)}>
       {#if isOn(lane)}
         <svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1" /></svg>
@@ -537,7 +551,7 @@
         <svg viewBox="0 0 16 16"><path d="M5 3.5v9l7.5-4.5z" /></svg>
       {/if}
     </button>
-    <button class="body" onclick={() => (selectedId = lane.def.id)} aria-pressed={selected.def.id === lane.def.id}>
+    <button class="body" onclick={() => (selectedId = lane.def.id)} aria-pressed={shownId === lane.def.id}>
       <span class="short">{lane.def.short}</span>
       {#each laneChips as k}
         {@const s = chip(k)}
@@ -545,10 +559,15 @@
       {/each}
     </button>
     {#if blocks.other}
-      <button class="more" class:selected={selected.def.id === "other"} onclick={() => (selectedId = "other")}>Other settings</button>
+      <button class="more" class:selected={shownId === "other"} onclick={() => (selectedId = "other")}>Other settings</button>
     {/if}
   </section>
 
+  <TrackLane selected={trackSelected} onselect={() => (selectedId = "track")} />
+
+  {#if trackSelected}
+  <TrackPanel volume={blocks.trackVolume} onchoose={() => (tabWanted = "tracks")} />
+  {:else}
   <section class="editor" style:--c={selected.def.colour} aria-label="{selected.def.name} settings">
     <div class="head">
       <h2>{selected.def.name}</h2>
@@ -556,7 +575,7 @@
         <span class="file" title={fileOf(selected)}>{baseName(fileOf(selected)) || (selected.def.file === "model" ? "No model loaded" : "No IR loaded: the cab passes the sound through")}</span>
       {/if}
       {#if selected.def.file}
-        <button class="choose" onclick={() => (tab = selected.def.file === "model" ? "models" : "irs")}>Choose…</button>
+        <button class="choose" onclick={() => (tabWanted = selected.def.file === "model" ? "models" : "irs")}>Choose…</button>
       {/if}
       <span class="grow"></span>
       {#if peakOf(selected) !== null}<span class="stagecpu">Out</span><LevelBar text peak={peakOf(selected) ?? 0} />{/if}
@@ -601,6 +620,7 @@
     {/each}
     {#if selected.def.note}<p class="blocknote">{selected.def.note}</p>{/if}
   </section>
+  {/if}
 
   </div>
   </div>
@@ -852,8 +872,8 @@
     border-radius: 9px;
   }
   .tabs button {
-    flex: 1;
-    padding: 5px 0;
+    flex: 1 1 auto;
+    padding: 5px 2px;
     border: 0;
     border-radius: 7px;
     background: none;

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use namforge_link::{encode_frame, msg, ErrorCode, Fed, Frame, FrameParser, Reader, WireError, Writer};
 
-use crate::types::{CardSpace, DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting};
+use crate::types::{CardSpace, DeviceInfo, Event, FileEntry, Files, IrInfo, Meters, ModelInfo, Preset, Setting, TrackRow, TrackState};
 
 /// The app's name as sent in `HELLO`.
 pub const APP_ID: &str = concat!("NAM Forge ", env!("CARGO_PKG_VERSION"));
@@ -52,6 +52,10 @@ impl From<io::Error> for SessionError {
 const REPLY_TIMEOUT: Duration = Duration::from_millis(1000);
 /// For requests that load or write files on the SD card (a preset recall loads a model and an IR).
 const SLOW_REPLY_TIMEOUT: Duration = Duration::from_millis(6000);
+/// For `FILE_PUT_END` and `FOLDER_DELETE`: the unit answers when it is done.
+const LONG_REPLY_TIMEOUT: Duration = Duration::from_secs(15);
+/// What the unit answers to any request but `HELLO` when it has no session open (it ended ours).
+pub const NO_SESSION: &str = "Say HELLO first";
 /// A frame that stops arriving for this long is abandoned (PROTOCOL.md 2.3). Longer than the
 /// stream's read timeout, so a frame split across several reads is put together.
 const LINE_IDLE: Duration = Duration::from_millis(100);
@@ -134,6 +138,16 @@ impl<T: Read + Write> Session<T> {
         let mut frames = std::mem::take(&mut self.pending);
         frames.extend(self.read_frames()?.into_iter().filter(Frame::is_event));
         Ok(frames.iter().filter_map(decode_event).collect())
+    }
+
+    /// The meter, tuner, setting and backing-track events that arrived during earlier requests,
+    /// for showing them while a long job (a file on its way to the unit) holds the line. Other
+    /// events stay for [`Session::events`].
+    pub fn live_events(&mut self) -> Vec<Event> {
+        let live = |f: &Frame| matches!(f.msg_type, msg::METERS | msg::TUNER | msg::PARAM_CHANGED | msg::TRACK_CHANGED);
+        let (now, later): (Vec<Frame>, Vec<Frame>) = std::mem::take(&mut self.pending).into_iter().partition(live);
+        self.pending = later;
+        now.iter().filter_map(decode_event).collect()
     }
 
     pub fn hello(&mut self, port: &str) -> Result<DeviceInfo, SessionError> {
@@ -402,6 +416,12 @@ impl<T: Read + Write> Session<T> {
     /// Sends a file to the card. `progress` is called with the bytes sent so far. The unit
     /// checks size and CRC, puts the file in place and rescans the card before it replies.
     pub fn put_file(&mut self, path: &str, data: &[u8], mut progress: impl FnMut(u32)) -> Result<(), SessionError> {
+        self.put_file_each(path, data, |_, sent| progress(sent))
+    }
+
+    /// As [`Session::put_file`], but `each` also gets the session after every piece, so that
+    /// it can take the events that came in meanwhile ([`Session::live_events`]).
+    pub fn put_file_each(&mut self, path: &str, data: &[u8], mut each: impl FnMut(&mut Self, u32)) -> Result<(), SessionError> {
         let malformed = |problem| SessionError::Malformed { request: msg::FILE_PUT_BEGIN, problem };
         let mut w = Writer::new();
         w.str(path).map_err(malformed)?;
@@ -414,9 +434,126 @@ impl<T: Read + Write> Session<T> {
             w.u32(sent as u32).bytes(part);
             self.request_within(msg::FILE_PUT_DATA, &w.finish(), SLOW_REPLY_TIMEOUT)?;
             sent += part.len();
-            progress(sent as u32);
+            each(self, sent as u32);
         }
-        self.request_within(msg::FILE_PUT_END, &[], Duration::from_secs(15)).map(|_| ())
+        self.request_within(msg::FILE_PUT_END, &[], LONG_REPLY_TIMEOUT).map(|_| ())
+    }
+
+    /// As [`Session::put_file_each`], for long uploads: if the unit refuses with "Say HELLO
+    /// first" (it ended the session half way; seen once in testing), the session is opened
+    /// again and the file is sent once more from its start.
+    pub fn put_file_again(&mut self, path: &str, data: &[u8], mut each: impl FnMut(&mut Self, u32)) -> Result<(), SessionError> {
+        match self.put_file_each(path, data, &mut each) {
+            Err(SessionError::Device { message, .. }) if message == NO_SESSION => {
+                self.hello("")?;
+                self.put_file_each(path, data, &mut each)
+            }
+            other => other,
+        }
+    }
+
+    /// The backing-track player's state (`TRACK_STATE`); `None` when the firmware does not know
+    /// the request: it is older and has no player.
+    pub fn track_state(&mut self) -> Result<Option<TrackState>, SessionError> {
+        match self.request(msg::TRACK_STATE, &[]) {
+            Ok(f) => track_reply(&f).map(Some),
+            Err(SessionError::Device { code: ErrorCode::UnknownMessage, .. }) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// The rows of a folder below `/TRACKS` ("" is `/TRACKS` itself, "Rock/Live" a folder in
+    /// it): folders first, then tracks. A reply holds what fits in 16 KB, so this asks again
+    /// from the next row until it has them all.
+    pub fn track_list(&mut self, folder: &str) -> Result<Vec<TrackRow>, SessionError> {
+        let malformed = |problem| SessionError::Malformed { request: msg::TRACK_LIST, problem };
+        let mut rows: Vec<TrackRow> = Vec::new();
+        loop {
+            let mut w = Writer::new();
+            w.str(folder).map_err(malformed)?;
+            w.u16(rows.len() as u16);
+            let f = self.request(msg::TRACK_LIST, &w.finish())?;
+            let (total, first, page) = (|| -> Result<(u16, u16, Vec<TrackRow>), WireError> {
+                let mut r = Reader::new(&f.payload);
+                let (total, first) = (r.u16()?, r.u16()?);
+                let page = (0..r.u16()?).map(|_| Ok(TrackRow { name: r.str()?, folder: r.bool()?, rows: r.u16()? })).collect::<Result<_, WireError>>()?;
+                r.done()?;
+                Ok((total, first, page))
+            })()
+            .map_err(malformed)?;
+            if !take_page(&mut rows, total, first, page).map_err(malformed)? {
+                return Ok(rows);
+            }
+        }
+    }
+
+    /// The tracks from all folders that have every word of `text` in their name or in a
+    /// folder's name (`TRACK_FIND`), as paths below `/TRACKS`, and whether the unit found more
+    /// than the 256 it lists.
+    pub fn track_find(&mut self, text: &str) -> Result<(Vec<String>, bool), SessionError> {
+        let malformed = |problem| SessionError::Malformed { request: msg::TRACK_FIND, problem };
+        let mut hits: Vec<String> = Vec::new();
+        loop {
+            let mut w = Writer::new();
+            w.str(text).map_err(malformed)?;
+            w.u16(hits.len() as u16);
+            let f = self.request(msg::TRACK_FIND, &w.finish())?;
+            let (total, more, first, page) = (|| -> Result<(u16, bool, u16, Vec<String>), WireError> {
+                let mut r = Reader::new(&f.payload);
+                let (total, more, first) = (r.u16()?, r.bool()?, r.u16()?);
+                let page = (0..r.u16()?).map(|_| r.str()).collect::<Result<_, WireError>>()?;
+                r.done()?;
+                Ok((total, more, first, page))
+            })()
+            .map_err(malformed)?;
+            if !take_page(&mut hits, total, first, page).map_err(malformed)? {
+                return Ok((hits, more));
+            }
+        }
+    }
+
+    /// Opens a track by its path below `/TRACKS`; "" closes the open one. What played stops.
+    pub fn track_open(&mut self, path: &str) -> Result<TrackState, SessionError> {
+        let mut w = Writer::new();
+        w.str(path).map_err(|problem| SessionError::Malformed { request: msg::TRACK_OPEN, problem })?;
+        let f = self.request_within(msg::TRACK_OPEN, &w.finish(), SLOW_REPLY_TIMEOUT)?;
+        track_reply(&f)
+    }
+
+    /// One of the player's commands (`namforge_link::track_cmd`); what a command does not use
+    /// is 0. Returns the state after it.
+    pub fn track_command(&mut self, command: u8, a: f32, b: f32, c: f32) -> Result<TrackState, SessionError> {
+        let mut w = Writer::new();
+        w.u8(command).f32(a).f32(b).f32(c);
+        let f = self.request(msg::TRACK_COMMAND, &w.finish())?;
+        track_reply(&f)
+    }
+
+    /// Gives a track or a folder below `/TRACKS` a new name or place (whole paths:
+    /// "/TRACKS/Rock/Song.mp3").
+    pub fn rename(&mut self, from: &str, to: &str) -> Result<(), SessionError> {
+        let malformed = |problem| SessionError::Malformed { request: msg::FILE_RENAME, problem };
+        let mut w = Writer::new();
+        w.str(from).map_err(malformed)?;
+        w.str(to).map_err(malformed)?;
+        self.request_within(msg::FILE_RENAME, &w.finish(), SLOW_REPLY_TIMEOUT).map(|_| ())
+    }
+
+    /// Makes a folder below `/TRACKS` ("/TRACKS/Rock/Live"); one that is there already is no error.
+    pub fn folder_new(&mut self, path: &str) -> Result<(), SessionError> {
+        let mut w = Writer::new();
+        w.str(path).map_err(|problem| SessionError::Malformed { request: msg::FOLDER_NEW, problem })?;
+        self.request(msg::FOLDER_NEW, &w.finish()).map(|_| ())
+    }
+
+    /// Removes a folder below `/TRACKS` with everything in it; returns the number of files
+    /// removed. The unit answers when it is done, which can take seconds.
+    pub fn folder_delete(&mut self, path: &str) -> Result<u16, SessionError> {
+        let malformed = |problem| SessionError::Malformed { request: msg::FOLDER_DELETE, problem };
+        let mut w = Writer::new();
+        w.str(path).map_err(malformed)?;
+        let f = self.request_within(msg::FOLDER_DELETE, &w.finish(), LONG_REPLY_TIMEOUT)?;
+        Reader::new(&f.payload).u16().map_err(malformed)
     }
 
     /// Opens or closes the tuner (the guitar is muted while it is open).
@@ -480,6 +617,53 @@ fn read_meters(r: &mut Reader<'_>) -> Result<Meters, WireError> {
     Ok(m)
 }
 
+/// Adds one reply's rows to a list that is fetched in pieces (`TRACK_LIST`, `TRACK_FIND`).
+/// Returns whether more must be asked for.
+fn take_page<R>(rows: &mut Vec<R>, total: u16, first: u16, page: Vec<R>) -> Result<bool, WireError> {
+    // The unit's list may have changed between two requests: what it sends counts.
+    if first as usize > rows.len() {
+        return Err(WireError::TooShort);
+    }
+    rows.truncate(first as usize);
+    let got = !page.is_empty();
+    rows.extend(page);
+    rows.truncate(total as usize);
+    // A reply without rows ends it too, so a wrong count cannot keep the app asking for ever.
+    Ok(got && rows.len() < total as usize)
+}
+
+/// The backing-track player's state (PROTOCOL.md 4.8). Later firmware may append fields.
+fn read_track_state(r: &mut Reader<'_>) -> Result<TrackState, WireError> {
+    Ok(TrackState {
+        path: r.str()?,
+        playing: r.u8()?,
+        place: r.f32()?,
+        length: r.f32()?,
+        tempo: r.u16()?,
+        own_tempo: r.f32()?,
+        sure: r.bool()?,
+        scan: r.i16()?,
+        first_beat: r.f32()?,
+        beats_per_bar: r.u8()?,
+        snap: r.bool()?,
+        loop_state: r.u8()?,
+        loop_from: r.f32()?,
+        loop_to: r.f32()?,
+        gaps: r.u32()?,
+        file_kind: r.u8()?,
+        file_rate: r.u32()?,
+        channels: r.u8()?,
+        kbps: r.u16()?,
+        tracks: r.u16()?,
+        reading: r.bool()?,
+        list_number: r.u32()?,
+    })
+}
+
+fn track_reply(f: &Frame) -> Result<TrackState, SessionError> {
+    read_track_state(&mut Reader::new(&f.payload)).map_err(|problem| SessionError::Malformed { request: f.msg_type, problem })
+}
+
 fn read_files(r: &mut Reader<'_>) -> Result<Files, WireError> {
     Ok(Files { model: r.str()?, ir: r.str()?, preset: r.str()?, edited: r.bool()?, card: r.bool()? })
 }
@@ -493,6 +677,7 @@ fn decode_event(f: &Frame) -> Option<Event> {
         msg::TUNER => Some(Event::Tuner { valid: r.bool().ok()?, hz: r.f32().ok()?, note: r.u8().ok()?, octave: r.i16().ok()?, cents: r.f32().ok()? }),
         msg::PRESETS_CHANGED => Some(Event::PresetsChanged),
         msg::METERS => Some(Event::Meters { meters: read_meters(&mut r).ok()? }),
+        msg::TRACK_CHANGED => Some(Event::Track { state: Some(read_track_state(&mut r).ok()?) }),
         _ => None,
     }
 }
@@ -513,11 +698,49 @@ mod tests {
         greeted: bool,
         protocol: u16,
         mute: bool,
+        /// Every request that arrived: its type and payload.
+        log: Vec<(u8, Vec<u8>)>,
+        /// Firmware with the backing-track player; without, its requests are unknown.
+        tracks: bool,
+        /// The rows of the folder "Rock", and how many of them fit in one reply.
+        rows: Vec<(&'static str, bool, u16)>,
+        page: usize,
+        /// The open track and what the commands set.
+        open: String,
+        place: f32,
+        tempo: u16,
+        /// The session is dropped once, when an upload has got this far.
+        forget_at: Option<u32>,
+        putting: (String, Vec<u8>),
+        files: Vec<(String, Vec<u8>)>,
     }
 
     impl FakeUnit {
         fn new() -> Self {
-            Self { values: vec![0, 30, 380], protocol: namforge_link::PROTOCOL_VERSION, ..Default::default() }
+            Self { values: vec![0, 30, 380], protocol: namforge_link::PROTOCOL_VERSION, tempo: 100, page: 3, ..Default::default() }
+        }
+        fn with_tracks() -> Self {
+            let rows = vec![("Live", true, 12), ("Old", true, 0), ("Intro.wav", false, 0), ("Iron man.mp3", false, 0), ("Song_2.mp3", false, 0), ("Song 3.mp3", false, 0), ("Song 4.mp3", false, 0), ("Zebra.wav", false, 0)];
+            Self { tracks: true, rows, ..Self::new() }
+        }
+        fn refuse(&mut self, f: &Frame, code: u16, text: &str) {
+            let mut w = Writer::new();
+            w.u16(code);
+            w.str(text).unwrap();
+            self.send(f.msg_type, flags::REPLY | flags::ERROR, f.sequence, w.finish());
+        }
+        /// The player's state as firmware a little newer than this app sends it: with a field
+        /// the app does not know at its end.
+        fn track_state(&self, w: &mut Writer) {
+            w.str(&self.open).unwrap();
+            w.u8(if self.open.is_empty() { 0 } else { 1 }).f32(self.place).f32(if self.open.is_empty() { 0.0 } else { 200.0 }).u16(self.tempo);
+            w.f32(120.0).bool(true).i16(if self.open.is_empty() { -1 } else { 100 }).f32(0.5).u8(4).bool(true);
+            w.u8(0).f32(0.0).f32(0.0).u32(0).u8(2).u32(44100).u8(2).u16(192);
+            w.u16(self.rows.len() as u16).bool(false).u32(3);
+            w.u16(0xBEEF);
+        }
+        fn requests(&self, msg_type: u8) -> Vec<Vec<u8>> {
+            self.log.iter().filter(|(t, _)| *t == msg_type).map(|(_, p)| p.clone()).collect()
         }
         fn send(&mut self, t: u8, fl: u8, seq: u16, payload: Vec<u8>) {
             self.out.extend(encode_frame(t, fl, seq, &payload).unwrap());
@@ -534,7 +757,9 @@ mod tests {
             if self.mute {
                 return;
             }
+            self.log.push((f.msg_type, f.payload.clone()));
             let mut w = Writer::new();
+            let mut r = Reader::new(&f.payload);
             match f.msg_type {
                 msg::HELLO => {
                     self.greeted = true;
@@ -575,11 +800,74 @@ mod tests {
                     w.bool(false).bool(true);
                 }
                 msg::SET_PARAM => {
-                    let mut r = Reader::new(&f.payload);
                     let (id, v) = (r.u16().unwrap(), r.i32().unwrap().clamp(0, 100));
                     self.values[id as usize] = v as i16;
                     w.u16(id).i32(v);
                 }
+                msg::TRACK_STATE if self.tracks => self.track_state(&mut w),
+                msg::TRACK_OPEN if self.tracks => {
+                    let path = r.str().unwrap();
+                    if path == "Rock/Gone.mp3" {
+                        return self.refuse(&f, 3, "No such track");
+                    }
+                    (self.open, self.place, self.tempo) = (path, 0.0, 100);
+                    self.track_state(&mut w);
+                }
+                msg::TRACK_COMMAND if self.tracks => {
+                    let (command, a) = (r.u8().unwrap(), r.f32().unwrap());
+                    if self.open.is_empty() {
+                        return self.refuse(&f, 3, "No track is open");
+                    }
+                    match command {
+                        4 => self.place = a,
+                        5 => self.tempo = a as u16,
+                        1..=18 => {}
+                        _ => return self.refuse(&f, 2, "Unknown command"),
+                    }
+                    self.track_state(&mut w);
+                }
+                msg::TRACK_LIST | msg::TRACK_FIND if self.tracks => {
+                    let (text, first) = (r.str().unwrap(), r.u16().unwrap() as usize);
+                    let find = f.msg_type == msg::TRACK_FIND;
+                    if !find && text != "Rock" {
+                        return self.refuse(&f, 3, "No such folder");
+                    }
+                    let rows: Vec<_> = self.rows.iter().filter(|(name, folder, _)| !find || (!folder && name.to_lowercase().contains(&text))).collect();
+                    let first = first.min(rows.len());
+                    let sent = &rows[first..rows.len().min(first + self.page)];
+                    w.u16(rows.len() as u16);
+                    if find {
+                        w.bool(true);
+                    }
+                    w.u16(first as u16).u16(sent.len() as u16);
+                    for (name, folder, inside) in sent {
+                        if find {
+                            w.str(&format!("Rock/{name}")).unwrap();
+                        } else {
+                            w.str(name).unwrap();
+                            w.bool(*folder).u16(*inside);
+                        }
+                    }
+                }
+                msg::FILE_RENAME | msg::FOLDER_NEW if self.tracks => {}
+                msg::FOLDER_DELETE if self.tracks => {
+                    w.u16(12);
+                }
+                msg::FILE_PUT_BEGIN => {
+                    self.putting = (r.str().unwrap(), Vec::new());
+                    w.u16(8);
+                }
+                msg::FILE_PUT_DATA => {
+                    let offset = r.u32().unwrap();
+                    if self.forget_at.is_some_and(|at| offset >= at) {
+                        // The session ended half way through the upload.
+                        (self.forget_at, self.greeted) = (None, false);
+                        return self.refuse(&f, 2, "Say HELLO first");
+                    }
+                    self.putting.1.extend_from_slice(&f.payload[4..]);
+                    w.u32(self.putting.1.len() as u32);
+                }
+                msg::FILE_PUT_END => self.files.push(std::mem::take(&mut self.putting)),
                 _ => {
                     w.u16(1);
                     w.str("Not supported").unwrap();
@@ -702,5 +990,182 @@ mod tests {
         let t0 = Instant::now();
         assert!(matches!(Session::new(silent).hello("fake"), Err(SessionError::Timeout { .. })));
         assert!(t0.elapsed() >= REPLY_TIMEOUT);
+    }
+
+    fn hex(h: &str) -> Vec<u8> {
+        (0..h.len() / 2).map(|i| u8::from_str_radix(&h[2 * i..2 * i + 2], 16).unwrap()).collect()
+    }
+
+    fn greeted(dev: FakeUnit) -> Session<FakeUnit> {
+        let mut s = Session::new(dev);
+        s.hello("fake").unwrap();
+        s
+    }
+
+    // The payloads in hex below are the examples of protocol/test_frames.txt.
+
+    #[test]
+    fn track_state_is_decoded() {
+        let payload = hex("0d00526f636b2f536f6e672e6d7033020000a7420080a2435000b81ef942016400d34d423f040102cdcc4a42cdcc7c42000000000244ac00000280003b000007000000");
+        let mut dev = FakeUnit::new();
+        dev.send(msg::TRACK_CHANGED, flags::EVENT, 0, payload);
+        let mut s = Session::new(dev);
+        let mut events = Vec::new();
+        for _ in 0..40 {
+            events.extend(s.events().unwrap());
+        }
+        let [Event::Track { state: Some(t) }] = &events[..] else { panic!("{events:?}") };
+        assert_eq!((t.path.as_str(), t.playing, t.place, t.length, t.tempo), ("Rock/Song.mp3", 2, 83.5, 325.0, 80));
+        assert_eq!((t.own_tempo, t.sure, t.scan, t.beats_per_bar, t.snap), (124.56, true, 100, 4, true));
+        assert!((t.first_beat - 0.759).abs() < 1e-6);
+        assert_eq!((t.loop_state, t.loop_from, t.loop_to, t.gaps), (2, 50.7, 63.2, 0));
+        assert_eq!((t.file_kind, t.file_rate, t.channels, t.kbps), (2, 44100, 2, 128));
+        assert_eq!((t.tracks, t.reading, t.list_number), (59, false, 7));
+        // What the window gets: "loop" is the protocol's name for the loop's state.
+        let json = serde_json::to_value(t).unwrap();
+        assert_eq!((json["loop"].as_u64(), json["ownTempo"].as_f64().map(|v| v as f32), json["listNumber"].as_u64()), (Some(2), Some(124.56), Some(7)));
+    }
+
+    #[test]
+    fn track_state_with_fields_added_later_and_too_short() {
+        let mut s = greeted(FakeUnit::with_tracks());
+        // The fake appends a field this app does not know.
+        let t = s.track_state().unwrap().unwrap();
+        assert_eq!((t.path.as_str(), t.playing, t.scan, t.tracks, t.list_number), ("", 0, -1, 8, 3));
+        // A state cut short is not taken for one.
+        let short = Frame { msg_type: msg::TRACK_STATE, flags: flags::REPLY, sequence: 1, payload: hex("0d00526f636b2f536f6e672e6d70330200") };
+        assert!(matches!(track_reply(&short), Err(SessionError::Malformed { request: msg::TRACK_STATE, problem: WireError::TooShort })));
+    }
+
+    #[test]
+    fn older_firmware_has_no_player() {
+        let mut s = greeted(FakeUnit::new());
+        assert_eq!(s.track_state().unwrap(), None);
+        // Any other refusal is not "older firmware".
+        let mut s = Session::new(FakeUnit::with_tracks());
+        assert!(matches!(s.track_state(), Err(SessionError::Device { code: ErrorCode::BadPayload, .. })));
+    }
+
+    #[test]
+    fn track_list_is_fetched_in_pieces() {
+        let mut s = greeted(FakeUnit::with_tracks());
+        let rows = s.track_list("Rock").unwrap();
+        assert_eq!(rows.len(), 8);
+        assert_eq!(rows[0], TrackRow { name: "Live".into(), folder: true, rows: 12 });
+        assert_eq!(rows[7], TrackRow { name: "Zebra.wav".into(), folder: false, rows: 0 });
+        // Three rows fit in one of the fake's replies: asked from row 0, 3 and 6.
+        let asked = s.io.requests(msg::TRACK_LIST);
+        assert_eq!(asked, [hex("0400526f636b0000"), hex("0400526f636b0300"), hex("0400526f636b0600")]);
+        // One reply is enough when all fit, and an empty folder ends at once.
+        s.io.log.clear();
+        s.io.page = 100;
+        assert_eq!(s.track_list("Rock").unwrap().len(), 8);
+        s.io.rows.clear();
+        assert!(s.track_list("Rock").unwrap().is_empty());
+        assert_eq!(s.io.requests(msg::TRACK_LIST).len(), 2);
+        assert!(matches!(s.track_list("Nowhere"), Err(SessionError::Device { code: ErrorCode::NotFound, .. })));
+    }
+
+    #[test]
+    fn track_list_and_find_replies_as_in_the_shared_examples() {
+        let mut rows: Vec<TrackRow> = Vec::new();
+        let payload = hex("03000000030004004c697665010c000900496e74726f2e7761760000000a00536f6e675f322e6d7033000000");
+        let mut r = Reader::new(&payload);
+        let (total, first) = (r.u16().unwrap(), r.u16().unwrap());
+        let page = (0..r.u16().unwrap()).map(|_| TrackRow { name: r.str().unwrap(), folder: r.bool().unwrap(), rows: r.u16().unwrap() }).collect();
+        r.done().unwrap();
+        assert!(!take_page(&mut rows, total, first, page).unwrap());
+        assert_eq!(rows.iter().map(|r| (r.name.as_str(), r.folder, r.rows)).collect::<Vec<_>>(), [("Live", true, 12), ("Intro.wav", false, 0), ("Song_2.mp3", false, 0)]);
+        // A reply that starts after the rows the app has is refused; one that starts earlier replaces them.
+        assert!(take_page(&mut rows, 9, 5, Vec::new()).is_err());
+        assert!(take_page(&mut rows, 9, 1, vec![TrackRow { name: "x".into(), folder: false, rows: 0 }]).unwrap());
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn track_find_is_fetched_in_pieces() {
+        let mut s = greeted(FakeUnit::with_tracks());
+        let (hits, more) = s.track_find("song").unwrap();
+        assert_eq!(hits, ["Rock/Song_2.mp3", "Rock/Song 3.mp3", "Rock/Song 4.mp3"]);
+        assert!(more);
+        s.io.page = 2;
+        assert_eq!(s.track_find("song").unwrap().0.len(), 3);
+        assert_eq!(s.io.requests(msg::TRACK_FIND), [hex("0400736f6e670000"), hex("0400736f6e670000"), hex("0400736f6e670200")]);
+        assert_eq!(s.track_find("nothing").unwrap(), (Vec::new(), true));
+    }
+
+    #[test]
+    fn track_open_and_commands() {
+        use namforge_link::track_cmd;
+        let mut s = greeted(FakeUnit::with_tracks());
+        assert!(matches!(s.track_command(track_cmd::PLAY, 0.0, 0.0, 0.0), Err(SessionError::Device { code: ErrorCode::NotFound, .. })));
+        assert!(matches!(s.track_open("Rock/Gone.mp3"), Err(SessionError::Device { code: ErrorCode::NotFound, .. })));
+        let t = s.track_open("Rock/Song.mp3").unwrap();
+        assert_eq!((t.path.as_str(), t.playing, t.length), ("Rock/Song.mp3", 1, 200.0));
+        assert_eq!(s.track_command(track_cmd::SEEK, 83.5, 0.0, 0.0).unwrap().place, 83.5);
+        assert_eq!(s.track_command(track_cmd::TEMPO, 80.0, 0.0, 0.0).unwrap().tempo, 80);
+        s.track_command(track_cmd::LOOP_BARS, 33.0, 1.0, 8.0).unwrap();
+        s.track_command(track_cmd::LOOP_SECTION, 50.7, 63.2, 0.0).unwrap();
+        assert!(matches!(s.track_command(99, 0.0, 0.0, 0.0), Err(SessionError::Device { code: ErrorCode::BadPayload, .. })));
+        assert_eq!(s.track_open("").unwrap().playing, 0);
+        assert_eq!(s.io.requests(msg::TRACK_OPEN), [hex("0d00526f636b2f476f6e652e6d7033"), hex("0d00526f636b2f536f6e672e6d7033"), hex("0000")]);
+        let sent = s.io.requests(msg::TRACK_COMMAND);
+        assert_eq!(sent[0], hex("01000000000000000000000000"));
+        assert_eq!(sent[1], hex("040000a7420000000000000000"));
+        assert_eq!(sent[2], hex("050000a0420000000000000000"));
+        assert_eq!(sent[3], hex("12000004420000803f00000041"), "the shared example");
+        assert_eq!(sent[4], hex("0ecdcc4a42cdcc7c4200000000"));
+    }
+
+    #[test]
+    fn rename_new_folder_and_delete_folder() {
+        let mut s = greeted(FakeUnit::with_tracks());
+        s.rename("/TRACKS/Rock/Song.mp3", "/TRACKS/Slow/Song.mp3").unwrap();
+        s.folder_new("/TRACKS/Rock/Live").unwrap();
+        assert_eq!(s.folder_delete("/TRACKS/Rock").unwrap(), 12);
+        assert_eq!(s.io.requests(msg::FILE_RENAME), [hex("15002f545241434b532f526f636b2f536f6e672e6d703315002f545241434b532f536c6f772f536f6e672e6d7033")], "the shared example");
+        assert_eq!(s.io.requests(msg::FOLDER_NEW), [hex("11002f545241434b532f526f636b2f4c697665")]);
+        assert_eq!(s.io.requests(msg::FOLDER_DELETE), [hex("0c002f545241434b532f526f636b")]);
+        // Older firmware refuses them; that is an answer, not a lost connection.
+        let mut s = greeted(FakeUnit::new());
+        assert!(matches!(s.folder_new("/TRACKS/Rock"), Err(SessionError::Device { code: ErrorCode::UnknownMessage, .. })));
+    }
+
+    #[test]
+    fn an_upload_says_hello_again_when_the_unit_dropped_the_session() {
+        let data: Vec<u8> = (0..40u8).collect();
+        let mut dev = FakeUnit::with_tracks();
+        dev.forget_at = Some(16);
+        let mut s = greeted(dev);
+        // Without the retry the refusal comes back as it is.
+        match s.put_file_each("/TRACKS/Rock/a.mp3", &data, |_, _| {}) {
+            Err(SessionError::Device { message, .. }) => assert_eq!(message, NO_SESSION),
+            other => panic!("{other:?}"),
+        }
+        assert!(s.io.files.is_empty());
+
+        s.hello("fake").unwrap();
+        s.io.forget_at = Some(16);
+        s.io.log.clear();
+        s.io.event_param(1, 44);
+        let (mut progress, mut seen) = (Vec::new(), Vec::new());
+        s.put_file_again("/TRACKS/Rock/a.mp3", &data, |s, sent| {
+            progress.push(sent);
+            seen.extend(s.live_events());
+        })
+        .unwrap();
+        assert_eq!(s.io.files, [("/TRACKS/Rock/a.mp3".to_string(), data.clone())]);
+        assert_eq!((s.io.requests(msg::HELLO).len(), s.io.requests(msg::FILE_PUT_BEGIN).len(), s.io.requests(msg::FILE_PUT_END).len()), (1, 2, 1));
+        // Two pieces went before the unit forgot the session; then the whole file again.
+        assert_eq!(progress, [8, 16, 8, 16, 24, 32, 40]);
+        // Events that came in meanwhile can be shown during the upload, once.
+        assert_eq!(seen, [Event::Param { id: 1, value: 44 }]);
+        assert!(s.events().unwrap().is_empty());
+
+        // Only once: a unit that refuses again is reported.
+        s.io.forget_at = Some(0);
+        s.io.greeted = false;
+        assert!(matches!(s.put_file_again("/TRACKS/Rock/b.mp3", &data, |_, _| {}), Err(SessionError::Device { .. })));
+        assert_eq!(s.io.files.len(), 1);
     }
 }

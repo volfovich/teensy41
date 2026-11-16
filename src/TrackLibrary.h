@@ -113,3 +113,29 @@ void printTracks();
 bool trackShellRow(int n);
 void trackShellUp();                    // to the folder above, and shows it
 void trackShellFind(const char* text);  // searches all folders, and shows the hits
+
+// ---- For the desktop app's link (AppLink.cpp) ----
+// The open track's path below /TRACKS ("Rock/Song.mp3"); "" if none.
+const char* trackOpenPath();
+// 0 no track, 1 stopped, 2 playing, 3 paused.
+int trackState();
+// The first beat, seconds (it counts while trackBpm() is above 0), and whether loop points
+// go to the nearest beat.
+float trackFirstBeat();
+bool trackSnapOn();
+// The loop's marked start, seconds (while trackLoopStartMarked()).
+float trackLoopStartMark();
+// Blocks the queue could not fill, since start.
+uint32_t trackGaps();
+// The open file: 0 none, 1 WAV, 2 MP3; its sample rate, channels and kbit/s (0 for a WAV).
+int trackFileKind();
+uint32_t trackFileRate();
+int trackFileChannels();
+int trackFileKbps();
+// Goes up each time the list is started anew (scanTracks()).
+uint32_t trackListNumber();
+// Closes the open track if it is this file or lies in this folder (a path below /TRACKS,
+// whatever the case): call before the file or folder is removed, replaced or moved.
+void trackLetGo(const char* below);
+// Files below /TRACKS were changed: the list is read anew (the open track stays open).
+void trackFilesChanged();

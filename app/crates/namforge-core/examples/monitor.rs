@@ -39,7 +39,27 @@ fn main() {
     while Instant::now() < end {
         // "send <file on the Mac>", "load-model <path>", "load-ir <path>", "delete <path on the card>".
         if let (Some(action), Some(arg), Some(at)) = (args.get(1), args.get(2), preset_at) {
-            if Instant::now() >= at && action != "preset" {
+            if Instant::now() >= at && action == "track" {
+                // "track list [folder]", "track find <text>", "track open <path below /TRACKS>",
+                // "track cmd <number> [a] [b] [c]" (PROTOCOL.md 4.8), "track send <file> [folder]",
+                // "track rename <from> <to>", "track mkdir <path>", "track rmdir <path>",
+                // "track delete <path>".
+                let text = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+                let number = |i: usize| args.get(i).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+                match arg.as_str() {
+                    "list" => device.track_list(text(3)),
+                    "find" => device.track_find(text(3)),
+                    "open" => device.track_open(text(3)),
+                    "cmd" => device.track_command(number(3) as u8, number(4), number(5), number(6)),
+                    "send" => device.send_tracks(vec![text(3).into()], text(4)),
+                    "rename" => device.track_rename(text(3), text(4)),
+                    "mkdir" => device.track_folder_new(text(3)),
+                    "rmdir" => device.track_folder_delete(text(3)),
+                    "delete" => device.track_delete(text(3)),
+                    other => println!("unknown track action {other}"),
+                }
+                preset_at = None;
+            } else if Instant::now() >= at && action != "preset" {
                 match action.as_str() {
                     "send" => device.send_file(arg),
                     "load-model" => device.load_model(arg),
@@ -157,9 +177,29 @@ fn main() {
                 Some(c) => println!("card: {:.1} GB free of {:.1} GB", c.free_kb as f64 / 1048576.0, c.total_kb as f64 / 1048576.0),
                 None => println!("card: none"),
             },
-            Event::Transfer { name, sent, total, done, error } => {
+            Event::Transfer { name, sent, total, done, error, index, count, .. } => {
                 if done || sent == 0 {
-                    println!("transfer {name}: {sent} of {total} bytes{}{}", if done { ", done" } else { "" }, if error.is_empty() { String::new() } else { format!(", {error}") })
+                    println!("transfer {index}/{count} {name}: {sent} of {total} bytes{}{}", if done { ", done" } else { "" }, if error.is_empty() { String::new() } else { format!(", {error}") })
+                }
+            }
+            Event::Track { state: None } => println!("track: this firmware has no backing-track player"),
+            Event::Track { state: Some(t) } => println!(
+                "track: {:?} {} at {:.1} of {:.1} s, tempo {} %, own {:.2} BPM{}, scan {} %, loop {} ({:.2} to {:.2}), {} gaps; {} tracks{}, list {}",
+                t.path,
+                ["none", "stopped", "playing", "paused"].get(t.playing as usize).unwrap_or(&"?"),
+                t.place, t.length, t.tempo, t.own_tempo, if t.sure { "" } else { " (unsure)" }, t.scan, t.loop_state, t.loop_from, t.loop_to, t.gaps,
+                t.tracks, if t.reading { ", being read" } else { "" }, t.list_number
+            ),
+            Event::TrackList { folder, rows } => {
+                println!("tracks in /TRACKS/{folder}: {} rows", rows.len());
+                for r in rows.iter().take(40) {
+                    println!("  {}{}", r.name, if r.folder { format!("/  ({})", r.rows) } else { String::new() });
+                }
+            }
+            Event::TrackFound { text, hits, more } => {
+                println!("found for {text:?}: {}{}", hits.len(), if more { "+" } else { "" });
+                for h in hits.iter().take(40) {
+                    println!("  {h}");
                 }
             }
             Event::Refused { message } => println!("refused: {message}"),

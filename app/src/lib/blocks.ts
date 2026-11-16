@@ -48,8 +48,12 @@ function build(def: BlockDef, find: (ref: string) => Setting | undefined): Block
   };
 }
 
-/** The chain's blocks in order, the drums lane, a block for settings no block names, and the master volume. */
-export function buildBlocks(settings: Setting[]): { chain: Block[]; lane: Block; other: Block | null; master: Setting | null } {
+/**
+ * The chain's blocks in order, the drums lane, a block for settings no block names, and the master volume.
+ * With `tracks` (the firmware has the backing-track player) the track's volume and its play
+ * switch belong to the player's panel; without, they stay among the other settings.
+ */
+export function buildBlocks(settings: Setting[], tracks = false): { chain: Block[]; lane: Block; other: Block | null; master: Setting | null; trackVolume: Setting | null } {
   const used = new Set<number>();
   const find = (ref: string) => {
     const s = ref.startsWith("@") ? settings.find((x) => x.name === ref.slice(1)) : settings.find((x) => x.key === ref);
@@ -59,11 +63,13 @@ export function buildBlocks(settings: Setting[]): { chain: Block[]; lane: Block;
   const chain = (defs.blocks as BlockDef[]).map((d) => build(d, find));
   const lane = build(defs.lane as BlockDef, find);
   const master = find(defs.master) ?? null;
+  const trackVolume = (tracks && find("track vol")) || null;
+  if (tracks) find("@Track");
   const rest = settings.filter((s) => !used.has(s.id));
   const other: Block | null = rest.length
     ? { def: { id: "other", name: "Other", short: "OTHER", colour: "#aab2bf", sections: [] }, on: null, summary: null, sections: [{ title: "", settings: rest }] }
     : null;
-  return { chain, lane, other, master };
+  return { chain, lane, other, master, trackVolume };
 }
 
 /** Whether the block shows the setting now: some apply only to certain types or modes (the definition's `only`). */

@@ -1,7 +1,8 @@
 // AppLink.cpp - see AppLink.h. Milestones A1 to A5 of docs/design/APP_PLAN.md: the session, the settings table,
 // the state, setting a value, change events, the meter frames, presets, the model and IR
 // lists, sending files to the SD card, (A5) the tuner and the drums' names, and reading
-// files and folders back for backups.
+// files and folders back for backups. 16 Nov 2026: the backing track (its lists, opening,
+// commands and state) and renaming and removing below /TRACKS.
 #include "AppLink.h"
 
 #include <Arduino.h>
@@ -17,9 +18,11 @@
 #include "IRLibrary.h"
 #include "Params.h"
 #include "PresetLibrary.h"
+#include "TrackLibrary.h"
 #include "Tuner.h"
 #include <dsp/drums/DrumKit.h>
 #include <dsp/drums/DrumMachine.h>
+#include <dsp/player/TrackIndex.h>
 #include "config.h"
 
 using applink::Err;
@@ -140,6 +143,8 @@ static uint32_t schemaHash() {
   return applink::crc32(w.data(), w.size());
 }
 
+static void rememberTrack();
+
 static void onHello(const applink::FrameHeader& h, Reader& r) {
   const uint16_t appVersion = r.u16();
   char appName[64];
@@ -167,6 +172,7 @@ static void onHello(const applink::FrameHeader& h, Reader& r) {
   for (int id = 0; id < kValueCount; id++) g_sentValue[id] = (int16_t)getParam(id);
   rememberFiles();
   g_sentPresets = presetListHash();
+  rememberTrack();
   Serial.printf("App connected: %s\n", appName);
 }
 
@@ -467,6 +473,8 @@ static void onPutEnd(const applink::FrameHeader& h) {
     SD.remove(g_putTmp);
     return replyError(h, Err::kChecksum, "The file arrived damaged; nothing was saved");
   }
+  const bool track = inTracks(g_putPath);
+  if (track) trackLetGo(g_putPath + 8);  // an open track that is being replaced
   if (SD.exists(g_putPath)) SD.remove(g_putPath);
   if (!SD.rename(g_putTmp, g_putPath)) {
     SD.remove(g_putTmp);
@@ -474,7 +482,8 @@ static void onPutEnd(const applink::FrameHeader& h) {
   }
   if (isIn(g_putPath, "/AMP/")) ampForgetCache(g_putPath);
   Serial.printf("Received %s (%lu bytes)\n", g_putPath, (unsigned long)g_putSize);
-  rescanCard();
+  if (track) trackFilesChanged();  // only the list of tracks: the card is not mounted anew
+  else rescanCard();
   replyEmpty(h);
 }
 
@@ -485,11 +494,137 @@ static void onFileDelete(const applink::FrameHeader& h, Reader& r) {
   if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
   if (!allowedPath(path)) return replyError(h, Err::kBadPath, "Only files in /AMP, /IR, /PRESETS, /DRUMS or /TRACKS can be deleted");
   if (!SD.exists(path)) return replyError(h, Err::kNotFound, "No such file");
+  const bool track = inTracks(path);
+  if (track) {
+    File f = SD.open(path, FILE_READ);
+    const bool folder = f && f.isDirectory();
+    f.close();
+    if (folder) return replyError(h, Err::kBadPath, "That is a folder");
+    trackLetGo(path + 8);
+  }
   if (!SD.remove(path)) return replyError(h, Err::kIo, "The file could not be deleted");
   if (isIn(path, "/AMP/")) ampForgetCache(path);
   Serial.printf("Deleted %s\n", path);
-  rescanCard();
+  if (track) {
+    char info[kFilePathMax + 8];  // what the unit kept about the track goes with it
+    snprintf(info, sizeof(info), "%s.trk", path);
+    SD.remove(info);
+    trackFilesChanged();
+  } else {
+    rescanCard();
+  }
   replyEmpty(h);
+}
+
+// ---- Renaming, and folders: below /TRACKS only (PROTOCOL.md 4.5)
+
+static bool isFolder(const char* path) {
+  File f = SD.open(path, FILE_READ);
+  const bool folder = f && f.isDirectory();
+  f.close();
+  return folder;
+}
+
+// Makes the folder a path's last part lies in, if it is missing.
+static bool makeParent(const char* path) {
+  char dir[kFilePathMax];
+  const int n = (int)(strrchr(path, '/') - path);
+  snprintf(dir, sizeof(dir), "%.*s", n, path);
+  return n <= 0 || SD.exists(dir) || SD.mkdir(dir);
+}
+
+static void onFileRename(const applink::FrameHeader& h, Reader& r) {
+  char from[kFilePathMax], to[kFilePathMax];
+  r.str(from, sizeof(from));
+  r.str(to, sizeof(to));
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FILE_RENAME");
+  if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
+  const size_t n = strlen(from);
+  if (!allowedPath(from) || !allowedPath(to) || !inTracks(from) || !inTracks(to))
+    return replyError(h, Err::kBadPath, "Only tracks and folders below /TRACKS can be renamed or moved");
+  if (!strncasecmp(to, from, n) && to[n] == '/') return replyError(h, Err::kBadPath, "A folder cannot be moved into itself");
+  if (!SD.exists(from)) return replyError(h, Err::kNotFound, "No such track or folder");
+  // The same name in other letters (the card does not tell upper from lower case) is a
+  // new name; anything else that exists is in the way.
+  if (strcasecmp(from, to) && SD.exists(to)) return replyError(h, Err::kBadPayload, "There is already something with that name");
+  if (!strcmp(from, to)) return replyEmpty(h);
+  const bool folder = isFolder(from);
+  trackLetGo(from + 8);
+  if (!makeParent(to) || !SD.rename(from, to)) return replyError(h, Err::kIo, "It could not be renamed");
+  if (!folder) {
+    char infoFrom[kFilePathMax + 8], infoTo[kFilePathMax + 8];
+    snprintf(infoFrom, sizeof(infoFrom), "%s.trk", from);
+    snprintf(infoTo, sizeof(infoTo), "%s.trk", to);
+    if (SD.exists(infoFrom)) {
+      if (strcasecmp(infoFrom, infoTo)) SD.remove(infoTo);
+      SD.rename(infoFrom, infoTo);
+    }
+  }
+  Serial.printf("Renamed %s to %s\n", from, to);
+  trackFilesChanged();
+  replyEmpty(h);
+}
+
+static void onFolderNew(const applink::FrameHeader& h, Reader& r) {
+  char path[kFilePathMax];
+  r.str(path, sizeof(path));
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FOLDER_NEW");
+  if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
+  if (!allowedPath(path) || !inTracks(path)) return replyError(h, Err::kBadPath, "Folders can only be made below /TRACKS");
+  if (SD.exists(path)) {
+    if (!isFolder(path)) return replyError(h, Err::kBadPayload, "There is a file with that name");
+    return replyEmpty(h);
+  }
+  if (!SD.mkdir(path)) return replyError(h, Err::kIo, "The folder could not be made");
+  Serial.printf("New folder %s\n", path);
+  trackFilesChanged();
+  replyEmpty(h);
+}
+
+// Removes a folder with everything in it. The folder is opened anew for each entry (the
+// first that is left), since entries go while it is read. `path` has room for the names
+// below it. False as soon as something cannot be removed.
+static bool removeTree(char* path, size_t cap, uint16_t* files, int depth) {
+  for (;;) {
+    File d = SD.open(path, FILE_READ);
+    if (!d) return false;
+    File e = d.openNextFile();
+    if (!e) {
+      d.close();
+      break;
+    }
+    const size_t len = strlen(path);
+    const bool folder = e.isDirectory();
+    const char* name = e.name();
+    const bool counted = !folder && name[0] != '.' && strcasecmp(name + (strlen(name) > 4 ? strlen(name) - 4 : 0), ".trk");
+    const int n = snprintf(path + len, cap - len, "/%s", name);
+    e.close();
+    d.close();
+    bool gone = false;
+    if (n > 0 && (size_t)n < cap - len) gone = folder ? (depth < 12 && removeTree(path, cap, files, depth + 1)) : SD.remove(path);
+    path[len] = 0;
+    if (!gone) return false;
+    if (counted) (*files)++;
+  }
+  return SD.rmdir(path);
+}
+
+static void onFolderDelete(const applink::FrameHeader& h, Reader& r) {
+  EXTMEM static char path[kFilePathMax + 2 * dsp::TrackIndex::kNameMax];  // with room for the names below it
+  r.str(path, kFilePathMax);
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad FOLDER_DELETE");
+  if (!irSdOk()) return replyError(h, Err::kNoCard, "No SD card");
+  if (!allowedPath(path) || !inTracks(path)) return replyError(h, Err::kBadPath, "Only folders below /TRACKS can be removed");
+  if (!SD.exists(path) || !isFolder(path)) return replyError(h, Err::kNotFound, "No such folder");
+  trackLetGo(path + 8);
+  uint16_t files = 0;
+  const bool ok = removeTree(path, sizeof(path), &files, 0);
+  Serial.printf("Removed folder %s (%u files)%s\n", path, files, ok ? "" : ": not all of it");
+  trackFilesChanged();
+  if (!ok) return replyError(h, Err::kIo, "Not everything in the folder could be removed");
+  Writer w(g_txPayload, kTxPayload);
+  w.u16(files);
+  reply(h, w);
 }
 
 // CARD_INFO: the card's size and free space. Counting the free space reads the card's whole
@@ -605,6 +740,203 @@ static void onRescan(const applink::FrameHeader& h) {
   reply(h, w);
 }
 
+// ---- The backing track (PROTOCOL.md 4.8)
+
+// The state. Without the place and the gaps (which change all the time while a track
+// plays) it is the "shape" whose change is reported at once.
+static void writeTrackState(Writer& w, bool withPlace) {
+  const bool open = trackOpen();
+  float from = 0.0f, to = 0.0f;
+  uint8_t loop = 0;
+  if (open && trackLoopPoints(&from, &to)) {
+    loop = trackPlayerLooping() ? 2 : 1;
+  } else if (open && trackLoopStartMarked()) {
+    loop = 3;
+    from = trackLoopStartMark();
+    to = 0.0f;
+  }
+  w.str(trackOpenPath());
+  w.u8((uint8_t)trackState());
+  w.f32(open && withPlace ? trackPosition() : 0.0f);
+  w.f32(open ? trackLength() : 0.0f);
+  w.u16((uint16_t)trackTempoPercent());
+  w.f32(trackBpm());
+  w.u8(open && trackBpm() > 0.0f && trackBpmSure());
+  w.i16((int16_t)trackScanPercent());
+  w.f32(trackBpm() > 0.0f ? trackFirstBeat() : 0.0f);
+  w.u8((uint8_t)trackBeatsInBar());
+  w.u8(trackSnapOn());
+  w.u8(loop);
+  w.f32(from);
+  w.f32(to);
+  w.u32(withPlace ? trackGaps() : 0);
+  w.u8((uint8_t)trackFileKind());
+  w.u32(trackFileRate());
+  w.u8((uint8_t)trackFileChannels());
+  w.u16((uint16_t)trackFileKbps());
+  w.u16((uint16_t)trackIndex().files());
+  w.u8(trackReadingCard());
+  w.u32(trackListNumber());
+}
+
+// What the app was last told about the track.
+static uint32_t g_sentTrackShape = 0, g_sentTrackAll = 0, g_sentTrackMs = 0;
+
+static uint32_t trackStateCrc(bool withPlace) {
+  uint8_t buf[dsp::TrackIndex::kPathMax + 80];
+  Writer w(buf, sizeof(buf));
+  writeTrackState(w, withPlace);
+  return applink::crc32(w.data(), w.size());
+}
+
+static void rememberTrack() {
+  g_sentTrackShape = trackStateCrc(false);
+  g_sentTrackAll = trackStateCrc(true);
+  g_sentTrackMs = millis();
+}
+
+static void replyTrackState(const applink::FrameHeader& h) {
+  Writer w(g_txPayload, kTxPayload);
+  writeTrackState(w, true);
+  rememberTrack();  // the reply carries it: no event for the app's own change
+  reply(h, w);
+}
+
+// A change is reported within a pass or two; the place while it moves, four times a second.
+static void reportTrack(uint32_t now) {
+  const uint32_t shape = trackStateCrc(false);
+  if (shape == g_sentTrackShape) {
+    if (now - g_sentTrackMs < 250 || trackStateCrc(true) == g_sentTrackAll) return;
+  }
+  Writer w(g_txPayload, kTxPayload);
+  writeTrackState(w, true);
+  rememberTrack();
+  sendFrame(Msg::kTrackChanged, applink::kFlagEvent, 0, w);
+}
+
+// TRACK_LIST: the rows of one folder of the unit's list, from a row on, as many as fit.
+static void onTrackList(const applink::FrameHeader& h, Reader& r) {
+  char folder[dsp::TrackIndex::kPathMax];
+  r.str(folder, sizeof(folder));
+  const int first = r.u16();
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad TRACK_LIST");
+  const dsp::TrackIndex& ix = trackIndex();
+  const int id = folder[0] ? ix.findPath(folder) : 0;
+  if (id < 0 || !ix.isFolder(id)) return replyError(h, Err::kNotFound, "No such folder");
+  const int rows = ix.rows(id), from = first < rows ? first : rows;
+  Writer w(g_txPayload, kTxPayload);
+  w.u16((uint16_t)rows);
+  w.u16((uint16_t)from);
+  const size_t countAt = w.size();
+  w.u16(0);
+  uint16_t count = 0;
+  for (int i = from; i < rows; i++) {
+    const int row = ix.row(id, i);
+    const char* name = ix.name(row);
+    if (w.size() + strlen(name) + 8 > kTxPayload) break;
+    w.str(name);
+    w.u8(ix.isFolder(row));
+    w.u16((uint16_t)ix.rows(row));
+    count++;
+  }
+  g_txPayload[countAt] = (uint8_t)count;
+  g_txPayload[countAt + 1] = (uint8_t)(count >> 8);
+  reply(h, w);
+}
+
+// TRACK_FIND: the search over all folders, as paths.
+static void onTrackFind(const applink::FrameHeader& h, Reader& r) {
+  EXTMEM static uint16_t hits[dsp::TrackBrowser::kMaxHits];
+  char text[64], path[dsp::TrackIndex::kPathMax];
+  r.str(text, sizeof(text));
+  const int first = r.u16();
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad TRACK_FIND");
+  const dsp::TrackIndex& ix = trackIndex();
+  bool more = false;
+  const int n = ix.search(text, hits, dsp::TrackBrowser::kMaxHits, &more), from = first < n ? first : n;
+  Writer w(g_txPayload, kTxPayload);
+  w.u16((uint16_t)n);
+  w.u8(more);
+  w.u16((uint16_t)from);
+  const size_t countAt = w.size();
+  w.u16(0);
+  uint16_t count = 0;
+  for (int i = from; i < n; i++) {
+    if (!ix.pathOf(hits[i], path, sizeof(path))) path[0] = 0;
+    if (w.size() + strlen(path) + 8 > kTxPayload) break;
+    w.str(path);
+    count++;
+  }
+  g_txPayload[countAt] = (uint8_t)count;
+  g_txPayload[countAt + 1] = (uint8_t)(count >> 8);
+  reply(h, w);
+}
+
+static void onTrackOpen(const applink::FrameHeader& h, Reader& r) {
+  char path[dsp::TrackIndex::kPathMax];
+  r.str(path, sizeof(path));
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad TRACK_OPEN");
+  if (!path[0]) {
+    selectTrack(-1);
+    return replyTrackState(h);
+  }
+  const int id = trackIndex().findPath(path);
+  if (id <= 0 || trackIndex().isFolder(id)) return replyError(h, Err::kNotFound, "No such track");
+  if (!selectTrack(id)) return replyError(h, Err::kIo, "The track could not be opened (not a WAV or MP3 the unit plays?)");
+  replyTrackState(h);
+}
+
+static void onTrackCommand(const applink::FrameHeader& h, Reader& r) {
+  const uint8_t command = r.u8();
+  const float a = r.f32(), b = r.f32(), c = r.f32();
+  if (!r.done()) return replyError(h, Err::kBadPayload, "Bad TRACK_COMMAND");
+  if (!trackOpen()) return replyError(h, Err::kNotFound, "No track is open");
+  const char* refused = nullptr;
+  switch (command) {
+    case 1: trackPlay(); break;
+    case 2: trackPause(); break;
+    case 3: trackStop(); break;
+    case 4: trackSeek(a); break;
+    case 5:
+      if (!(a >= 50.0f && a <= 150.0f)) refused = "The tempo is 50 to 150 percent";
+      else trackTempo((int)lroundf(a));
+      break;
+    case 6:
+      if (!(a >= 30.0f && a <= 300.0f)) refused = "A tempo is 30 to 300 BPM";
+      else trackSetBpm(a);
+      break;
+    case 7:
+    case 8:
+      if (!(trackBpm() > 0.0f)) refused = "The track's tempo is not known";
+      else trackScaleBpm(command == 8);
+      break;
+    case 9:
+      if (!(a >= 1.0f && a <= 16.0f)) refused = "A bar has 1 to 16 beats";
+      else trackBeatsPerBar((int)lroundf(a));
+      break;
+    case 10: trackSnap(a != 0.0f); break;
+    case 11: trackRescan(); break;
+    case 12: trackLoopMark(false); break;
+    case 13: trackLoopMark(true); break;
+    case 14:
+      if (!trackLoop(a, b)) refused = "No such section: it must lie in the track and be 0.25 s or longer";
+      break;
+    case 15: trackLoopOff(); break;
+    case 16:
+      if (!trackLoopOn()) refused = "The track has no loop points";
+      break;
+    case 17: trackLoopClear(); break;
+    case 18:
+      if (!(a >= 1.0f && a < 30000.0f && b >= 1.0f && b <= 16.0f && c >= 1.0f && c <= 1000.0f) ||
+          !trackLoopFrom((int)lroundf(a), (int)lroundf(b), (int)lroundf(c)))
+        refused = "No such bars in the track (its tempo must be known)";
+      break;
+    default: refused = "No such track command"; break;
+  }
+  if (refused) return replyError(h, Err::kBadPayload, refused);
+  replyTrackState(h);
+}
+
 // ---- The tuner (PROTOCOL.md 4.6)
 
 static void onTunerOpen(const applink::FrameHeader& h, Reader& r) {
@@ -692,6 +1024,14 @@ static void handleFrame() {
     case Msg::kFilePutData: onPutData(h); break;
     case Msg::kFilePutEnd: onPutEnd(h); break;
     case Msg::kFileDelete: onFileDelete(h, r); break;
+    case Msg::kFileRename: onFileRename(h, r); break;
+    case Msg::kFolderNew: onFolderNew(h, r); break;
+    case Msg::kFolderDelete: onFolderDelete(h, r); break;
+    case Msg::kTrackList: onTrackList(h, r); break;
+    case Msg::kTrackFind: onTrackFind(h, r); break;
+    case Msg::kTrackOpen: onTrackOpen(h, r); break;
+    case Msg::kTrackCommand: onTrackCommand(h, r); break;
+    case Msg::kTrackState: replyTrackState(h); break;
     case Msg::kRescan: onRescan(h); break;
     case Msg::kDirList: onDirList(h, r); break;
     case Msg::kFileGet: onFileGet(h, r); break;
@@ -703,6 +1043,9 @@ static void handleFrame() {
     case Msg::kPresetDelete: onPreset(h, r); break;
     default: replyError(h, Err::kUnknownMessage, "Not supported by this firmware"); break;
   }
+  // The time a request took (a folder being removed, an MP3 being opened) is not the
+  // app's silence.
+  g_lastFrameMs = millis();
 }
 
 bool appLinkFeed(uint8_t byte) {
@@ -738,6 +1081,7 @@ static void reportChanges() {
     Writer w(g_txPayload, kTxPayload);
     sendFrame(Msg::kPresetsChanged, applink::kFlagEvent, 0, w);
   }
+  reportTrack(millis());
 }
 
 void serviceAppLink() {

@@ -52,6 +52,18 @@ CASES = [
     ("utf-8 string", 0x60, 0x04, 0, string("Écho – 7 弦")),
     ("300 pattern bytes", 0x41, 0x00, 8, pattern(300)),
     ("4096 pattern bytes", 0x41, 0x00, 9, pattern(4096)),
+    # The backing track (PROTOCOL.md 4.8) and the folders below /TRACKS (4.5).
+    ("track list request", 0x70, 0x00, 10, string("Rock/Live") + struct.pack("<H", 40)),
+    ("track list reply", 0x70, 0x01, 10,
+     struct.pack("<HHH", 3, 0, 3) + string("Live") + struct.pack("<BH", 1, 12) + string("Intro.wav") + struct.pack("<BH", 0, 0)
+     + string("Song_2.mp3") + struct.pack("<BH", 0, 0)),
+    ("track find reply", 0x71, 0x01, 11, struct.pack("<HBHH", 2, 0, 0, 2) + string("Iron Maiden/Aces High.mp3") + string("Rock/Iron man.mp3")),
+    ("track command: loop in bars", 0x73, 0x00, 12, struct.pack("<Bfff", 18, 33.0, 1.0, 8.0)),
+    ("track changed event", 0x75, 0x04, 0,
+     string("Rock/Song.mp3") + struct.pack("<BffHfBhfBBBffIBIBHHBI", 2, 83.5, 325.0, 80, 124.56, 1, 100, 0.759, 4, 1, 2, 50.7, 63.2,
+                                           0, 2, 44100, 2, 128, 59, 0, 7)),
+    ("rename", 0x46, 0x00, 13, string("/TRACKS/Rock/Song.mp3") + string("/TRACKS/Slow/Song.mp3")),
+    ("folder delete reply", 0x4B, 0x01, 14, struct.pack("<H", 12)),
 ]
 
 

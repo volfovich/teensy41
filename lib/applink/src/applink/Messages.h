@@ -44,6 +44,8 @@ enum class Msg : uint8_t {
     kDirList = 0x47,
     kCardInfo = 0x48,
     kRescan = 0x49,
+    kFolderNew = 0x4A,      // below /TRACKS
+    kFolderDelete = 0x4B,   // below /TRACKS, with everything in it
     // Live data
     kSubscribe = 0x50,
     kMeters = 0x51,         // event
@@ -51,6 +53,13 @@ enum class Msg : uint8_t {
     kTuner = 0x53,          // event
     // Other
     kLog = 0x60,            // event
+    // Backing track
+    kTrackList = 0x70,
+    kTrackFind = 0x71,
+    kTrackOpen = 0x72,
+    kTrackCommand = 0x73,
+    kTrackState = 0x74,
+    kTrackChanged = 0x75,   // event
 };
 
 // The code in an error reply's payload.

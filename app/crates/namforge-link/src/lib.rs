@@ -52,11 +52,48 @@ pub mod msg {
     pub const DIR_LIST: u8 = 0x47;
     pub const CARD_INFO: u8 = 0x48;
     pub const RESCAN: u8 = 0x49;
+    pub const FOLDER_NEW: u8 = 0x4A;
+    pub const FOLDER_DELETE: u8 = 0x4B;
     pub const SUBSCRIBE: u8 = 0x50;
     pub const METERS: u8 = 0x51;
     pub const TUNER_OPEN: u8 = 0x52;
     pub const TUNER: u8 = 0x53;
     pub const LOG: u8 = 0x60;
+    pub const TRACK_LIST: u8 = 0x70;
+    pub const TRACK_FIND: u8 = 0x71;
+    pub const TRACK_OPEN: u8 = 0x72;
+    pub const TRACK_COMMAND: u8 = 0x73;
+    pub const TRACK_STATE: u8 = 0x74;
+    pub const TRACK_CHANGED: u8 = 0x75;
+}
+
+/// The commands of `TRACK_COMMAND` (PROTOCOL.md 4.8).
+pub mod track_cmd {
+    pub const PLAY: u8 = 1;
+    pub const PAUSE: u8 = 2;
+    pub const STOP: u8 = 3;
+    /// a: seconds.
+    pub const SEEK: u8 = 4;
+    /// a: percent of the track's own tempo, 50 to 150.
+    pub const TEMPO: u8 = 5;
+    /// a: BPM, 30 to 300.
+    pub const OWN_TEMPO: u8 = 6;
+    pub const OWN_TEMPO_HALF: u8 = 7;
+    pub const OWN_TEMPO_DOUBLE: u8 = 8;
+    /// a: 1 to 16.
+    pub const BEATS_PER_BAR: u8 = 9;
+    /// a: 1 on, 0 off.
+    pub const SNAP: u8 = 10;
+    pub const SCAN: u8 = 11;
+    pub const LOOP_START: u8 = 12;
+    pub const LOOP_END: u8 = 13;
+    /// a: from, b: to, in seconds.
+    pub const LOOP_SECTION: u8 = 14;
+    pub const LOOP_OFF: u8 = 15;
+    pub const LOOP_ON: u8 = 16;
+    pub const LOOP_FORGET: u8 = 17;
+    /// a: bar, b: beat in it (both from 1), c: bars.
+    pub const LOOP_BARS: u8 = 18;
 }
 
 /// The code in an error reply (PROTOCOL.md, section 5).

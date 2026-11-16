@@ -91,13 +91,63 @@ export interface Job {
   error: string;
 }
 
-/** A file on its way to the unit. `done` with an empty `error` means it arrived. */
+/**
+ * A file on its way to the unit. `done` with an empty `error` means it arrived. `index` of
+ * `count` says which file of a batch it is (from 1), `allSent` of `allTotal` are the batch's bytes.
+ */
 export interface Transfer {
   name: string;
   sent: number;
   total: number;
   done: boolean;
   error: string;
+  index: number;
+  count: number;
+  allSent: number;
+  allTotal: number;
+}
+
+/** The backing-track player's state (protocol/PROTOCOL.md 4.8). Times are seconds in the track's own time. */
+export interface TrackState {
+  /** The open track below /TRACKS ("Rock/Song.mp3"); "" if none. */
+  path: string;
+  /** 0 no track, 1 stopped, 2 playing, 3 paused. */
+  playing: number;
+  place: number;
+  length: number;
+  /** Percent of the track's own tempo. */
+  tempo: number;
+  /** BPM as the scan found it or as set by hand; 0: not known. */
+  ownTempo: number;
+  sure: boolean;
+  /** Percent of the scan for tempo and beats done; 100: done; -1: no track. */
+  scan: number;
+  /** Every beat is at firstBeat + k × 60 ÷ ownTempo. */
+  firstBeat: number;
+  beatsPerBar: number;
+  snap: boolean;
+  /** 0 none, 1 points set and the loop off, 2 looping, 3 the start is marked and waits for its end. */
+  loop: number;
+  loopFrom: number;
+  loopTo: number;
+  gaps: number;
+  /** 0 none, 1 WAV, 2 MP3. */
+  fileKind: number;
+  fileRate: number;
+  channels: number;
+  kbps: number;
+  /** Tracks in the unit's list of the whole tree. */
+  tracks: number;
+  /** The unit is still reading its list from the card. */
+  reading: boolean;
+  listNumber: number;
+}
+
+/** One row of a folder below /TRACKS: a folder (with the number of rows inside it) or a track. */
+export interface TrackRow {
+  name: string;
+  folder: boolean;
+  rows: number;
 }
 
 /** The loaded model's own description and the gains the unit applies. null: the file has no such number. */
@@ -152,6 +202,10 @@ export interface Snapshot {
   modelInfo: ModelInfo | null;
   irInfo: IrInfo | null;
   card: CardSpace | null;
+  /** The backing-track player's state; null: the firmware has no player, and nothing about tracks is shown. */
+  track: TrackState | null;
+  /** The folder below /TRACKS that the Tracks tab shows ("" is /TRACKS itself). */
+  trackList: { folder: string; rows: TrackRow[] };
 }
 
 export type DeviceEvent =
@@ -172,6 +226,9 @@ export type DeviceEvent =
   | { kind: "irInfo"; info: IrInfo | null }
   | { kind: "card"; space: CardSpace | null }
   | ({ kind: "transfer" } & Transfer)
+  | { kind: "track"; state: TrackState | null }
+  | { kind: "trackList"; folder: string; rows: TrackRow[] }
+  | { kind: "trackFound"; text: string; hits: string[]; more: boolean }
   | { kind: "refused"; message: string }
   | { kind: "disconnected"; reason: string };
 

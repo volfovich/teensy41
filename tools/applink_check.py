@@ -46,6 +46,7 @@ class Reader:
     def i16(self): return self.take("h")
     def u32(self): return self.take("I")
     def i32(self): return self.take("i")
+    def f32(self): return self.take("f")
 
     def str(self):
         n = self.u16()
@@ -329,6 +330,108 @@ def main():
         f, _ = link.request(0x47, string("/IR/sub"), wait=5)
         bad += f[1] == 3 and Reader(f[3]).u16() == 5
         check(bad == 5, "hidden, empty and '..' folders below /TRACKS and folders below /IR: error BAD_PATH")
+        # The backing track's own messages (PROTOCOL.md 4.8), with renaming and folders below
+        # /TRACKS (4.5), in a folder of their own that is removed again. The track is not played.
+        def track(f):
+            r = Reader(f[3])
+            s = dict(path=r.str(), playing=r.u8(), place=r.f32(), length=r.f32(), tempo=r.u16(), bpm=r.f32(), sure=r.u8(),
+                     scan=r.i16(), first=r.f32(), beats=r.u8(), snap=r.u8(), loop=r.u8(), a=r.f32(), b=r.f32(), gaps=r.u32(),
+                     kind=r.u8(), rate=r.u32(), channels=r.u8(), kbps=r.u16(), tracks=r.u16(), reading=r.u8(), number=r.u32())
+            s["whole"] = r.done()
+            return s
+
+        def command(n, a=0.0, b=0.0, c=0.0):
+            f, _ = link.request(0x73, struct.pack("<Bfff", n, a, b, c), wait=3)
+            return f
+
+        def list_read():
+            t0 = time.time()
+            while time.time() - t0 < 30:
+                f, _ = link.request(0x74)
+                if f and f[1] == 1 and not track(f)["reading"]:
+                    return track(f)
+                time.sleep(0.2)
+            return None
+
+        def rows(folder):
+            f, _ = link.request(0x70, string(folder) + struct.pack("<H", 0), wait=3)
+            if f[1] != 1:
+                return Reader(f[3]).u16()  # the error's code
+            r = Reader(f[3])
+            total, first = r.u16(), r.u16()
+            got = [(r.str(), r.u8(), r.u16()) for _ in range(r.u16())]
+            return got if r.done() and first == 0 and total == len(got) else None
+
+        f, _ = link.request(0x74)
+        was = track(f)
+        check(f[1] == 1 and was["whole"], "TRACK_STATE: %s" % {k: was[k] for k in ("path", "playing", "tracks", "reading", "number")})
+        if was["playing"] == 2:
+            print("SKIP  backing track: one is playing, and these checks would stop it")
+        else:
+            home, song = "/TRACKS/applink check", "applink check/sub/tone.wav"
+            quiet = b"RIFF" + struct.pack("<I", 36 + 192000) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 48000, 96000, 2, 16) \
+                + b"data" + struct.pack("<I", 192000) + bytes(192000)  # 2 s of silence
+            f, _ = link.request(0x4A, string(home + "/sub"), wait=5)
+            ok = f[1] == 1
+            f, _ = put("/TRACKS/" + song, quiet)
+            now = list_read()
+            check(ok and f[1] == 1 and now and now["number"] > was["number"] and now["tracks"] == was["tracks"] + 1,
+                  "FOLDER_NEW and a track sent into it: the list is read anew and has one track more")
+            check(rows("applink check") == [("sub", 1, 1)] and rows("applink check/sub") == [("tone.wav", 0, 0)] and rows("no such") == 3,
+                  "TRACK_LIST: the folder, the track in it, NOT_FOUND for a folder that is not there")
+            f, _ = link.request(0x71, string("applink tone") + struct.pack("<H", 0), wait=3)
+            r = Reader(f[3])
+            check(f[1] == 1 and (r.u16(), r.u8(), r.u16(), r.u16()) == (1, 0, 0, 1) and r.str() == song and r.done(),
+                  "TRACK_FIND 'applink tone': the one track, by its path")
+            f, _ = link.request(0x72, string(song), wait=6)
+            s = track(f)
+            check(f[1] == 1 and s["whole"] and (s["path"], s["playing"], s["kind"], s["rate"], s["channels"], s["loop"]) == (song, 1, 1, 48000, 1, 0)
+                  and abs(s["length"] - 2.0) < 0.01, "TRACK_OPEN: stopped, 2.0 s, WAV, 48000 Hz, mono")
+            f, _ = link.request(0x72, string("applink check/none.wav"), wait=6)
+            check(f[1] == 3 and Reader(f[3]).u16() == 3, "TRACK_OPEN of a track that is not there: error NOT_FOUND")
+            command(10, 0.0)  # loop points stay where they are set
+            s = track(command(4, 1.0))
+            ok = abs(s["place"] - 1.0) < 0.01
+            s = track(command(14, 0.5, 1.5))
+            ok = ok and s["loop"] == 2 and abs(s["a"] - 0.5) < 0.01 and abs(s["b"] - 1.5) < 0.01
+            ok = ok and track(command(15))["loop"] == 1 and track(command(16))["loop"] == 2 and track(command(17))["loop"] == 0
+            s = track(command(12))
+            ok = ok and s["loop"] == 3 and abs(s["a"] - 1.0) < 0.01
+            command(17)
+            ok = ok and track(command(5, 80.0))["tempo"] == 80 and track(command(5, 100.0))["tempo"] == 100
+            check(ok, "TRACK_COMMAND: seek, loop a section, off, on, forgotten, a marked start, tempo 80 and 100")
+            bad = 0
+            for f in (command(99), command(5, 200.0), command(14, 1.0, 1.1), command(16)):
+                bad += f[1] == 3 and Reader(f[3]).u16() == 2
+            check(bad == 4, "TRACK_COMMAND: an unknown command, tempo 200, a loop of 0.1 s, loop on without points: error BAD_PAYLOAD")
+            link.poll(0.6)
+            link.s.write(b"track seek 0.5\n")
+            events = [track(e) for e in link.poll(1.0) if e[0] == 0x75 and e[1] == 4]
+            check(any(abs(e["place"] - 0.5) < 0.01 for e in events), "'track seek 0.5' typed into the shell arrives as a TRACK_CHANGED event")
+            f, _ = link.request(0x46, string("/TRACKS/" + song) + string(home + "/moved/tone 2.wav"), wait=6)
+            f2, _ = link.request(0x74)
+            now = list_read()
+            check(f[1] == 1 and track(f2)["path"] == "" and rows("applink check/moved") == [("tone 2.wav", 0, 0)] and rows("applink check/sub") == []
+                  and now["tracks"] == was["tracks"] + 1, "FILE_RENAME moves the open track into a new folder: it is closed, the list follows")
+            bad = 0
+            for a, b in (("/IR/x.wav", "/IR/y.wav"), (home, home + "/sub/in itself"), ("/TRACKS/applink check/moved/tone 2.wav", "/IR/tone.wav")):
+                f, _ = link.request(0x46, string(a) + string(b), wait=6)
+                bad += f[1] == 3 and Reader(f[3]).u16() == 5
+            f, _ = link.request(0x46, string(home + "/nothing.wav") + string(home + "/x.wav"), wait=6)
+            bad += f[1] == 3 and Reader(f[3]).u16() == 3
+            f, _ = link.request(0x4B, string("/TRACKS"), wait=15)
+            bad += f[1] == 3 and Reader(f[3]).u16() == 5
+            check(bad == 5, "FILE_RENAME outside /TRACKS, into itself, of nothing; FOLDER_DELETE of /TRACKS: refused")
+            f, _ = command(1), None
+            check(f[1] == 3 and Reader(f[3]).u16() == 3, "TRACK_COMMAND with no track open: error NOT_FOUND")
+            f, _ = link.request(0x4B, string(home), wait=15)
+            removed = Reader(f[3]).u16() if f[1] == 1 else -1
+            now = list_read()
+            check(removed == 1 and rows("applink check") == 3 and now["tracks"] == was["tracks"],
+                  "FOLDER_DELETE: the folder is gone with the track in it, the list is as it was")
+            if was["path"]:
+                f, _ = link.request(0x72, string(was["path"]), wait=6)
+                check(f[1] == 1 and track(f)["path"] == was["path"], "the track that was open before is open again")
         f, _ = put("/IR/applink test.wav", wav)
         link.seq += 1
         link.s.write(frame(0x43, 0, link.seq, string("/IR/applink test.wav")))

@@ -38,6 +38,54 @@ pub fn check(local: &Path, data: &[u8], max_path: usize) -> Result<Checked, Stri
     Ok(Checked { device_path })
 }
 
+/// The longest whole path of a backing track ("/TRACKS/Rock/Song.mp3"), the longest path below
+/// `/TRACKS` and the longest name of a track or folder, in bytes, as the unit takes them.
+pub const TRACK_PATH_MAX: usize = 263;
+pub const TRACK_BELOW_MAX: usize = 255;
+pub const TRACK_NAME_MAX: usize = 127;
+
+fn name_ok(name: &str) -> bool {
+    !name.is_empty() && !name.starts_with('.') && !name.chars().any(|c| c.is_control() || "/\\:".contains(c))
+}
+
+/// The whole path on the card of a track or folder given by its path below `/TRACKS`
+/// ("Rock/Song.mp3" gives "/TRACKS/Rock/Song.mp3"), or why the unit would not take it.
+pub fn track_card_path(below: &str) -> Result<String, String> {
+    if below.is_empty() || !below.split('/').all(|part| name_ok(part) && part != "..") {
+        return Err("That name cannot be used on the unit (no empty names, none starting with a dot, no / \\ or :).".into());
+    }
+    if below.split('/').any(|part| part.len() > TRACK_NAME_MAX) {
+        return Err(format!("A name is too long for the unit (at most {TRACK_NAME_MAX} bytes)."));
+    }
+    let path = format!("/TRACKS/{below}");
+    if below.len() > TRACK_BELOW_MAX || path.len() > TRACK_PATH_MAX {
+        return Err(format!("The path is too long for the unit (at most {TRACK_BELOW_MAX} bytes below /TRACKS)."));
+    }
+    Ok(path)
+}
+
+/// Checks a backing track before it is sent: `folder` is where it goes below `/TRACKS` (""
+/// for `/TRACKS` itself), `size` the file's size. The unit decides when it opens the track
+/// whether it can play it; only the name, the path and the size are looked at here.
+pub fn check_track(local: &Path, folder: &str, size: u64) -> Result<Checked, String> {
+    let name = local.file_name().and_then(|n| n.to_str()).ok_or("The file's name cannot be used on the unit.")?;
+    let ext = local.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if ext != "wav" && ext != "mp3" {
+        return Err("Only .wav and .mp3 files can be sent as backing tracks.".into());
+    }
+    if !name_ok(name) {
+        return Err("The file's name cannot be used on the unit.".into());
+    }
+    if name.len() > TRACK_NAME_MAX {
+        return Err(format!("The file's name is too long for the unit (at most {TRACK_NAME_MAX} bytes)."));
+    }
+    if size > u32::MAX as u64 {
+        return Err("The file is too large to send (4 GB at most).".into());
+    }
+    let below = if folder.is_empty() { name.to_string() } else { format!("{folder}/{name}") };
+    Ok(Checked { device_path: track_card_path(&below)? })
+}
+
 /// A NAM A2 file (a container with a Lite network) or a plain WaveNet file in the Lite shape.
 fn check_model(data: &[u8]) -> Result<(), String> {
     let json: serde_json::Value =
@@ -110,5 +158,31 @@ mod tests {
         assert!(check(Path::new("notes.txt"), b"hello", 95).unwrap_err().contains("Only .nam"));
         assert!(check(Path::new(".hidden.wav"), &wav, 95).is_err());
         assert!(check(Path::new(&format!("{}.wav", "x".repeat(100))), &wav, 95).unwrap_err().contains("too long"));
+    }
+
+    #[test]
+    fn tracks() {
+        let ok = |p: &str, folder: &str| check_track(Path::new(p), folder, 5_000_000).map(|c| c.device_path);
+        assert_eq!(ok("/tmp/Song.MP3", "").unwrap(), "/TRACKS/Song.MP3");
+        assert_eq!(ok("/tmp/Intro take 2.wav", "Rock/Live").unwrap(), "/TRACKS/Rock/Live/Intro take 2.wav");
+        assert!(ok("amp.nam", "").unwrap_err().contains("Only .wav and .mp3"));
+        assert!(ok(".hidden.mp3", "").is_err());
+        assert!(ok("a.mp3", "Rock/.cache").is_err());
+        assert!(ok("a.mp3", "Rock//Live").is_err());
+        assert!(ok("a.mp3", "../AMP").is_err());
+        // A name of 127 bytes goes, one of 128 does not; "é" is two bytes.
+        assert!(ok(&format!("{}.mp3", "x".repeat(123)), "").is_ok());
+        assert!(ok(&format!("{}.mp3", "x".repeat(124)), "").unwrap_err().contains("127"));
+        assert!(ok(&format!("{}é.mp3", "x".repeat(122)), "").is_err());
+        // The path below /TRACKS: 255 bytes at most (the whole path is then 263).
+        let folder = format!("{}/{}", "a".repeat(120), "b".repeat(120));
+        assert_eq!(ok(&format!("{}.mp3", "c".repeat(9)), &folder).unwrap().len(), TRACK_PATH_MAX);
+        assert!(ok(&format!("{}.mp3", "c".repeat(10)), &folder).unwrap_err().contains("255"));
+        assert!(check_track(Path::new("big.wav"), "", u32::MAX as u64).is_ok());
+        assert!(check_track(Path::new("big.wav"), "", u32::MAX as u64 + 1).unwrap_err().contains("too large"));
+
+        assert_eq!(track_card_path("Rock/Live").unwrap(), "/TRACKS/Rock/Live");
+        assert!(track_card_path("").is_err());
+        assert!(track_card_path("Rock/").is_err());
     }
 }
